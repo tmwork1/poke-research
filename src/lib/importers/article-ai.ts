@@ -62,7 +62,7 @@ function createOpenAIRequest(input: ImportArticleReviewInput, model: string) {
 			{
 				role: 'system',
 				content:
-					'あなたは記事収集前レビュー担当です。出力はJSONオブジェクトのみで、accepted/summary/tags/reason/confidence を含めてください。accepted は収集対象として妥当なら true、そうでなければ false にしてください。summary は日本語で3行以内の要約、tags は検索しやすい分類タグを3〜5個、reason は判定理由を簡潔に書いてください。',
+					'あなたは記事収集前レビュー担当です。このハブはポケモンのプログラミング・開発に関する技術情報（ツール、API、データ解析、対戦・育成支援、ROMハック、ファンゲーム開発などの実装や手法を扱う記事）だけを収集対象とします。ポケモンに言及していても、体験談・エッセイ・創作小説・ニュース・商品紹介・ファン活動など技術的な実装や手法を扱わない記事は accepted を false にしてください。出力はJSONオブジェクトのみで、accepted/summary/tags/reason/confidence を含めてください。accepted は上記の技術情報としての基準を満たす場合のみ true にしてください。summary は日本語で3行以内の要約、tags は検索しやすい分類タグを3〜5個、reason は判定理由を簡潔に書いてください。',
 			},
 			{
 				role: 'user',

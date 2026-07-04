@@ -12,8 +12,8 @@
 		"enabled": true
 	},
 	"triggers": {
-		// 毎日 18:00 UTC (JST 翌 03:00) に Qiita、18:30 UTC (JST 翌 03:30) に Zenn の収集ジョブを実行する。
-		// どちらが起動したかは src/worker.ts の scheduled ハンドラが controller.cron で振り分ける。
-		"crons": ["0 18 * * *", "30 18 * * *"]
+		// 毎日 18:00 UTC (JST 翌 03:00) に Qiita、18:30 UTC (JST 翌 03:30) に Zenn、19:00 UTC (JST 翌 04:00) に note の収集ジョブを実行する。
+		// どれが起動したかは src/worker.ts の scheduled ハンドラが controller.cron で振り分ける。
+		"crons": ["0 18 * * *", "30 18 * * *", "0 19 * * *"]
 	}
 }

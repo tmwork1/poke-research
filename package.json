@@ -10,6 +10,7 @@
 		"migrate": "node ./scripts/run-migrations.mjs",
 		"collect:qiita": "node ./scripts/collect-qiita.mjs",
 		"collect:zenn": "node ./scripts/collect-zenn.mjs",
+		"collect:note": "node ./scripts/collect-note.mjs",
 		"build": "astro build",
 		"preview": "astro build && astro preview",
 		"astro": "astro",
