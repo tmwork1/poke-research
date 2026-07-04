@@ -56,3 +56,9 @@ cp .env.example .env
 
 2. If you accidentally committed secrets into the repository, rotate those keys in Supabase and remove them from the repo history.
 
+## Qiita 収集ジョブ
+
+- 本番では Cloudflare Cron Triggers（`wrangler.jsonc` の `triggers.crons`、既定は毎日 18:00 UTC = JST 翌 3:00）が `src/worker.ts` の `scheduled` ハンドラを起動し、`resolveQiitaSyncOptions` で環境変数（`QIITA_QUERY` など）の既定条件を解決して `syncQiitaCollection` を実行する。
+- 手動で同じ処理を起動したい場合は、ローカルなら `npm run collect:qiita`、デプロイ後は `POST /api/import/qiita` を叩く。`sources.origin_url` / `items.external_url` の UNIQUE 制約に基づく upsert なので、何度実行しても重複行は増えない（冪等）。
+- 失敗時: `wrangler tail` や Cloudflare ダッシュボードのログで `[cron:qiita] sync failed` を確認する。記事単位の失敗はバッチを止めずに `skipped` として結果に積まれるため、ログに出る全体失敗は Qiita API 全断や Supabase 未接続など致命的なケースのみ。復旧を確認したら、次回 cron を待つか上記の手動実行で同じ内容を再実行すればよい。
+

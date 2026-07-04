@@ -78,6 +78,23 @@ function normalizeQuery(query?: string): string {
 	return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_QUERY;
 }
 
+// API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
+export interface QiitaEnvDefaults {
+	QIITA_QUERY?: string;
+	QIITA_PAGES?: string | number;
+	QIITA_PER_PAGE?: string | number;
+	QIITA_TOKEN?: string;
+}
+
+export function resolveQiitaSyncOptions(env: QiitaEnvDefaults, overrides: QiitaSyncOptions = {}): Required<QiitaSyncOptions> {
+	return {
+		query: overrides.query?.trim() || env.QIITA_QUERY?.trim() || DEFAULT_QUERY,
+		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.QIITA_PAGES, 1)),
+		perPage: parsePositiveInteger(overrides.perPage, parsePositiveInteger(env.QIITA_PER_PAGE, 20)),
+		token: overrides.token?.trim() || env.QIITA_TOKEN?.trim() || '',
+	};
+}
+
 function stripHtml(value: string): string {
 	// AI への入力や要約生成でノイズになりやすいタグを先に除去する。
 	return value

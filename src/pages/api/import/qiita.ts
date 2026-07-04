@@ -3,8 +3,7 @@
 import { env } from 'cloudflare:workers';
 
 import { badRequest, jsonResponse, methodNotAllowed, readJsonBody } from '../_shared';
-import { syncQiitaCollection } from '../../../lib/importers/qiita';
-import { parsePositiveInteger } from '../../../lib/params';
+import { resolveQiitaSyncOptions, syncQiitaCollection } from '../../../lib/importers/qiita';
 
 export const prerender = false;
 
@@ -15,30 +14,15 @@ interface QiitaImportRequest {
 	token?: string;
 }
 
-function readDefaultQuery(): string {
-	return env.QIITA_QUERY?.trim() || 'ポケモン';
-}
-
-function readDefaultPages(): number {
-	return parsePositiveInteger(env.QIITA_PAGES, 1);
-}
-
-function readDefaultPerPage(): number {
-	return parsePositiveInteger(env.QIITA_PER_PAGE, 20);
-}
-
-function readDefaultToken(): string | undefined {
-	return env.QIITA_TOKEN?.trim() || undefined;
-}
-
 export async function GET() {
+	const defaults = resolveQiitaSyncOptions(env);
 	return jsonResponse({
 		data: {
 			provider: 'qiita',
-			query: readDefaultQuery(),
-			pages: readDefaultPages(),
-			perPage: readDefaultPerPage(),
-			hasToken: Boolean(readDefaultToken()),
+			query: defaults.query,
+			pages: defaults.pages,
+			perPage: defaults.perPage,
+			hasToken: Boolean(defaults.token),
 		},
 	});
 }
@@ -52,12 +36,7 @@ export async function POST({ request }: { request: Request }) {
 		return badRequest('query must be a string');
 	}
 
-	const result = await syncQiitaCollection({
-		query: requestData.query?.trim() || readDefaultQuery(),
-		pages: parsePositiveInteger(requestData.pages, readDefaultPages()),
-		perPage: parsePositiveInteger(requestData.perPage, readDefaultPerPage()),
-		token: requestData.token?.trim() || readDefaultToken(),
-	});
+	const result = await syncQiitaCollection(resolveQiitaSyncOptions(env, requestData));
 
 	return jsonResponse({ data: result }, 201);
 }

@@ -3,12 +3,16 @@
 	"compatibility_date": "2026-07-03",
 	"compatibility_flags": ["global_fetch_strictly_public"],
 	"name": "pokemon-research",
-	"main": "@astrojs/cloudflare/entrypoints/server",
+	"main": "./src/worker.ts",
 	"assets": {
 		"directory": "./dist",
 		"binding": "ASSETS"
 	},
 	"observability": {
 		"enabled": true
+	},
+	"triggers": {
+		// 毎日 18:00 UTC (JST 翌 03:00) に Qiita 収集ジョブを実行する。
+		"crons": ["0 18 * * *"]
 	}
 }
