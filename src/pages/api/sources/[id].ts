@@ -1,3 +1,5 @@
+// 単一 source の取得・更新・削除を扱う API ルート。
+// 共通の id 検証と部分更新の組み立てをこのファイルでまとめる。
 import {
   badRequest,
   jsonResponse,

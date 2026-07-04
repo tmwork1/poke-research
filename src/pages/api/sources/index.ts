@@ -1,3 +1,5 @@
+// sources の一覧取得と新規作成を扱う API ルート。
+// 収集元の登録・管理を外部から行うための入口になる。
 import {
   badRequest,
   jsonResponse,

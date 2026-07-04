@@ -1,3 +1,5 @@
+// items の一覧取得と新規作成を扱う API ルート。
+// 検索条件は catalog 経由、登録は DB 直結で処理する。
 import {
   badRequest,
   jsonResponse,

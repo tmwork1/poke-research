@@ -1,3 +1,5 @@
+// Qiita API から記事を収集し、AI レビューとタグ同期を通して DB に反映する。
+// 収集条件や provenance も metadata に残して、再現できる形で保存する。
 import { normalizeTagName, reviewImportArticle } from './article-ai';
 import { getSupabaseClient } from '../supabase';
 
@@ -80,6 +82,7 @@ function normalizePositiveInteger(value: number | undefined, fallback: number): 
 }
 
 function stripHtml(value: string): string {
+	// AI への入力や要約生成でノイズになりやすいタグを先に除去する。
 	return value
 		.replace(/<script[\s\S]*?<\/script>/gi, ' ')
 		.replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -95,6 +98,7 @@ function stripHtml(value: string): string {
 }
 
 function createSummary(item: QiitaItem): string {
+	// 本文が取れない場合はタイトルだけでも最低限の説明になるようにする。
 	const body = item.rendered_body ?? item.body ?? '';
 	const text = stripHtml(body);
 	if (!text) {
@@ -113,6 +117,7 @@ function extractTags(item: QiitaItem): string[] {
 }
 
 function createSourceMetadata(query: string, fetchedAt: string, perPage: number, pages: number) {
+	// 取得条件は source metadata に残し、後から再現可能にしておく。
 	return {
 		service: 'qiita',
 		api_url: QIITA_API_URL,
@@ -127,6 +132,7 @@ function createSourceMetadata(query: string, fetchedAt: string, perPage: number,
 }
 
 function createItemMetadata(item: QiitaItem, query: string, fetchedAt: string, aiReview: Awaited<ReturnType<typeof reviewImportArticle>>) {
+	// 取り込み元、再取得条件、AI 判定結果を 1 つのメタデータにまとめる。
 	return {
 		service: 'qiita',
 		qiita: {
@@ -158,12 +164,14 @@ function createItemMetadata(item: QiitaItem, query: string, fetchedAt: string, a
 }
 
 function createAiBodyExcerpt(item: QiitaItem): string {
+	// 長すぎる本文は OpenAI 送信用に切り詰めて、コストと応答の安定性を守る。
 	const body = item.rendered_body ?? item.body ?? '';
 	const text = stripHtml(body);
 	return text.length > MAX_AI_BODY_CHARS ? text.slice(0, MAX_AI_BODY_CHARS) : text;
 }
 
 async function ensureTags(tagNames: string[]): Promise<Map<string, number>> {
+	// 既存タグを先に引き、足りないタグだけをまとめて作成する。
 	const normalizedTagNames = [...new Set(tagNames.map(normalizeTagName).filter((tag) => tag.length > 0))];
 	const tagIdMap = new Map<string, number>();
 	if (normalizedTagNames.length === 0) return tagIdMap;
@@ -198,6 +206,7 @@ async function ensureTags(tagNames: string[]): Promise<Map<string, number>> {
 }
 
 async function syncItemTags(itemId: number, tagNames: string[]): Promise<void> {
+	// item_tags は差分更新より全入れ替えの方が、同期漏れを起こしにくい。
 	const normalizedTagNames = [...new Set(tagNames.map(normalizeTagName).filter((tag) => tag.length > 0))];
 	const supabase = await getSupabaseClient();
 
@@ -242,6 +251,7 @@ async function fetchQiitaPage(query: string, page: number, perPage: number, toke
 }
 
 async function fetchQiitaItems(query: string, pages: number, perPage: number, token?: string): Promise<QiitaItem[]> {
+	// 複数ページ取得時に同一 URL が再登場しても、1 件だけ残す。
 	const results: QiitaItem[] = [];
 	const seen = new Set<string>();
 

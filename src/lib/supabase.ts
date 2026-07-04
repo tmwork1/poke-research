@@ -1,3 +1,5 @@
+// Cloudflare 実行環境とローカル環境の両方で動く Supabase クライアント生成処理。
+// 必要に応じて process.env を補って、開発時の実行差を吸収する。
 import { env } from 'cloudflare:workers';
 
 const runtimeEnv = globalThis.process?.env ?? {};

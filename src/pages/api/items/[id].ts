@@ -1,3 +1,5 @@
+// 単一 item の取得・更新・削除を扱う API ルート。
+// 詳細表示では catalog の正規化結果を返し、更新系は DB の item だけを操作する。
 import {
   badRequest,
   jsonResponse,

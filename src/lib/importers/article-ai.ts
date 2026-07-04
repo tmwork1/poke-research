@@ -1,3 +1,5 @@
+// 記事取り込み前に OpenAI へレビューを依頼し、採用可否と要約・タグを作る。
+// JSON 形式の応答を前提にして、後続の DB 保存処理を安定させる。
 import { env } from 'cloudflare:workers';
 
 type EnvRecord = Record<string, string | undefined>;
@@ -40,16 +42,19 @@ export function normalizeTagName(tagName: string): string {
 }
 
 function normalizeAiTags(tags: string[]): string[] {
+	// 余計な空白や重複を落として、保存時のタグ表記を揃える。
 	return [...new Set(tags.map(normalizeTagName).filter((tag) => tag.length > 0))].slice(0, MAX_AI_TAGS);
 }
 
 function getOpenAIConfig(): OpenAIConfig {
+	// Cloudflare 実行環境とローカル環境の両方から設定を読む。
 	const apiKey = cloudflareEnv.OPENAI_API_KEY?.trim() || runtimeEnv.OPENAI_API_KEY?.trim() || '';
 	const model = cloudflareEnv.OPENAI_MODEL?.trim() || runtimeEnv.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
 	return { apiKey, model };
 }
 
 function createOpenAIRequest(input: ImportArticleReviewInput, model: string) {
+	// レスポンスは JSON 固定にして、後続のパースを安定させる。
 	return {
 		model,
 		response_format: { type: 'json_object' },
@@ -82,12 +87,14 @@ function createOpenAIRequest(input: ImportArticleReviewInput, model: string) {
 }
 
 function parseAiResponse(content: string): Omit<ImportArticleReview, 'model'> {
+	// 返答にコードフェンスが混ざっても読めるように、先に包みを外す。
 	const trimmed = content.trim();
 	const normalized = trimmed
 		.replace(/^```json\s*/i, '')
 		.replace(/^```\s*/i, '')
 		.replace(/```\s*$/i, '');
 	const parsed = JSON.parse(normalized) as Partial<ImportArticleReview> & { accepted?: boolean; accept?: boolean; reason?: string };
+	// 古い応答形式の accept も吸収して、移行中でも壊れないようにする。
 	const accepted = typeof parsed.accepted === 'boolean' ? parsed.accepted : parsed.accept;
 	if (typeof accepted !== 'boolean') {
 		throw new Error('OpenAI response missing accepted flag');
@@ -113,6 +120,7 @@ function parseAiResponse(content: string): Omit<ImportArticleReview, 'model'> {
 export async function reviewImportArticle(input: ImportArticleReviewInput): Promise<ImportArticleReview> {
 	const { apiKey, model } = getOpenAIConfig();
 	if (!apiKey) {
+		// API キーがない場合は、誤った無通信のまま進めず明示的に失敗させる。
 		throw new Error('OPENAI_API_KEY is required to review imported articles');
 	}
 

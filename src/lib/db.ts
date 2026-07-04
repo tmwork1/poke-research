@@ -1,3 +1,5 @@
+// Supabase の CRUD 呼び出しを、テーブル単位の薄い共通 API にまとめる。
+// API ルートやスクリプト側は、ここを通して基本操作を揃えて使う。
 import { getSupabaseClient } from './supabase';
 import type { Annotation, Item, Source } from './db-types';
 

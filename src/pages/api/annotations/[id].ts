@@ -1,3 +1,5 @@
+// 単一 annotation の取得・更新・削除を扱う API ルート。
+// id パラメータの検証と存在確認をここでまとめて行う。
 import {
   badRequest,
   jsonResponse,

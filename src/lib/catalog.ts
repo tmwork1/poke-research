@@ -1,3 +1,5 @@
+// 一覧・詳細表示向けに、items / sources / tags / annotations を組み合わせて読む。
+// 結合結果の形を UI 側で扱いやすい形へ正規化する責務もここに置く。
 import { getSupabaseClient } from './supabase';
 import type { Annotation, Item, Source, Tag } from './db-types';
 
@@ -54,6 +56,8 @@ const ITEM_SELECT = `
 
 function normalizeSource(source: ItemRow['source']): CatalogSource | null {
 	if (!source) return null;
+	// Supabase の結合結果は単一オブジェクトか配列で返ることがあるため、
+	// 画面側が扱いやすい単一値に正規化する。
 	if (Array.isArray(source)) {
 		return (source[0] as CatalogSource | undefined) ?? null;
 	}
@@ -62,6 +66,7 @@ function normalizeSource(source: ItemRow['source']): CatalogSource | null {
 
 function normalizeTags(itemTags: ItemRow['item_tags']): Tag[] {
 	if (!Array.isArray(itemTags)) return [];
+	// 結合先の欠損や重複を吸収して、タグ一覧だけを安全に取り出す。
 	return itemTags.flatMap((entry) => {
 		const rawTag = entry?.tag;
 		if (!rawTag) return [];
@@ -83,6 +88,7 @@ function normalizeItem(row: ItemRow): CatalogItem {
 
 async function resolveItemIdsByTag(tagName: string): Promise<number[]> {
 	const supabase = await getSupabaseClient();
+	// タグ名から item_id を引くために、まず tag_id をまとめて解決する。
 	const { data: tags, error } = await supabase.from('tags').select('id').eq('name', tagName);
 	if (error) throw error;
 	const tagIds = (tags ?? []).map((tag) => tag.id);
@@ -140,12 +146,14 @@ export async function fetchCatalogItems(filters: ItemFilters = {}): Promise<Cata
 	}
 
 	if (filters.tag?.trim()) {
+		// タグ条件は join の曖昧さを避けるため、先に item_id の集合へ落とす。
 		const itemIds = await resolveItemIdsByTag(filters.tag.trim());
 		if (itemIds.length === 0) return [];
 		query = query.in('id', itemIds);
 	}
 
 	if (filters.limit && filters.limit > 0) {
+		// 一覧やホーム用の軽量取得では件数制限を優先する。
 		query = query.limit(filters.limit);
 	}
 
@@ -165,6 +173,7 @@ export async function fetchCatalogItemById(id: number): Promise<ItemDetail | nul
 	if (!data) return null;
 
 	const item = normalizeItem(data as ItemRow);
+	// 詳細表示では item 本体とは別クエリで注釈を付ける。
 	const annotations = await fetchCatalogAnnotations(id);
 	return {
 		...item,

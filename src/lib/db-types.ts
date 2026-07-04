@@ -1,3 +1,5 @@
+// DB の各テーブル行を表す型定義をまとめたファイル。
+// 画面・API・インポーター間で共通に使う基礎型をここで揃える。
 export interface User {
   id: string; // uuid
   email: string;

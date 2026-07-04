@@ -1,3 +1,5 @@
+// annotations の一覧取得と新規作成を扱う API ルート。
+// item_id で絞り込みつつ、注釈の追加を受け付ける。
 import {
   badRequest,
   jsonResponse,

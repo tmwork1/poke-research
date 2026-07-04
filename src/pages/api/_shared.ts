@@ -1,4 +1,7 @@
+// API ルートで共通に使うレスポンス生成・入力検証ヘルパーをまとめる。
+// 各エンドポイントの本体を短く保つための基盤ファイル。
 export function jsonResponse(body: unknown, status = 200): Response {
+  // すべての API で JSON レスポンスのヘッダを揃える。
   return new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -8,6 +11,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
 }
 
 export function methodNotAllowed(allowed: string[]): Response {
+  // 許可メソッドをレスポンスに含めて、クライアント側の切り分けをしやすくする。
   return jsonResponse(
     {
       error: 'Method not allowed',
@@ -30,6 +34,7 @@ export function noContent(): Response {
 }
 
 export function parseIdParam(params: Record<string, string | undefined>): number | null {
+  // ルートパラメータは文字列前提なので、正の整数だけを採用する。
   const rawId = params.id;
   if (!rawId) return null;
   const id = Number(rawId);
@@ -39,6 +44,7 @@ export function parseIdParam(params: Record<string, string | undefined>): number
 
 export async function readJsonBody<T>(request: Request): Promise<{ data: T | null; response?: Response }> {
   try {
+    // 空ボディは null として扱い、JSON でない入力だけをエラーにする。
     const text = await request.text();
     if (!text.trim()) {
       return { data: null };
