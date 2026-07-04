@@ -44,3 +44,15 @@ All commands are run from the root of the project, from a terminal:
 ## 👀 Want to learn more?
 
 Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+
+## Environment variables
+
+1. Copy `.env.example` to `.env` and fill in your local Supabase keys (do not commit `.env`).
+
+```powershell
+cp .env.example .env
+# then edit .env to add real keys
+```
+
+2. If you accidentally committed secrets into the repository, rotate those keys in Supabase and remove them from the repo history.
+
