@@ -11,32 +11,91 @@ if (!key) {
 const supabase = createClient(url, key, { detectSessionInUrl: false });
 
 async function main() {
-  console.log('Running basic Supabase connection test...');
+  console.log('Running M1 CRUD smoke test...');
 
-  const { data, error } = await supabase.from('pokemon').select('id, species').limit(5);
-  if (error) {
-    console.error('Select error:', error);
+  const source = {
+    name: 'test-source',
+    type: 'smoke-test',
+    origin_url: 'https://example.com/source',
+    metadata: { purpose: 'smoke-test' },
+  };
+
+  const { data: insertedSource, error: sourceInsertError } = await supabase
+    .from('sources')
+    .insert([source])
+    .select()
+    .single();
+  if (sourceInsertError) {
+    console.error('Source insert error:', sourceInsertError);
     process.exit(2);
   }
-  console.log('Fetched rows (up to 5):', data);
+  console.log('Inserted source:', insertedSource);
 
-  // Insert a test row, then delete it
-  const test = { species: 'test-species', national_id: 99999, nickname: 'test-temp' };
-  const { data: ins, error: insErr } = await supabase.from('pokemon').insert([test]).select().single();
-  if (insErr) {
-    console.error('Insert error:', insErr);
+  const item = {
+    source_id: insertedSource.id,
+    external_url: 'https://example.com/item',
+    kind: 'article',
+    title: 'test-item',
+    authors: ['smoke-test'],
+    summary: 'temporary item for smoke testing',
+    published_at: null,
+    updated_at: null,
+    metadata: { purpose: 'smoke-test' },
+    version: '1',
+  };
+
+  const { data: insertedItem, error: itemInsertError } = await supabase
+    .from('items')
+    .insert([item])
+    .select()
+    .single();
+  if (itemInsertError) {
+    console.error('Item insert error:', itemInsertError);
     process.exit(3);
   }
-  console.log('Inserted test row:', ins);
+  console.log('Inserted item:', insertedItem);
 
-  const { error: delErr } = await supabase.from('pokemon').delete().eq('id', ins.id);
-  if (delErr) {
-    console.error('Delete error:', delErr);
+  const annotation = {
+    item_id: insertedItem.id,
+    author_id: null,
+    kind: 'note',
+    value: { text: 'smoke test annotation' },
+    provenance: { source: 'scripts/test-db.mjs' },
+  };
+
+  const { data: insertedAnnotation, error: annotationInsertError } = await supabase
+    .from('annotations')
+    .insert([annotation])
+    .select()
+    .single();
+  if (annotationInsertError) {
+    console.error('Annotation insert error:', annotationInsertError);
     process.exit(4);
   }
-  console.log('Deleted test row id', ins.id);
+  console.log('Inserted annotation:', insertedAnnotation);
 
-  console.log('Supabase basic tests completed successfully.');
+  const { error: annotationDeleteError } = await supabase
+    .from('annotations')
+    .delete()
+    .eq('id', insertedAnnotation.id);
+  if (annotationDeleteError) {
+    console.error('Annotation delete error:', annotationDeleteError);
+    process.exit(5);
+  }
+
+  const { error: itemDeleteError } = await supabase.from('items').delete().eq('id', insertedItem.id);
+  if (itemDeleteError) {
+    console.error('Item delete error:', itemDeleteError);
+    process.exit(6);
+  }
+
+  const { error: sourceDeleteError } = await supabase.from('sources').delete().eq('id', insertedSource.id);
+  if (sourceDeleteError) {
+    console.error('Source delete error:', sourceDeleteError);
+    process.exit(7);
+  }
+
+  console.log('M1 CRUD smoke test completed successfully.');
 }
 
 main().catch((e) => { console.error(e); process.exit(99); });

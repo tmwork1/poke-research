@@ -5,32 +5,50 @@ export interface User {
   created_at?: string;
 }
 
-export interface Pokemon {
+export interface Source {
   id: number;
-  species: string;
-  national_id?: number | null;
-  nickname?: string | null;
+  name: string;
+  type?: string | null;
+  origin_url?: string | null;
   metadata?: Record<string, any>;
   created_at?: string;
 }
 
-export interface ResearchNote {
-  id: string;
+export interface Item {
+  id: number;
+  source_id?: number | null;
+  external_url?: string | null;
+  kind?: string | null;
+  title?: string | null;
+  authors?: string[] | null;
+  summary?: string | null;
+  published_at?: string | null;
+  updated_at?: string | null;
+  metadata?: Record<string, any>;
+  version?: string | null;
+  created_at?: string;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+}
+
+export interface Annotation {
+  id: number;
+  item_id: number;
   author_id?: string | null;
-  pokemon_id?: number | null;
-  title: string;
-  content?: string | null;
-  metadata?: Record<string, any>;
+  kind?: string | null;
+  value?: Record<string, any> | null;
+  provenance?: Record<string, any> | null;
   created_at?: string;
-  updated_at?: string;
 }
 
-export interface Experiment {
-  id: string;
-  note_id: string;
-  config: Record<string, any>;
-  result?: Record<string, any> | null;
-  status?: string;
+export interface ItemRelation {
+  from_item_id: number;
+  to_item_id: number;
+  relation_type: string;
+  provenance?: Record<string, any> | null;
   created_at?: string;
-  finished_at?: string | null;
 }
+

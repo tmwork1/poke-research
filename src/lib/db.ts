@@ -1,34 +1,34 @@
 import supabase from './supabase';
-import type { Pokemon, ResearchNote, User, Experiment } from './db-types';
+import type { Annotation, Item, Source } from './db-types';
 
 export const tables = {
   users: 'users',
-  pokemon: 'pokemon',
-  research_notes: 'research_notes',
-  experiments: 'experiments',
+  sources: 'sources',
+  items: 'items',
+  tags: 'tags',
+  item_tags: 'item_tags',
+  item_relations: 'item_relations',
+  annotations: 'annotations',
 } as const;
 
-export async function fetchAllPokemon(): Promise<Pokemon[]> {
-  const { data, error } = await supabase
-    .from<Pokemon>(tables.pokemon)
-    .select('*');
+type EntityWithId = { id: number };
+
+export type SourceInsert = Omit<Source, 'id' | 'created_at'>;
+export type SourceUpdate = Partial<SourceInsert>;
+export type ItemInsert = Omit<Item, 'id' | 'created_at'>;
+export type ItemUpdate = Partial<ItemInsert>;
+export type AnnotationInsert = Omit<Annotation, 'id' | 'created_at'>;
+export type AnnotationUpdate = Partial<AnnotationInsert>;
+
+async function selectAll<T>(table: string): Promise<T[]> {
+  const { data, error } = await supabase.from<T>(table).select('*');
   if (error) throw error;
   return data || [];
 }
 
-export async function insertPokemon(p: Omit<Pokemon, 'id' | 'created_at'>): Promise<Pokemon> {
+async function selectById<T extends EntityWithId>(table: string, id: number): Promise<T | null> {
   const { data, error } = await supabase
-    .from<Pokemon>(tables.pokemon)
-    .insert([p])
-    .select()
-    .single();
-  if (error) throw error;
-  return data as Pokemon;
-}
-
-export async function getPokemonById(id: number): Promise<Pokemon | null> {
-  const { data, error } = await supabase
-    .from<Pokemon>(tables.pokemon)
+    .from<T>(table)
     .select('*')
     .eq('id', id)
     .single();
@@ -39,30 +39,118 @@ export async function getPokemonById(id: number): Promise<Pokemon | null> {
   return data || null;
 }
 
-export async function upsertResearchNote(note: Partial<ResearchNote>): Promise<ResearchNote> {
-  const payload = { ...note } as any;
+async function insertOne<T>(table: string, row: object): Promise<T> {
   const { data, error } = await supabase
-    .from<ResearchNote>(tables.research_notes)
-    .upsert(payload)
+    .from<T>(table)
+    .insert([row])
     .select()
     .single();
   if (error) throw error;
-  return data as ResearchNote;
+  return data as T;
 }
 
-export async function listExperimentsByStatus(status = 'pending'): Promise<Experiment[]> {
+async function updateOne<T extends EntityWithId>(table: string, id: number, row: object): Promise<T | null> {
   const { data, error } = await supabase
-    .from<Experiment>(tables.experiments)
+    .from<T>(table)
+    .update(row)
+    .eq('id', id)
     .select('*')
-    .eq('status', status);
-  if (error) throw error;
-  return data || [];
+    .single();
+  if (error) {
+    if ((error as any).status === 406 || (error as any).status === 404) return null;
+    throw error;
+  }
+  return data || null;
+}
+
+async function deleteOne<T extends EntityWithId>(table: string, id: number): Promise<T | null> {
+  const { data, error } = await supabase
+    .from<T>(table)
+    .delete()
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) {
+    if ((error as any).status === 406 || (error as any).status === 404) return null;
+    throw error;
+  }
+  return data || null;
+}
+
+export async function fetchAllSources(): Promise<Source[]> {
+  return selectAll<Source>(tables.sources);
+}
+
+export async function getSourceById(id: number): Promise<Source | null> {
+  return selectById<Source>(tables.sources, id);
+}
+
+export async function insertSource(source: SourceInsert): Promise<Source> {
+  return insertOne<Source>(tables.sources, source);
+}
+
+export async function updateSource(id: number, source: SourceUpdate): Promise<Source | null> {
+  return updateOne<Source>(tables.sources, id, source);
+}
+
+export async function deleteSource(id: number): Promise<Source | null> {
+  return deleteOne<Source>(tables.sources, id);
+}
+
+export async function fetchAllItems(): Promise<Item[]> {
+  return selectAll<Item>(tables.items);
+}
+
+export async function getItemById(id: number): Promise<Item | null> {
+  return selectById<Item>(tables.items, id);
+}
+
+export async function insertItem(item: ItemInsert): Promise<Item> {
+  return insertOne<Item>(tables.items, item);
+}
+
+export async function updateItem(id: number, item: ItemUpdate): Promise<Item | null> {
+  return updateOne<Item>(tables.items, id, item);
+}
+
+export async function deleteItem(id: number): Promise<Item | null> {
+  return deleteOne<Item>(tables.items, id);
+}
+
+export async function fetchAllAnnotations(): Promise<Annotation[]> {
+  return selectAll<Annotation>(tables.annotations);
+}
+
+export async function getAnnotationById(id: number): Promise<Annotation | null> {
+  return selectById<Annotation>(tables.annotations, id);
+}
+
+export async function insertAnnotation(annotation: AnnotationInsert): Promise<Annotation> {
+  return insertOne<Annotation>(tables.annotations, annotation);
+}
+
+export async function updateAnnotation(id: number, annotation: AnnotationUpdate): Promise<Annotation | null> {
+  return updateOne<Annotation>(tables.annotations, id, annotation);
+}
+
+export async function deleteAnnotation(id: number): Promise<Annotation | null> {
+  return deleteOne<Annotation>(tables.annotations, id);
 }
 
 export default {
-  fetchAllPokemon,
-  insertPokemon,
-  getPokemonById,
-  upsertResearchNote,
-  listExperimentsByStatus,
+  fetchAllSources,
+  getSourceById,
+  insertSource,
+  updateSource,
+  deleteSource,
+  fetchAllItems,
+  getItemById,
+  insertItem,
+  updateItem,
+  deleteItem,
+  fetchAllAnnotations,
+  getAnnotationById,
+  insertAnnotation,
+  updateAnnotation,
+  deleteAnnotation,
 };
