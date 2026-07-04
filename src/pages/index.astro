@@ -4,7 +4,15 @@ export const prerender = false;
 import Layout from '../layouts/Layout.astro';
 import { fetchCatalogOverview } from '../lib/catalog';
 
-const overview = await fetchCatalogOverview();
+let overview: Awaited<ReturnType<typeof fetchCatalogOverview>>;
+let loadError = false;
+try {
+	overview = await fetchCatalogOverview();
+} catch (error) {
+	console.error('Failed to load catalog overview:', error);
+	loadError = true;
+	overview = { items: [], tags: [], sources: [], annotations: [] };
+}
 
 const metrics = [
 	{ label: 'Items', value: overview.items.length },
@@ -16,6 +24,11 @@ const metrics = [
 
 <Layout title="Pokemon Research Hub" description="ポケモンプログラミング情報ハブのトップページ">
 	<section class="home">
+		{loadError && (
+			<div class="empty" role="alert">
+				データの取得に失敗しました。しばらくしてから再度お試しください。
+			</div>
+		)}
 		<header class="hero">
 			<div>
 				<p class="eyebrow">M2 Search and UI</p>

@@ -2,6 +2,7 @@
 // 収集条件や provenance も metadata に残して、再現できる形で保存する。
 import { normalizeTagName, reviewImportArticle } from './article-ai';
 import { getSupabaseClient } from '../supabase';
+import { parsePositiveInteger } from '../params';
 
 const QIITA_API_URL = 'https://qiita.com/api/v2/items';
 const QIITA_SOURCE_NAME = 'Qiita';
@@ -75,10 +76,6 @@ interface ItemRow {
 function normalizeQuery(query?: string): string {
 	const trimmed = query?.trim();
 	return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_QUERY;
-}
-
-function normalizePositiveInteger(value: number | undefined, fallback: number): number {
-	return Number.isInteger(value) && value && value > 0 ? value : fallback;
 }
 
 function stripHtml(value: string): string {
@@ -206,25 +203,41 @@ async function ensureTags(tagNames: string[]): Promise<Map<string, number>> {
 }
 
 async function syncItemTags(itemId: number, tagNames: string[]): Promise<void> {
-	// item_tags は差分更新より全入れ替えの方が、同期漏れを起こしにくい。
+	// 全削除→再作成だと失敗時にタグが失われたまま残るため、差分だけ insert/delete する。
 	const normalizedTagNames = [...new Set(tagNames.map(normalizeTagName).filter((tag) => tag.length > 0))];
 	const supabase = await getSupabaseClient();
 
-	const { error: deleteError } = await supabase.from('item_tags').delete().eq('item_id', itemId);
-	if (deleteError) throw deleteError;
-
-	if (normalizedTagNames.length === 0) return;
-
 	const tagIdMap = await ensureTags(normalizedTagNames);
-	const relations = normalizedTagNames
-		.map((tagName) => tagIdMap.get(tagName))
-		.filter((tagId): tagId is number => typeof tagId === 'number')
+	const desiredTagIds = new Set(
+		normalizedTagNames
+			.map((tagName) => tagIdMap.get(tagName))
+			.filter((tagId): tagId is number => typeof tagId === 'number'),
+	);
+
+	const { data: existingRelations, error: selectError } = await supabase
+		.from('item_tags')
+		.select('tag_id')
+		.eq('item_id', itemId);
+	if (selectError) throw selectError;
+	const existingTagIds = new Set((existingRelations ?? []).map((relation) => relation.tag_id));
+
+	const toInsert = [...desiredTagIds]
+		.filter((tagId) => !existingTagIds.has(tagId))
 		.map((tagId) => ({ item_id: itemId, tag_id: tagId }));
+	if (toInsert.length > 0) {
+		const { error: insertError } = await supabase.from('item_tags').insert(toInsert);
+		if (insertError) throw insertError;
+	}
 
-	if (relations.length === 0) return;
-
-	const { error: insertError } = await supabase.from('item_tags').insert(relations);
-	if (insertError) throw insertError;
+	const toDelete = [...existingTagIds].filter((tagId) => !desiredTagIds.has(tagId));
+	if (toDelete.length > 0) {
+		const { error: deleteError } = await supabase
+			.from('item_tags')
+			.delete()
+			.eq('item_id', itemId)
+			.in('tag_id', toDelete);
+		if (deleteError) throw deleteError;
+	}
 }
 
 async function fetchQiitaPage(query: string, page: number, perPage: number, token?: string): Promise<QiitaItem[]> {
@@ -278,45 +291,26 @@ async function fetchQiitaItems(query: string, pages: number, perPage: number, to
 }
 
 async function upsertSource(query: string, fetchedAt: string, pages: number, perPage: number): Promise<SourceRow> {
+	// select してから insert/update する形は同時実行時に重複行を作りうるため、
+	// origin_url の UNIQUE 制約(migrations/002)を前提に upsert で原子的に処理する。
 	const supabase = await getSupabaseClient();
 	const metadata = createSourceMetadata(query, fetchedAt, perPage, pages);
 
-	const { data: sources, error: selectError } = await supabase
+	const { data, error } = await supabase
 		.from('sources')
-		.select('id')
-		.eq('origin_url', QIITA_SOURCE_ORIGIN_URL)
-		.limit(1);
-	if (selectError) throw selectError;
-
-	if (sources?.length) {
-		const sourceId = sources[0].id;
-		const { error: updateError } = await supabase
-			.from('sources')
-			.update({
-				name: QIITA_SOURCE_NAME,
-				type: 'qiita',
-				origin_url: QIITA_SOURCE_ORIGIN_URL,
-				metadata,
-			})
-			.eq('id', sourceId);
-		if (updateError) throw updateError;
-		return { id: sourceId };
-	}
-
-	const { data: inserted, error: insertError } = await supabase
-		.from('sources')
-		.insert([
+		.upsert(
 			{
 				name: QIITA_SOURCE_NAME,
 				type: 'qiita',
 				origin_url: QIITA_SOURCE_ORIGIN_URL,
 				metadata,
 			},
-		])
+			{ onConflict: 'origin_url' },
+		)
 		.select('id')
 		.single();
-	if (insertError) throw insertError;
-	return inserted as SourceRow;
+	if (error) throw error;
+	return data as SourceRow;
 }
 
 async function upsertItem(
@@ -342,48 +336,59 @@ async function upsertItem(
 		version: item.updated_at,
 	};
 
+	// action の判定は結果表示用の分類に過ぎず、書き込み自体は external_url の
+	// UNIQUE 制約(migrations/002)を前提にした upsert で原子的に行う。
 	const { data: existingItems, error: selectError } = await supabase
 		.from('items')
 		.select('id')
 		.eq('external_url', item.url)
 		.limit(1);
 	if (selectError) throw selectError;
+	const action: 'inserted' | 'updated' = existingItems?.length ? 'updated' : 'inserted';
 
-	if (existingItems?.length) {
-		const itemId = existingItems[0].id;
-		const { error: updateError } = await supabase.from('items').update(payload).eq('id', itemId);
-		if (updateError) throw updateError;
-		await syncItemTags(itemId, tags);
-		return { row: { id: itemId }, action: 'updated' };
-	}
-
-	const { data: inserted, error: insertError } = await supabase
+	const { data: upserted, error: upsertError } = await supabase
 		.from('items')
-		.insert([payload])
+		.upsert(payload, { onConflict: 'external_url' })
 		.select('id')
 		.single();
-	if (insertError) throw insertError;
-	await syncItemTags((inserted as ItemRow).id, tags);
-	return { row: inserted as ItemRow, action: 'inserted' };
+	if (upsertError) throw upsertError;
+
+	const itemId = (upserted as ItemRow).id;
+	await syncItemTags(itemId, tags);
+	return { row: { id: itemId }, action };
 }
 
-export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promise<QiitaSyncResult> {
-	const query = normalizeQuery(options.query);
-	const pages = normalizePositiveInteger(options.pages, 1);
-	const perPage = normalizePositiveInteger(options.perPage, 20);
-	const fetchedAt = new Date().toISOString();
+const IMPORT_CONCURRENCY = 4;
 
-	const [items, source] = await Promise.all([
-		fetchQiitaItems(query, pages, perPage, options.token),
-		upsertSource(query, fetchedAt, pages, perPage),
-	]);
+async function mapWithConcurrency<T, R>(
+	inputs: T[],
+	limit: number,
+	fn: (input: T) => Promise<R>,
+): Promise<R[]> {
+	// 記事ごとの OpenAI 呼び出しと DB 書き込みを、限られた同時実行数で並列化する。
+	const results: R[] = new Array(inputs.length);
+	let cursor = 0;
 
-	let inserted = 0;
-	let updated = 0;
-	let skipped = 0;
-	const itemResults: QiitaSyncResult['items'] = [];
+	async function worker() {
+		while (cursor < inputs.length) {
+			const index = cursor;
+			cursor += 1;
+			results[index] = await fn(inputs[index]);
+		}
+	}
 
-	for (const item of items) {
+	await Promise.all(Array.from({ length: Math.min(limit, inputs.length) }, worker));
+	return results;
+}
+
+async function processQiitaItem(
+	item: QiitaItem,
+	sourceId: number,
+	query: string,
+	fetchedAt: string,
+): Promise<QiitaSyncResult['items'][number] & { action: 'inserted' | 'updated' | 'skipped' }> {
+	// 1件の失敗がバッチ全体を止めないよう、記事単位で例外を吸収して skipped として積む。
+	try {
 		const review = await reviewImportArticle({
 			sourceName: QIITA_SOURCE_NAME,
 			query,
@@ -396,27 +401,55 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 			bodyExcerpt: createAiBodyExcerpt(item),
 		});
 		if (!review.accepted) {
-			skipped += 1;
-			itemResults.push({
+			return {
 				id: null,
 				action: 'skipped',
 				externalUrl: item.url,
 				title: item.title,
 				reason: review.reason,
-			});
-			continue;
+			};
 		}
 
-		const result = await upsertItem(source.id, item, query, fetchedAt, review);
-		if (result.action === 'inserted') inserted += 1;
-		if (result.action === 'updated') updated += 1;
-		if (result.action === 'skipped') skipped += 1;
-		itemResults.push({
+		const result = await upsertItem(sourceId, item, query, fetchedAt, review);
+		return {
 			id: result.row.id,
 			action: result.action,
 			externalUrl: item.url,
 			title: item.title,
-		});
+		};
+	} catch (error) {
+		return {
+			id: null,
+			action: 'skipped',
+			externalUrl: item.url,
+			title: item.title,
+			reason: error instanceof Error ? error.message : 'unknown error',
+		};
+	}
+}
+
+export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promise<QiitaSyncResult> {
+	const query = normalizeQuery(options.query);
+	const pages = parsePositiveInteger(options.pages, 1);
+	const perPage = parsePositiveInteger(options.perPage, 20);
+	const fetchedAt = new Date().toISOString();
+
+	const [items, source] = await Promise.all([
+		fetchQiitaItems(query, pages, perPage, options.token),
+		upsertSource(query, fetchedAt, pages, perPage),
+	]);
+
+	const itemResults = await mapWithConcurrency(items, IMPORT_CONCURRENCY, (item) =>
+		processQiitaItem(item, source.id, query, fetchedAt),
+	);
+
+	let inserted = 0;
+	let updated = 0;
+	let skipped = 0;
+	for (const result of itemResults) {
+		if (result.action === 'inserted') inserted += 1;
+		else if (result.action === 'updated') updated += 1;
+		else skipped += 1;
 	}
 
 	return {

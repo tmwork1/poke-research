@@ -47,10 +47,3 @@ export async function getSupabaseClient() {
     detectSessionInUrl: false,
   });
 }
-
-if (!getSupabaseConfig().SUPABASE_URL || !getSupabaseConfig().SUPABASE_ANON_KEY) {
-  // 開発中は環境変数が未設定でも手元で動かすことがあるため警告に留める
-  // 実運用では例外を投げてもよい
-  // eslint-disable-next-line no-console
-  console.warn('Supabase env vars not set: SUPABASE_URL or SUPABASE_ANON_KEY');
-}

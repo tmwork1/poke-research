@@ -34,7 +34,7 @@ async function updateHandler({ params, request }: { params: Record<string, strin
     return badRequest('request body is required');
   }
 
-  const item = await updateItem(id, {
+  const updated = await updateItem(id, {
     ...(body.data.source_id !== undefined ? { source_id: body.data.source_id } : {}),
     ...(body.data.external_url !== undefined ? { external_url: body.data.external_url } : {}),
     ...(body.data.kind !== undefined ? { kind: body.data.kind } : {}),
@@ -47,7 +47,10 @@ async function updateHandler({ params, request }: { params: Record<string, strin
     ...(body.data.version !== undefined ? { version: body.data.version } : {}),
   });
 
-  if (!item) return notFound('item not found');
+  if (!updated) return notFound('item not found');
+
+  // GET と同じ ItemDetail 形状(source/tags/annotations 込み)で返し、レスポンス契約を揃える。
+  const item = await fetchCatalogItemById(id);
   return jsonResponse({ data: item });
 }
 

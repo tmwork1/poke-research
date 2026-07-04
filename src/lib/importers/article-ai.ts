@@ -8,7 +8,7 @@ const runtimeEnv = (globalThis as typeof globalThis & { process?: { env: EnvReco
 const cloudflareEnv = env as unknown as EnvRecord;
 
 const OPENAI_CHAT_COMPLETIONS_URL = 'https://api.openai.com/v1/chat/completions';
-const DEFAULT_OPENAI_MODEL = 'gpt5-nano';
+const DEFAULT_OPENAI_MODEL = 'gpt-5-nano';
 const MAX_AI_TAGS = 5;
 
 export interface ImportArticleReviewInput {

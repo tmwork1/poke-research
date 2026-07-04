@@ -9,14 +9,9 @@ import {
 import { insertItem } from '../../../lib/db';
 import type { ItemInsert } from '../../../lib/db';
 import { fetchCatalogItems } from '../../../lib/catalog';
+import { parseOptionalPositiveInteger } from '../../../lib/params';
 
 export const prerender = false;
-
-function parseOptionalNumber(value: string | null): number | undefined {
-  if (!value) return undefined;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
 
 export async function GET({ request }: { request: Request }) {
   const url = new URL(request.url);
@@ -24,8 +19,8 @@ export async function GET({ request }: { request: Request }) {
     q: url.searchParams.get('q') ?? undefined,
     kind: url.searchParams.get('kind') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
-    sourceId: parseOptionalNumber(url.searchParams.get('sourceId')),
-    limit: parseOptionalNumber(url.searchParams.get('limit')),
+    sourceId: parseOptionalPositiveInteger(url.searchParams.get('sourceId')),
+    limit: parseOptionalPositiveInteger(url.searchParams.get('limit')),
   });
 
   return jsonResponse({

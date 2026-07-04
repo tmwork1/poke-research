@@ -4,6 +4,7 @@ import { env } from 'cloudflare:workers';
 
 import { badRequest, jsonResponse, methodNotAllowed, readJsonBody } from '../_shared';
 import { syncQiitaCollection } from '../../../lib/importers/qiita';
+import { parsePositiveInteger } from '../../../lib/params';
 
 export const prerender = false;
 
@@ -12,11 +13,6 @@ interface QiitaImportRequest {
 	pages?: number;
 	perPage?: number;
 	token?: string;
-}
-
-function parsePositiveInteger(value: string | number | null | undefined, fallback: number): number {
-	const parsed = typeof value === 'number' ? value : Number(value ?? NaN);
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function readDefaultQuery(): string {
