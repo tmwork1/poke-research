@@ -1,5 +1,9 @@
 ## Development
 
+AI エージェントの利用モデルは `.env` の `OPENAI_MODEL` で指定する。初期値は `gpt5-nano` を使う。
+
+環境変数は `.env` に設定し、API key もそこに書く。
+
 When starting the dev server, use background mode:
 
 ```

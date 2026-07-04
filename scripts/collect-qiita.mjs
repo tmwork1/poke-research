@@ -1,0 +1,32 @@
+const importUrl = process.env.QIITA_IMPORT_URL || 'http://localhost:4321/api/import/qiita';
+const query = process.env.QIITA_QUERY || 'ポケモン';
+const pages = Number(process.env.QIITA_PAGES || '1');
+const perPage = Number(process.env.QIITA_PER_PAGE || '20');
+const token = process.env.QIITA_TOKEN || '';
+
+async function main() {
+	const response = await fetch(importUrl, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({
+			query,
+			pages,
+			perPage,
+			token,
+		}),
+	});
+
+	const text = await response.text();
+	if (!response.ok) {
+		throw new Error(`Qiita import failed (${response.status}): ${text}`);
+	}
+
+	console.log(text);
+}
+
+main().catch((error) => {
+	console.error(error);
+	process.exit(1);
+});

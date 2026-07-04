@@ -47,11 +47,11 @@ Feel free to check [our documentation](https://docs.astro.build) or jump into ou
 
 ## Environment variables
 
-1. Copy `.env.example` to `.env` and fill in your local Supabase keys (do not commit `.env`).
+1. Copy `.env.example` to `.env` and fill in your local Supabase keys, API key, and model name (do not commit `.env`).
 
 ```powershell
 cp .env.example .env
-# then edit .env to add real keys
+# then edit .env to add real keys and model
 ```
 
 2. If you accidentally committed secrets into the repository, rotate those keys in Supabase and remove them from the repo history.

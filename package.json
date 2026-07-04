@@ -8,6 +8,7 @@
 	"scripts": {
 		"dev": "astro dev",
 		"migrate": "node ./scripts/run-migrations.mjs",
+		"collect:qiita": "node ./scripts/collect-qiita.mjs",
 		"build": "astro build",
 		"preview": "astro build && astro preview",
 		"astro": "astro",
