@@ -4,14 +4,23 @@ import {
   methodNotAllowed,
   readJsonBody,
 } from '../_shared';
-import { fetchAllAnnotations, insertAnnotation } from '../../../lib/db';
+import { insertAnnotation } from '../../../lib/db';
 import type { AnnotationInsert } from '../../../lib/db';
+import { fetchCatalogAnnotations } from '../../../lib/catalog';
 
 export const prerender = false;
 
-export async function GET() {
-  const annotations = await fetchAllAnnotations();
-  return jsonResponse({ data: annotations });
+function parseOptionalNumber(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+export async function GET({ request }: { request: Request }) {
+  const url = new URL(request.url);
+  const itemId = parseOptionalNumber(url.searchParams.get('item_id') ?? url.searchParams.get('itemId'));
+  const annotations = await fetchCatalogAnnotations(itemId);
+  return jsonResponse({ data: annotations, meta: { count: annotations.length } });
 }
 
 export async function POST({ request }: { request: Request }) {

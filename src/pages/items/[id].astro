@@ -1,0 +1,241 @@
+---
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import { fetchCatalogItemById } from '../../lib/catalog';
+
+const id = Number(Astro.params.id);
+const item = Number.isInteger(id) && id > 0 ? await fetchCatalogItemById(id) : null;
+
+if (!item) {
+	Astro.response.status = 404;
+}
+
+const published = item?.published_at ? new Date(item.published_at).toLocaleDateString('ja-JP') : '未設定';
+const updated = item?.updated_at ? new Date(item.updated_at).toLocaleDateString('ja-JP') : '未設定';
+---
+
+<Layout title={item ? `${item.title || `Item ${item.id}`} | Pokemon Research Hub` : 'Item not found'} description="アイテム詳細画面">
+	{item ? (
+		<article class="detail">
+			<header class="panel hero">
+				<div>
+					<p class="eyebrow">Item detail</p>
+					<h1>{item.title || `Item ${item.id}`}</h1>
+					<p class="lead">{item.summary || '要約はまだ登録されていません。'}</p>
+				</div>
+				<div class="actions">
+					<a href="/items">一覧へ戻る</a>
+					{item.external_url ? <a href={item.external_url} target="_blank" rel="noreferrer">外部リンク</a> : null}
+				</div>
+			</header>
+
+			<section class="panel grid">
+				<div>
+					<h2>基本情報</h2>
+					<dl>
+						<div><dt>種別</dt><dd>{item.kind || '未設定'}</dd></div>
+						<div><dt>公開元</dt><dd>{item.source?.name || '未設定'}</dd></div>
+						<div><dt>作成日</dt><dd>{published}</dd></div>
+						<div><dt>更新日</dt><dd>{updated}</dd></div>
+					</dl>
+				</div>
+
+				<div>
+					<h2>タグ</h2>
+					{item.tags.length > 0 ? (
+						<div class="tag-list">
+							{item.tags.map((tag) => <span class="tag">#{tag.name}</span>)}
+						</div>
+					) : (
+						<p>タグは未設定です。</p>
+					)}
+				</div>
+			</section>
+
+			<section class="panel">
+				<h2>注釈</h2>
+				{item.annotations.length > 0 ? (
+					<div class="annotation-list">
+						{item.annotations.map((annotation) => (
+							<article class="annotation">
+								<div class="annotation-head">
+									<strong>{annotation.kind || 'note'}</strong>
+									<span>{annotation.created_at ? new Date(annotation.created_at).toLocaleString('ja-JP') : '未設定'}</span>
+								</div>
+								<pre>{JSON.stringify(annotation.value ?? annotation.provenance ?? {}, null, 2)}</pre>
+							</article>
+						))}
+					</div>
+				) : (
+					<p>注釈はまだ登録されていません。</p>
+				)}
+			</section>
+
+			<section class="panel">
+				<h2>メタデータ</h2>
+				<pre>{JSON.stringify(item.metadata ?? {}, null, 2)}</pre>
+			</section>
+		</article>
+	) : (
+		<section class="panel empty">
+			<h1>Item not found</h1>
+			<p>指定されたアイテムは見つかりませんでした。</p>
+			<a href="/items">一覧へ戻る</a>
+		</section>
+	)}
+</Layout>
+
+<style>
+	.detail {
+		display: grid;
+		gap: 24px;
+	}
+
+	.panel {
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: rgba(8, 15, 29, 0.72);
+		backdrop-filter: blur(16px);
+		box-shadow: 0 20px 45px rgba(0, 0, 0, 0.22);
+		border-radius: 24px;
+		padding: 24px;
+	}
+
+	.hero {
+		display: flex;
+		justify-content: space-between;
+		gap: 20px;
+	}
+
+	.hero h1,
+	h2 {
+		font-family: Georgia, "Times New Roman", serif;
+	}
+
+	.hero h1 {
+		margin: 0;
+		font-size: clamp(2rem, 4vw, 3.2rem);
+	}
+
+	.eyebrow {
+		margin: 0 0 10px;
+		font-size: 0.75rem;
+		letter-spacing: 0.2em;
+		text-transform: uppercase;
+		color: rgba(238, 243, 255, 0.72);
+	}
+
+	.lead {
+		max-width: 68ch;
+		line-height: 1.75;
+		color: rgba(238, 243, 255, 0.82);
+	}
+
+	.actions {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.actions a {
+		padding: 12px 16px;
+		border-radius: 14px;
+		background: linear-gradient(135deg, #f3cf72 0%, #f08c68 100%);
+		color: #111827;
+		font-weight: 700;
+		text-align: center;
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 20px;
+	}
+
+	dl {
+		display: grid;
+		gap: 12px;
+	}
+
+	dl div {
+		display: grid;
+		grid-template-columns: 120px 1fr;
+		gap: 16px;
+	}
+
+	dt {
+		font-size: 0.85rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: rgba(238, 243, 255, 0.72);
+	}
+
+	dd {
+		margin: 0;
+	}
+
+	.tag-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+
+	.tag {
+		padding: 6px 10px;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.06);
+	}
+
+	.annotation-list {
+		display: grid;
+		gap: 14px;
+	}
+
+	.annotation {
+		padding: 16px;
+		border-radius: 18px;
+		background: rgba(255, 255, 255, 0.05);
+	}
+
+	.annotation-head {
+		display: flex;
+		justify-content: space-between;
+		gap: 16px;
+		margin-bottom: 12px;
+		color: rgba(238, 243, 255, 0.8);
+	}
+
+	pre {
+		overflow: auto;
+		padding: 16px;
+		border-radius: 18px;
+		background: rgba(255, 255, 255, 0.05);
+		font-size: 0.9rem;
+		line-height: 1.6;
+	}
+
+	.empty a {
+		display: inline-block;
+		margin-top: 12px;
+		padding: 12px 16px;
+		border-radius: 14px;
+		background: linear-gradient(135deg, #f3cf72 0%, #f08c68 100%);
+		color: #111827;
+		font-weight: 700;
+	}
+
+	@media (max-width: 840px) {
+		.hero,
+		.grid {
+			grid-template-columns: 1fr;
+		}
+
+		.hero {
+			flex-direction: column;
+		}
+
+		dl div {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

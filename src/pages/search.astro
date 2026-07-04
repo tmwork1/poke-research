@@ -1,0 +1,38 @@
+---
+export const prerender = false;
+
+import Layout from '../layouts/Layout.astro';
+import CatalogPage from '../components/CatalogPage.astro';
+import { fetchCatalogItems, fetchCatalogSources, fetchCatalogTags } from '../lib/catalog';
+
+const url = new URL(Astro.request.url);
+const filters = {
+	q: url.searchParams.get('q') ?? '',
+	kind: url.searchParams.get('kind') ?? '',
+	tag: url.searchParams.get('tag') ?? '',
+	sourceId: url.searchParams.get('sourceId') ?? '',
+};
+
+const [items, tags, sources] = await Promise.all([
+	fetchCatalogItems({
+		q: filters.q || undefined,
+		kind: filters.kind || undefined,
+		tag: filters.tag || undefined,
+		sourceId: filters.sourceId ? Number(filters.sourceId) : undefined,
+	}),
+	fetchCatalogTags(),
+	fetchCatalogSources(),
+]);
+---
+
+<Layout title="Search | Pokemon Research Hub" description="検索結果画面">
+	<CatalogPage
+		title="検索結果"
+		lead="全文検索とタグ検索を組み合わせた結果を確認できます。条件の変更はそのまま再検索になります。"
+		basePath="/search"
+		items={items}
+		tags={tags}
+		sources={sources}
+		filters={filters}
+	/>
+</Layout>

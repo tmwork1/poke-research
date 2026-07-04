@@ -1,0 +1,372 @@
+---
+import type { CatalogItem } from '../lib/catalog';
+import type { Source, Tag } from '../lib/db-types';
+
+interface Props {
+	title: string;
+	lead: string;
+	basePath: string;
+	items: CatalogItem[];
+	tags: Tag[];
+	sources: Source[];
+	filters: {
+		q: string;
+		kind: string;
+		tag: string;
+		sourceId: string;
+	};
+}
+
+const { title, lead, basePath, items, tags, sources, filters } = Astro.props as Props;
+
+const kinds = [
+	{ value: '', label: 'すべて' },
+	{ value: 'article', label: '記事' },
+	{ value: 'library', label: 'ライブラリ' },
+	{ value: 'github', label: 'GitHub' },
+	{ value: 'paper', label: '論文' },
+	{ value: 'video', label: '動画' },
+];
+
+const formatDate = new Intl.DateTimeFormat('ja-JP', {
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit',
+});
+
+function formatDateLabel(value?: string | null) {
+	if (!value) return '未設定';
+	return formatDate.format(new Date(value));
+}
+---
+
+<section class="catalog">
+	<header class="hero">
+		<div>
+			<p class="eyebrow">Browse and search</p>
+			<h1>{title}</h1>
+			<p class="lead">{lead}</p>
+		</div>
+		<div class="summary-grid" aria-label="Catalog summary">
+			<div>
+				<strong>{items.length}</strong>
+				<span>Items</span>
+			</div>
+			<div>
+				<strong>{tags.length}</strong>
+				<span>Tags</span>
+			</div>
+			<div>
+				<strong>{sources.length}</strong>
+				<span>Sources</span>
+			</div>
+		</div>
+	</header>
+
+	<form class="filters" method="get" action={basePath}>
+		<label>
+			<span>キーワード</span>
+			<input type="search" name="q" value={filters.q} placeholder="例: ダメージ計算" />
+		</label>
+		<label>
+			<span>種別</span>
+			<select name="kind">
+				{ kinds.map((kind) => <option value={kind.value} selected={filters.kind === kind.value}>{kind.label}</option>) }
+			</select>
+		</label>
+		<label>
+			<span>タグ</span>
+			<select name="tag">
+				<option value="" selected={!filters.tag}>すべて</option>
+				{tags.map((tag) => <option value={tag.name} selected={filters.tag === tag.name}>{tag.name}</option>)}
+			</select>
+		</label>
+		<label>
+			<span>公開元</span>
+			<select name="sourceId">
+				<option value="" selected={!filters.sourceId}>すべて</option>
+				{sources.map((source) => <option value={source.id} selected={filters.sourceId === String(source.id)}>{source.name}</option>)}
+			</select>
+		</label>
+		<div class="actions">
+			<button type="submit">絞り込む</button>
+			<a href={basePath}>条件をリセット</a>
+		</div>
+	</form>
+
+	{filters.q || filters.kind || filters.tag || filters.sourceId ? (
+		<p class="active-filters">
+			現在の条件: {filters.q ? `キーワード「${filters.q}」` : 'キーワードなし'} / {filters.kind || 'すべて'} / {filters.tag || 'すべて'} / {filters.sourceId || 'すべて'}
+		</p>
+	) : null}
+
+	{items.length > 0 ? (
+		<div class="grid">
+			{items.map((item) => (
+				<article class="card">
+					<div class="card-head">
+						<span class="kind">{item.kind || 'untyped'}</span>
+						<a class="item-title" href={`/items/${item.id}`}>{item.title || `Item ${item.id}`}</a>
+					</div>
+					<p class="summary">{item.summary || '要約はまだ登録されていません。'}</p>
+					<div class="meta-row">
+						<span>{item.source?.name || '未設定の出典'}</span>
+						<span>{formatDateLabel(item.created_at)}</span>
+					</div>
+					{item.tags.length > 0 ? (
+						<div class="tag-list">
+							{item.tags.map((tag) => <span class="tag">#{tag.name}</span>)}
+						</div>
+					) : (
+						<p class="empty-tags">タグ未設定</p>
+					)}
+					<div class="card-actions">
+						<a href={`/items/${item.id}`}>詳細を見る</a>
+						{item.external_url ? <a href={item.external_url} target="_blank" rel="noreferrer">外部リンク</a> : null}
+					</div>
+				</article>
+			))}
+		</div>
+	) : (
+		<div class="empty-state">
+			<h2>一致するアイテムがありません</h2>
+			<p>条件を緩めるか、キーワードを変えて再検索してください。</p>
+		</div>
+	)}
+</section>
+
+<style>
+	.catalog {
+		display: grid;
+		gap: 24px;
+	}
+
+	.hero,
+	.filters,
+	.card,
+	.empty-state {
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: rgba(8, 15, 29, 0.72);
+		backdrop-filter: blur(16px);
+		box-shadow: 0 20px 45px rgba(0, 0, 0, 0.22);
+	}
+
+	.hero {
+		display: flex;
+		justify-content: space-between;
+		gap: 20px;
+		padding: 28px;
+		border-radius: 28px;
+	}
+
+	.hero h1 {
+		margin: 0;
+		font-family: Georgia, "Times New Roman", serif;
+		font-size: clamp(2rem, 4vw, 3.4rem);
+	}
+
+	.eyebrow {
+		margin: 0 0 10px;
+		font-size: 0.75rem;
+		letter-spacing: 0.2em;
+		text-transform: uppercase;
+		color: rgba(238, 243, 255, 0.72);
+	}
+
+	.lead {
+		max-width: 62ch;
+		margin: 12px 0 0;
+		color: rgba(238, 243, 255, 0.82);
+		line-height: 1.75;
+	}
+
+	.summary-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(80px, 1fr));
+		gap: 12px;
+		align-self: end;
+	}
+
+	.summary-grid div {
+		padding: 16px;
+		border-radius: 18px;
+		background: rgba(255, 255, 255, 0.05);
+		text-align: center;
+	}
+
+	.summary-grid strong {
+		display: block;
+		font-size: 1.8rem;
+	}
+
+	.summary-grid span {
+		color: rgba(238, 243, 255, 0.72);
+		font-size: 0.85rem;
+	}
+
+	.filters {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 16px;
+		padding: 20px;
+		border-radius: 24px;
+	}
+
+	.filters label {
+		display: grid;
+		gap: 8px;
+	}
+
+	.filters span {
+		font-size: 0.8rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: rgba(238, 243, 255, 0.72);
+	}
+
+	.filters input,
+	.filters select {
+		width: 100%;
+		box-sizing: border-box;
+		padding: 12px 14px;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 14px;
+		background: rgba(255, 255, 255, 0.05);
+		color: inherit;
+	}
+
+	.actions {
+		display: flex;
+		align-items: end;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+
+	.actions button,
+	.actions a,
+	.card-actions a {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		padding: 12px 16px;
+		border-radius: 14px;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+	}
+
+	.actions button {
+		background: linear-gradient(135deg, #f3cf72 0%, #f08c68 100%);
+		color: #111827;
+		font-weight: 700;
+	}
+
+	.actions a,
+	.card-actions a {
+		background: rgba(255, 255, 255, 0.05);
+	}
+
+	.active-filters {
+		margin: 0;
+		padding: 16px 20px;
+		border-left: 4px solid #f3cf72;
+		border-radius: 16px;
+		background: rgba(255, 255, 255, 0.04);
+		color: rgba(238, 243, 255, 0.9);
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 18px;
+	}
+
+	.card {
+		display: grid;
+		gap: 14px;
+		padding: 22px;
+		border-radius: 22px;
+	}
+
+	.card-head {
+		display: grid;
+		gap: 8px;
+	}
+
+	.kind {
+		font-size: 0.72rem;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: #f3cf72;
+	}
+
+	.item-title {
+		font-family: Georgia, "Times New Roman", serif;
+		font-size: 1.45rem;
+		font-weight: 700;
+		line-height: 1.3;
+	}
+
+	.summary {
+		margin: 0;
+		color: rgba(238, 243, 255, 0.82);
+		line-height: 1.7;
+	}
+
+	.meta-row,
+	.card-actions,
+	.tag-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+
+	.meta-row {
+		font-size: 0.9rem;
+		color: rgba(238, 243, 255, 0.72);
+	}
+
+	.tag-list {
+		margin-top: 4px;
+	}
+
+	.tag,
+	.empty-tags {
+		padding: 6px 10px;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.06);
+		font-size: 0.85rem;
+	}
+
+	.empty-tags {
+		color: rgba(238, 243, 255, 0.68);
+	}
+
+	.card-actions {
+		margin-top: 4px;
+	}
+
+	.empty-state {
+		padding: 28px;
+		border-radius: 24px;
+	}
+
+	.empty-state h2 {
+		margin-top: 0;
+	}
+
+	@media (max-width: 960px) {
+		.hero,
+		.filters,
+		.grid {
+			grid-template-columns: 1fr;
+		}
+
+		.hero {
+			flex-direction: column;
+		}
+
+		.summary-grid {
+			width: 100%;
+		}
+	}
+</style>

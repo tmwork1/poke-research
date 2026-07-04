@@ -4,14 +4,41 @@ import {
   methodNotAllowed,
   readJsonBody,
 } from '../_shared';
-import { fetchAllItems, insertItem } from '../../../lib/db';
+import { insertItem } from '../../../lib/db';
 import type { ItemInsert } from '../../../lib/db';
+import { fetchCatalogItems } from '../../../lib/catalog';
 
 export const prerender = false;
 
-export async function GET() {
-  const items = await fetchAllItems();
-  return jsonResponse({ data: items });
+function parseOptionalNumber(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+export async function GET({ request }: { request: Request }) {
+  const url = new URL(request.url);
+  const items = await fetchCatalogItems({
+    q: url.searchParams.get('q') ?? undefined,
+    kind: url.searchParams.get('kind') ?? undefined,
+    tag: url.searchParams.get('tag') ?? undefined,
+    sourceId: parseOptionalNumber(url.searchParams.get('sourceId')),
+    limit: parseOptionalNumber(url.searchParams.get('limit')),
+  });
+
+  return jsonResponse({
+    data: items,
+    meta: {
+      count: items.length,
+      filters: {
+        q: url.searchParams.get('q') ?? '',
+        kind: url.searchParams.get('kind') ?? '',
+        tag: url.searchParams.get('tag') ?? '',
+        sourceId: url.searchParams.get('sourceId') ?? '',
+        limit: url.searchParams.get('limit') ?? '',
+      },
+    },
+  });
 }
 
 export async function POST({ request }: { request: Request }) {

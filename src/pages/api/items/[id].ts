@@ -9,6 +9,7 @@ import {
 } from '../_shared';
 import { deleteItem, getItemById, updateItem } from '../../../lib/db';
 import type { ItemUpdate } from '../../../lib/db';
+import { fetchCatalogItemById } from '../../../lib/catalog';
 
 export const prerender = false;
 
@@ -16,7 +17,7 @@ export async function GET({ params }: { params: Record<string, string | undefine
   const id = parseIdParam(params);
   if (!id) return badRequest('valid id is required');
 
-  const item = await getItemById(id);
+  const item = await fetchCatalogItemById(id);
   if (!item) return notFound('item not found');
   return jsonResponse({ data: item });
 }

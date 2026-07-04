@@ -1,4 +1,4 @@
-import supabase from './supabase';
+import { getSupabaseClient } from './supabase';
 import type { Annotation, Item, Source } from './db-types';
 
 export const tables = {
@@ -21,12 +21,14 @@ export type AnnotationInsert = Omit<Annotation, 'id' | 'created_at'>;
 export type AnnotationUpdate = Partial<AnnotationInsert>;
 
 async function selectAll<T>(table: string): Promise<T[]> {
+  const supabase = await getSupabaseClient();
   const { data, error } = await supabase.from<T>(table).select('*');
   if (error) throw error;
   return data || [];
 }
 
 async function selectById<T extends EntityWithId>(table: string, id: number): Promise<T | null> {
+  const supabase = await getSupabaseClient();
   const { data, error } = await supabase
     .from<T>(table)
     .select('*')
@@ -40,6 +42,7 @@ async function selectById<T extends EntityWithId>(table: string, id: number): Pr
 }
 
 async function insertOne<T>(table: string, row: object): Promise<T> {
+  const supabase = await getSupabaseClient();
   const { data, error } = await supabase
     .from<T>(table)
     .insert([row])
@@ -50,6 +53,7 @@ async function insertOne<T>(table: string, row: object): Promise<T> {
 }
 
 async function updateOne<T extends EntityWithId>(table: string, id: number, row: object): Promise<T | null> {
+  const supabase = await getSupabaseClient();
   const { data, error } = await supabase
     .from<T>(table)
     .update(row)
@@ -64,6 +68,7 @@ async function updateOne<T extends EntityWithId>(table: string, id: number, row:
 }
 
 async function deleteOne<T extends EntityWithId>(table: string, id: number): Promise<T | null> {
+  const supabase = await getSupabaseClient();
   const { data, error } = await supabase
     .from<T>(table)
     .delete()
