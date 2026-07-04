@@ -4,13 +4,21 @@ import { handle } from '@astrojs/cloudflare/handler';
 import { env } from 'cloudflare:workers';
 
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
+import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
+
+// wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
+const ZENN_CRON = '30 18 * * *';
 
 export default {
 	async fetch(request, ctxEnv, ctx) {
 		return handle(request, ctxEnv, ctx);
 	},
-	async scheduled(_controller, _ctxEnv, ctx) {
-		ctx.waitUntil(runScheduledQiitaImport());
+	async scheduled(controller, _ctxEnv, ctx) {
+		if (controller.cron === ZENN_CRON) {
+			ctx.waitUntil(runScheduledZennImport());
+		} else {
+			ctx.waitUntil(runScheduledQiitaImport());
+		}
 	},
 } satisfies ExportedHandler<Env>;
 
@@ -29,5 +37,22 @@ async function runScheduledQiitaImport(): Promise<void> {
 		});
 	} catch (error) {
 		console.error('[cron:qiita] sync failed', error);
+	}
+}
+
+async function runScheduledZennImport(): Promise<void> {
+	// Qiita 同様、記事単位の失敗は syncZennCollection 内で skipped として吸収される。
+	// 失敗時は次回 cron 実行を待つか、POST /api/import/zenn を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
+	try {
+		const result = await syncZennCollection(resolveZennSyncOptions(env));
+		console.log('[cron:zenn] sync completed', {
+			topic: result.topic,
+			fetched: result.fetched,
+			inserted: result.inserted,
+			updated: result.updated,
+			skipped: result.skipped,
+		});
+	} catch (error) {
+		console.error('[cron:zenn] sync failed', error);
 	}
 }

@@ -62,3 +62,11 @@ cp .env.example .env
 - 手動で同じ処理を起動したい場合は、ローカルなら `npm run collect:qiita`、デプロイ後は `POST /api/import/qiita` を叩く。`sources.origin_url` / `items.external_url` の UNIQUE 制約に基づく upsert なので、何度実行しても重複行は増えない（冪等）。
 - 失敗時: `wrangler tail` や Cloudflare ダッシュボードのログで `[cron:qiita] sync failed` を確認する。記事単位の失敗はバッチを止めずに `skipped` として結果に積まれるため、ログに出る全体失敗は Qiita API 全断や Supabase 未接続など致命的なケースのみ。復旧を確認したら、次回 cron を待つか上記の手動実行で同じ内容を再実行すればよい。
 
+## Zenn 収集ジョブ
+
+- Zenn には公式 API が無いため、実際のサイトで使われている非公式エンドポイント（`/api/articles?topicname=`、`/api/articles/{slug}`）を利用している。仕様変更で壊れる可能性がある点に留意する。
+- 収集条件はキーワードではなく `topic`（Zenn のトピックスラッグ、既定は `pokemon`）で絞り込む。Zenn の記事一覧 API はキーワード全文検索に対応していないため。
+- 本番では Cloudflare Cron Triggers（`wrangler.jsonc` の `triggers.crons` に Qiita とは別枠で追加、既定は毎日 18:30 UTC = JST 翌 3:30）が `src/worker.ts` の `scheduled` ハンドラを起動する。`controller.cron` の値で Qiita/Zenn どちらのジョブかを振り分けている。
+- 手動で起動したい場合は、ローカルなら `npm run collect:zenn`、デプロイ後は `POST /api/import/zenn` を叩く。Qiita と同様に `external_url` の UNIQUE 制約に基づく upsert なので、何度実行しても重複行は増えない（冪等）。
+- 失敗時: `wrangler tail` などで `[cron:zenn] sync failed` を確認する。記事単位（詳細取得・AI レビュー・DB 書き込みのいずれか）の失敗は `skipped` に吸収されるため、ジョブ全体が落ちるのは Zenn 側の仕様変更やレート制限など致命的なケースのみ。復旧を確認したら、次回 cron を待つか手動実行で再実行すればよい。
+
