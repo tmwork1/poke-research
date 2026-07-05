@@ -14,6 +14,7 @@
 		"collect:zenn": "node ./scripts/collect/collect-zenn.mjs",
 		"collect:note": "node ./scripts/collect/collect-note.mjs",
 		"collect:blog": "node ./scripts/collect/collect-blog.mjs",
+		"collect:backfill": "node ./scripts/collect/backfill.mjs",
 		"eval:collection": "node ./scripts/eval/eval-collection.mjs",
 		"eval:search": "node ./scripts/eval/eval-search.mjs",
 		"eval:filter": "node ./scripts/eval/eval-filter.mjs",
