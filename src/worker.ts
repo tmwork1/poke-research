@@ -3,6 +3,7 @@
 import { handle } from '@astrojs/cloudflare/handler';
 import { env } from 'cloudflare:workers';
 
+import { sendOperationalAlert } from './lib/notify';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
 import { resolveNoteSyncOptions, syncNoteCollection } from './lib/importers/note';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
@@ -45,6 +46,8 @@ async function runScheduledQiitaImport(): Promise<void> {
 		});
 	} catch (error) {
 		console.error('[cron:qiita] sync failed', error);
+		// ログは Workers 内にしか残らず誰も気づけないため、Webhook にも通知する。
+		await sendOperationalAlert(env, 'Qiita 収集ジョブが失敗しました', error);
 	}
 }
 
@@ -62,6 +65,7 @@ async function runScheduledZennImport(): Promise<void> {
 		});
 	} catch (error) {
 		console.error('[cron:zenn] sync failed', error);
+		await sendOperationalAlert(env, 'Zenn 収集ジョブが失敗しました', error);
 	}
 }
 
@@ -79,6 +83,7 @@ async function runScheduledNoteImport(): Promise<void> {
 		});
 	} catch (error) {
 		console.error('[cron:note] sync failed', error);
+		await sendOperationalAlert(env, 'note 収集ジョブが失敗しました', error);
 	}
 }
 
@@ -98,5 +103,6 @@ async function runScheduledBlogImport(): Promise<void> {
 		});
 	} catch (error) {
 		console.error('[cron:blog] sync failed', error);
+		await sendOperationalAlert(env, 'ブログ（Brave Search）収集ジョブが失敗しました', error);
 	}
 }
