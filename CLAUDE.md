@@ -6,6 +6,16 @@
 
 変更は最小限で、根本原因に対処する。既存の設計や命名、データモデル、API 形状をむやみに変えず、関連しない不具合の修正は混ぜない。
 
+## Git
+
+`src/`・`migrations/`・`wrangler.jsonc`・`package.json`・`scripts/` など実行に関わる変更は、`main` から作業用ブランチ（`<type>/<topic>`、`type` はコミットと同じ `feat`/`fix`/`docs`/`chore`/`refactor` 等）を切って行う。`docs/` 配下や進捗ログなど、ビルド・デプロイに影響しない変更は `main` への直接コミットでよい。
+
+作業がまとまったらブランチを push して `main` へのプルリクエストを作成し、CI（`.github/workflows/ci.yml` の `build`/`migrations`）が通ることを確認してからマージする。マイグレーションを含む変更は、マージ（＝`main` への push、Cloudflare の自動デプロイが起動する）より先に本番 Supabase へ適用する（[docs/reference/operations.md](docs/reference/operations.md) の手順に従う）。
+
+マージ方法はブランチ内のコミットをそのまま残す通常のマージを基本とし、単一コミットで完結する小さな変更は Squash merge でもよい。マージ後はブランチを削除する。
+
+`main` への push（PR のマージを含む）や本番 Supabase・Cloudflare への操作は、実行前に必ずユーザーに確認する。
+
 ## Development
 
 AI エージェントの利用モデルは `.env` の `OPENAI_MODEL` で指定する。初期値は `gpt-5-nano` を使う。
