@@ -18,6 +18,17 @@ const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(sha
 <html lang="ja">
 	<head>
 		<meta charset="utf-8" />
+		<script is:inline>
+			(function () {
+				try {
+					if (localStorage.getItem('pokeresearch:compact-view') === '1') {
+						document.documentElement.classList.add('compact-view');
+					}
+				} catch (error) {
+					// localStorageが使用できない環境では通常表示のままにする
+				}
+			})();
+		</script>
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="icon" href="/favicon.ico" />

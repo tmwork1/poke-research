@@ -4,6 +4,7 @@ import type { Source } from '../lib/db-types';
 import ItemCard from './ItemCard.astro';
 import Pagination from './Pagination.astro';
 import TagCloud from './TagCloud.astro';
+import CompactToggle from './CompactToggle.astro';
 
 interface Props {
 	title: string;
@@ -68,7 +69,12 @@ function toggleSource(sourceId: number) {
 ---
 
 <section class="catalog">
-	{eyebrow ? <p class="eyebrow">{eyebrow}</p> : null}
+	{eyebrow ? (
+		<div class="eyebrow-row">
+			<p class="eyebrow">{eyebrow}</p>
+			<CompactToggle />
+		</div>
+	) : null}
 
 	<section class="panel">
 		<form class="filters" method="get" action={basePath}>
@@ -141,8 +147,16 @@ function toggleSource(sourceId: number) {
 		box-shadow: var(--shadow);
 	}
 
-	.eyebrow {
+	.eyebrow-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
 		margin: 0 0 4px;
+	}
+
+	.eyebrow {
+		margin: 0;
 		font-size: 0.75rem;
 		letter-spacing: 0.16em;
 		text-transform: uppercase;

@@ -4,6 +4,7 @@ export const prerender = false;
 import Layout from '../layouts/Layout.astro';
 import ItemCard from '../components/ItemCard.astro';
 import TagCloud from '../components/TagCloud.astro';
+import CompactToggle from '../components/CompactToggle.astro';
 import { fetchBookmarkCounts, fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchTopTags, type CatalogItem, type CatalogSort } from '../lib/catalog';
 import { parseOptionalPositiveInteger } from '../lib/params';
 
@@ -52,7 +53,10 @@ try {
 				データの取得に失敗しました。しばらくしてから再度お試しください。
 			</div>
 		)}
-		<p class="eyebrow">Recent items</p>
+		<div class="eyebrow-row">
+			<p class="eyebrow">Recent items</p>
+			<CompactToggle />
+		</div>
 		<section class="panel">
 			<div class="tag-filter">
 				<TagCloud topTags={topTags} activeTag={activeTag} buildUrl={buildUrl} />
@@ -89,8 +93,16 @@ try {
 		box-shadow: var(--shadow);
 	}
 
-	.eyebrow {
+	.eyebrow-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
 		margin: 0 0 10px;
+	}
+
+	.eyebrow {
+		margin: 0;
 		font-size: 0.75rem;
 		letter-spacing: 0.16em;
 		text-transform: uppercase;
