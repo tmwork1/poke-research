@@ -154,7 +154,7 @@ if (user) {
 
 	.cards {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: 1fr;
 		gap: 18px;
 	}
 
@@ -199,11 +199,6 @@ if (user) {
 		box-shadow: 0 1px 3px rgba(60, 64, 67, 0.25);
 	}
 
-	@media (max-width: 960px) {
-		.cards {
-			grid-template-columns: 1fr;
-		}
-	}
 </style>
 
 <script>

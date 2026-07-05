@@ -248,7 +248,7 @@ function toggleSource(sourceId: number) {
 
 	.grid {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: 1fr;
 		gap: 18px;
 	}
 
@@ -261,11 +261,6 @@ function toggleSource(sourceId: number) {
 		margin-top: 0;
 	}
 
-	@media (max-width: 960px) {
-		.grid {
-			grid-template-columns: 1fr;
-		}
-	}
 </style>
 
 <script>

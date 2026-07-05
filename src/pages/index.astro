@@ -127,7 +127,7 @@ try {
 
 	.cards {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: 1fr;
 		gap: 16px;
 	}
 
@@ -143,11 +143,6 @@ try {
 		color: var(--text-muted);
 	}
 
-	@media (max-width: 960px) {
-		.cards {
-			grid-template-columns: 1fr;
-		}
-	}
 </style>
 
 <script>
