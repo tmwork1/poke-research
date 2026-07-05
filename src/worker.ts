@@ -3,6 +3,7 @@
 import { handle } from '@astrojs/cloudflare/handler';
 import { env } from 'cloudflare:workers';
 
+import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
 import { resolveNoteSyncOptions, syncNoteCollection } from './lib/importers/note';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
 import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
@@ -10,6 +11,7 @@ import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn
 // wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
 const ZENN_CRON = '30 18 * * *';
 const NOTE_CRON = '0 19 * * *';
+const BLOG_CRON = '30 19 * * *';
 
 export default {
 	async fetch(request, ctxEnv, ctx) {
@@ -20,6 +22,8 @@ export default {
 			ctx.waitUntil(runScheduledZennImport());
 		} else if (controller.cron === NOTE_CRON) {
 			ctx.waitUntil(runScheduledNoteImport());
+		} else if (controller.cron === BLOG_CRON) {
+			ctx.waitUntil(runScheduledBlogImport());
 		} else {
 			ctx.waitUntil(runScheduledQiitaImport());
 		}
@@ -75,5 +79,24 @@ async function runScheduledNoteImport(): Promise<void> {
 		});
 	} catch (error) {
 		console.error('[cron:note] sync failed', error);
+	}
+}
+
+async function runScheduledBlogImport(): Promise<void> {
+	// 他インポーター同様、記事単位の失敗は syncBlogCollection 内で skipped として吸収される。
+	// 失敗時は次回 cron 実行を待つか、POST /api/import/blog を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
+	try {
+		const result = await syncBlogCollection(resolveBlogSyncOptions(env));
+		console.log('[cron:blog] sync completed', {
+			queries: result.queries,
+			pages: result.pages,
+			requestsUsed: result.requestsUsed,
+			fetched: result.fetched,
+			inserted: result.inserted,
+			updated: result.updated,
+			skipped: result.skipped,
+		});
+	} catch (error) {
+		console.error('[cron:blog] sync failed', error);
 	}
 }
