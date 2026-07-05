@@ -66,7 +66,10 @@ const shareUrl = item.external_url
 			</div>
 		</div>
 	</div>
-	<p class="summary">{item.summary || '要約はまだ登録されていません。'}</p>
+	<p class="summary">
+		{item.summary ? <span class="ai-badge" title="この要約はAIによる自動生成です">AI要約</span> : null}
+		{item.summary || '要約はまだ登録されていません。'}
+	</p>
 	<div class="tag-row">
 		{item.tags.length > 0 ? (
 			<div class="tag-list">
@@ -182,6 +185,20 @@ const shareUrl = item.external_url
 		margin: 0;
 		color: var(--text-muted);
 		line-height: 1.7;
+	}
+
+	/* 要約がAI生成であることの出所表示（provenance 重視の方針に合わせる）。 */
+	.ai-badge {
+		display: inline-block;
+		margin-right: 6px;
+		padding: 1px 8px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		font-size: 0.7rem;
+		line-height: 1.6;
+		color: var(--text-muted);
+		background: var(--bg-soft);
+		vertical-align: 2px;
 	}
 
 	:global(.compact-view) .summary {
