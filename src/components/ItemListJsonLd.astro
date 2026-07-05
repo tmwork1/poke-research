@@ -1,0 +1,28 @@
+---
+// 一覧ページ（トップ・検索・タグ）用の ItemList 構造化データ。
+// 各アイテムは外部記事へのリンクなので、url は external_url をそのまま使う。
+import type { CatalogItem } from '../lib/catalog';
+
+interface Props {
+	items: CatalogItem[];
+}
+
+const { items } = Astro.props as Props;
+
+const entries = items
+	.filter((item) => Boolean(item.external_url))
+	.map((item, index) => ({
+		'@type': 'ListItem',
+		position: index + 1,
+		url: item.external_url,
+		name: item.title ?? undefined,
+	}));
+
+const jsonLd = JSON.stringify({
+	'@context': 'https://schema.org',
+	'@type': 'ItemList',
+	itemListElement: entries,
+});
+---
+
+{entries.length > 0 ? <script type="application/ld+json" set:html={jsonLd} /> : null}

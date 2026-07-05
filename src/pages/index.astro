@@ -3,6 +3,7 @@ export const prerender = false;
 
 import Layout from '../layouts/Layout.astro';
 import ItemCard from '../components/ItemCard.astro';
+import ItemListJsonLd from '../components/ItemListJsonLd.astro';
 import TagCloud from '../components/TagCloud.astro';
 import CompactToggle from '../components/CompactToggle.astro';
 import { fetchBookmarkCounts, fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchTopTags, type CatalogItem, type CatalogSort } from '../lib/catalog';
@@ -48,6 +49,7 @@ try {
 
 <Layout title="PokeResearch" description="ポケモンプログラミング情報ハブのトップページ" loggedIn={Boolean(user)}>
 	<section class="home">
+		<ItemListJsonLd items={recentItems} />
 		{loadError && (
 			<div class="empty" role="alert">
 				データの取得に失敗しました。しばらくしてから再度お試しください。

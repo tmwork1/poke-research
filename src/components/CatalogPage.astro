@@ -2,6 +2,7 @@
 import type { CatalogItem, TagUsage } from '../lib/catalog';
 import type { Source } from '../lib/db-types';
 import ItemCard from './ItemCard.astro';
+import ItemListJsonLd from './ItemListJsonLd.astro';
 import Pagination from './Pagination.astro';
 import TagCloud from './TagCloud.astro';
 import CompactToggle from './CompactToggle.astro';
@@ -69,6 +70,7 @@ function toggleSource(sourceId: number) {
 ---
 
 <section class="catalog">
+	<ItemListJsonLd items={items} />
 	{eyebrow ? (
 		<div class="eyebrow-row">
 			<p class="eyebrow">{eyebrow}</p>
