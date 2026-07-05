@@ -170,24 +170,12 @@ export async function syncItemTags(itemId: number, tagNames: string[], tagLabels
 export async function fetchTopTagNames(limit = 40): Promise<string[]> {
 	// AIレビューがタグを新規発明しがちな問題を減らすため、使用頻度の高い既存タグを
 	// 事前に取得し、判定プロンプトへの再利用ヒントとして渡す。
+	// 集計は DB 側の RPC（migrations/012 の top_tags）で行う。
 	const supabase = await getSupabaseClient();
-	const { data, error } = await supabase
-		.from('item_tags')
-		.select('tag:tags(name)');
+	const { data, error } = await supabase.rpc('top_tags', { tag_limit: limit });
 	if (error) throw error;
 
-	const counts = new Map<string, number>();
-	for (const row of (data ?? []) as Array<{ tag?: { name?: string } | { name?: string }[] | null }>) {
-		const rawTag = row.tag;
-		const tag = Array.isArray(rawTag) ? rawTag[0] : rawTag;
-		if (!tag?.name) continue;
-		counts.set(tag.name, (counts.get(tag.name) ?? 0) + 1);
-	}
-
-	return [...counts.entries()]
-		.sort((a, b) => b[1] - a[1])
-		.slice(0, limit)
-		.map(([name]) => name);
+	return ((data ?? []) as Array<{ name: string }>).map((row) => row.name);
 }
 
 export interface SourceUpsertPayload {
