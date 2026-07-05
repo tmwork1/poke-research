@@ -257,28 +257,16 @@ export async function fetchCatalogItemsPage(
 }
 
 export async function fetchTopTags(limit = 20): Promise<TagUsage[]> {
+	// 集計は DB 側の RPC（migrations/012 の top_tags）で行い、行の全取得を避ける。
 	const supabase = await getSupabaseClient();
-	const { data, error } = await supabase.from('item_tags').select('tag:tags(id, name)');
+	const { data, error } = await supabase.rpc('top_tags', { tag_limit: limit });
 	if (error) throw error;
 
-	const counts = new Map<number, TagUsage>();
-	for (const row of (data ?? []) as Array<{ tag?: Tag | Tag[] | null }>) {
-		const rawTag = row.tag;
-		const tags = Array.isArray(rawTag) ? rawTag : rawTag ? [rawTag] : [];
-		for (const tag of tags) {
-			if (!tag?.id || !tag?.name) continue;
-			const existing = counts.get(tag.id);
-			if (existing) {
-				existing.count += 1;
-			} else {
-				counts.set(tag.id, { id: tag.id, name: tag.name, count: 1 });
-			}
-		}
-	}
-
-	return [...counts.values()]
-		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-		.slice(0, limit);
+	return ((data ?? []) as Array<{ id: number; name: string; count: number | string }>).map((row) => ({
+		id: row.id,
+		name: row.name,
+		count: Number(row.count),
+	}));
 }
 
 export async function fetchCatalogItemById(id: number): Promise<ItemDetail | null> {
@@ -305,12 +293,12 @@ export async function fetchBookmarkCounts(itemIds: number[]): Promise<Map<number
 	if (itemIds.length === 0) return counts;
 
 	const supabase = await getSupabaseClient();
-	// PostgREST は item 別の group-by count を直接返せないため、行を取得してJS側で集計する。
-	const { data, error } = await supabase.from('bookmarks').select('item_id').in('item_id', itemIds);
+	// 集計は DB 側の RPC（migrations/012 の bookmark_counts）で行い、行の全取得を避ける。
+	const { data, error } = await supabase.rpc('bookmark_counts', { target_item_ids: itemIds });
 	if (error) throw error;
 
-	for (const row of (data ?? []) as Array<{ item_id: number }>) {
-		counts.set(row.item_id, (counts.get(row.item_id) ?? 0) + 1);
+	for (const row of (data ?? []) as Array<{ item_id: number; count: number | string }>) {
+		counts.set(row.item_id, Number(row.count));
 	}
 	return counts;
 }
