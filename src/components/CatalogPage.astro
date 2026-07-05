@@ -101,6 +101,7 @@ function toggleSource(sourceId: number) {
 
 			<div class="control-row">
 				<select name="sort" class="sort-select" aria-label="並び順">
+					{filters.q ? <option value="relevance" selected={filters.sort === 'relevance'}>関連度順</option> : null}
 					<option value="new" selected={filters.sort === 'new'}>新着順</option>
 					<option value="popular" selected={filters.sort === 'popular'}>人気順</option>
 					<option value="oldest" selected={filters.sort === 'oldest'}>古い順</option>
