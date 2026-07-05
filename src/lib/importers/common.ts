@@ -40,6 +40,47 @@ export async function mapWithConcurrency<T, R>(
 	return results;
 }
 
+function levenshteinDistance(a: string, b: string): number {
+	// タグ名は短い（高々数十文字）ため、素朴な DP で十分。サロゲートペアを壊さないよう
+	// コードポイント単位で比較する。
+	const s = [...a];
+	const t = [...b];
+	if (s.length === 0) return t.length;
+	if (t.length === 0) return s.length;
+
+	let previous = Array.from({ length: t.length + 1 }, (_, i) => i);
+	for (let i = 1; i <= s.length; i += 1) {
+		const current = [i];
+		for (let j = 1; j <= t.length; j += 1) {
+			const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+			current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
+		}
+		previous = current;
+	}
+	return previous[t.length];
+}
+
+export function findNearDuplicateTag<T extends { name: string }>(tagName: string, existingTags: T[]): T | null {
+	// 「ポケモンカート」問題（濁点・半濁点の打ち間違い）対策として、編集距離1の既存タグが
+	// あれば新規作成せずそちらへ寄せる。python2/python3 のような正当な近接タグを巻き込まない
+	// よう、非ASCII文字（日本語）を含む5文字以上のタグに限定し、差分が数字のみの場合は除外する。
+	const chars = [...tagName];
+	if (chars.length < 5) return null;
+	if (!chars.some((ch) => ch.charCodeAt(0) > 0x7f)) return null;
+
+	for (const existing of existingTags) {
+		if (existing.name === tagName) continue;
+		if (Math.abs([...existing.name].length - chars.length) > 1) continue;
+		if (levenshteinDistance(tagName, existing.name) !== 1) continue;
+		// 数字部分だけの違い（例: 第8世代/第9世代、数字の有無）はバージョン・世代違いの
+		// 可能性が高いので別タグのまま温存する。
+		const hasDigit = /\d/.test(tagName) || /\d/.test(existing.name);
+		if (hasDigit && tagName.replace(/\d/g, '') === existing.name.replace(/\d/g, '')) continue;
+		return existing;
+	}
+	return null;
+}
+
 async function ensureTags(tagNames: string[], tagLabels: Record<string, string> = {}): Promise<Map<string, number>> {
 	// 既存タグを先に引き、足りないタグだけをまとめて作成する。
 	const normalizedTagNames = [...new Set(tagNames.map(normalizeTagName).filter((tag) => tag.length > 0))];
@@ -54,7 +95,18 @@ async function ensureTags(tagNames: string[], tagLabels: Record<string, string> 
 		tagIdMap.set(tag.name, tag.id);
 	}
 
-	const missingTagNames = normalizedTagNames.filter((tagName) => !tagIdMap.has(tagName));
+	let missingTagNames = normalizedTagNames.filter((tagName) => !tagIdMap.has(tagName));
+	if (missingTagNames.length > 0) {
+		// 新規作成の前に、綴りが非常に近い既存タグ（誤字の可能性が高い）へ寄せられないか照合する。
+		const { data: allTags, error: allTagsError } = await supabase.from('tags').select('id, name');
+		if (allTagsError) throw allTagsError;
+		missingTagNames = missingTagNames.filter((tagName) => {
+			const nearDuplicate = findNearDuplicateTag(tagName, allTags ?? []);
+			if (!nearDuplicate) return true;
+			tagIdMap.set(tagName, nearDuplicate.id);
+			return false;
+		});
+	}
 	if (missingTagNames.length > 0) {
 		// 新規タグだけ、AI/収集元がそのまま使った表記を display_name として残す。
 		// 大文字小文字の表記決定は追加時点のものを尊重し、以後の取り込みでは上書きしない。
