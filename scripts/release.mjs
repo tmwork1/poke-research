@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-// Cloudflare Workers が GitHub の master ブランチと連携済みのため、
+// Cloudflare Workers が GitHub の main ブランチと連携済みのため、
 // アプリのビルド・デプロイ自体は push（merge を含む）で自動実行される。
 // このスクリプトが担うのは、Cloudflare の自動デプロイでは行われない
 // 本番 Supabase へのマイグレーション適用のみ。
@@ -25,4 +25,4 @@ if (!process.env.DATABASE_URL) {
 
 run('npm run migrate');
 
-console.log('\nMigrations applied. Push/merge to master to trigger the Cloudflare auto-deploy. See docs/operations.md for post-deploy checks.');
+console.log('\nMigrations applied. Push/merge to main to trigger the Cloudflare auto-deploy. See docs/operations.md for post-deploy checks.');

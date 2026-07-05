@@ -2,6 +2,7 @@
 	"name": "pokemon-research",
 	"type": "module",
 	"version": "0.0.1",
+	"homepage": "https://poke-research.com",
 	"engines": {
 		"node": ">=22.12.0"
 	},

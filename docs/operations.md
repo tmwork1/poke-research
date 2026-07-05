@@ -4,7 +4,7 @@
 
 ## CI（GitHub Actions）
 
-`.github/workflows/ci.yml` が `master` への push と pull request で以下を自動検証する。
+`.github/workflows/ci.yml` が `main` への push と pull request で以下を自動検証する。
 
 - **build**: `npm ci` + `npm run build`（Astro のビルドと型チェック）。
 - **migrations**: CI ジョブ内で使い捨ての `postgres:16` コンテナを起動し、`migrations/*.sql` を空のスキーマへ最初から順に適用できるか（`npm run migrate`）を検証する。本番 Supabase の資格情報は CI に置かない。
@@ -13,19 +13,19 @@
 
 ## デプロイ手順
 
-前提: Cloudflare Workers（`pokemon-research`）は GitHub の `master` ブランチと連携済みで、push（PR の merge を含む）で自動ビルド・デプロイされる。手元での作業は、自動デプロイの対象外である本番 Supabase 側の対応のみ。
+前提: Cloudflare Workers（`pokemon-research`）は GitHub の `main` ブランチと連携済みで、push（PR の merge を含む）で自動ビルド・デプロイされる。手元での作業は、自動デプロイの対象外である本番 Supabase 側の対応のみ。
 
 1. `migrations/` に新しいマイグレーションファイルがあるか確認する。
 2. スキーマを変更した場合のみ、`scripts/db/test-db.mjs` を本番の `SUPABASE_URL` / `SUPABASE_SECRET_KEY` で実行し、CRUD が成功することを確認する（テストデータは自動で削除される）。
 3. 不足しているシークレットがないか確認する（`.env.example` 参照、`wrangler secret put <NAME>` で設定）。
-4. `npm run release` を実行し、未適用のマイグレーションを適用する。`.env` の `DATABASE_URL`（本番接続文字列）を自動で参照する。`master` への push 前に済ませる。
+4. `npm run release` を実行し、未適用のマイグレーションを適用する。`.env` の `DATABASE_URL`（本番接続文字列）を自動で参照する。`main` への push 前に済ませる。
    ```bash
    npm run release
    ```
-5. `master` へ push / merge する。ビルド状況は Cloudflare ダッシュボードの **Workers & Pages → pokemon-research → Deployments** で確認できる。
-6. デプロイ後、閲覧系エンドポイント（`GET /api/items` など）と Basic 認証付きの書き込み系エンドポイントを一度叩いて動作確認する。
+5. `main` へ push / merge する。ビルド状況は Cloudflare ダッシュボードの **Workers & Pages → pokemon-research → Deployments** で確認できる。
+6. デプロイ後、本番 URL（https://poke-research.com/）の閲覧系エンドポイント（`GET /api/items` など）と Basic 認証付きの書き込み系エンドポイントを一度叩いて動作確認する。
 
-`npm run deploy`（`wrangler deploy`）は、Cloudflare 連携が使えない緊急時や `master` を経由しない検証用の手動デプロイ手段として残している。
+`npm run deploy`（`wrangler deploy`）は、Cloudflare 連携が使えない緊急時や `main` を経由しない検証用の手動デプロイ手段として残している。
 
 ## バックアップと復旧
 

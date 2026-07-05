@@ -1,32 +1,32 @@
-# Astro Starter Kit: Basics
+# pokemon-research
 
-```sh
-npm create astro@latest -- --template basics
-```
+ポケモンプログラミング情報を収集・整理・検索する Astro + Supabase + Cloudflare ベースの情報ハブ。
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+公開URL: https://poke-research.com/
 
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
+## Project Structure
 
 ```text
 /
-├── public/
-│   └── favicon.svg
+├── migrations/                  # Supabase (Postgres) 用マイグレーション
+├── scripts/
+│   ├── db/                      # マイグレーション適用・CRUD スモークテスト
+│   └── eval/                    # 収集/検索/フィルタ/タグ精度の評価スクリプト（M5）
 ├── src
-│   ├── assets
-│   │   └── astro.svg
-│   ├── components
-│   │   └── Welcome.astro
-│   ├── layouts
-│   │   └── Layout.astro
-│   └── pages
-│       └── index.astro
-└── package.json
+│   ├── components/               # CatalogPage / ItemCard など
+│   ├── layouts/Layout.astro
+│   ├── lib/
+│   │   ├── importers/            # Qiita / Zenn / note 収集 + AI レビュー
+│   │   ├── catalog.ts             # 検索・フィルタ条件の組み立て
+│   │   ├── db.ts                   # 共通 CRUD ヘルパー（監査ログ連携）
+│   │   └── auth.ts                 # Basic 認証
+│   ├── middleware.ts               # 書き込み系 API の認証
+│   ├── pages/
+│   │   ├── api/                    # items / sources / tags / annotations / audit / import / export
+│   │   └── index.astro / search.astro / items/
+│   └── worker.ts                   # Cloudflare Cron Triggers のエントリポイント
+└── wrangler.jsonc
 ```
-
-To learn more about the folder structure of an Astro project, refer to [our guide on project structure](https://docs.astro.build/en/basics/project-structure/).
 
 ## 🧞 Commands
 
@@ -58,12 +58,12 @@ cp .env.example .env
 
 ## CI
 
-`master` への push と pull request で GitHub Actions（`.github/workflows/ci.yml`）が以下を自動検証する。
+`main` への push と pull request で GitHub Actions（`.github/workflows/ci.yml`）が以下を自動検証する。
 
 - `npm run build`（Astro のビルドと型チェック）
 - 使い捨ての Postgres コンテナに対する `migrations/*.sql` の適用（本番 Supabase の資格情報は CI に置かない）
 
-本番へのデプロイ手順、バックアップ・復旧手順、障害対応の初動は [docs/operations.md](docs/operations.md) を参照する。Cloudflare Workers は GitHub の `master` ブランチと連携済みで、push（merge を含む）で自動ビルド・デプロイされる。本番 Supabase へのマイグレーション適用（`npm run release`）は自動デプロイの対象外のため、引き続き手動で行う。
+本番へのデプロイ手順、バックアップ・復旧手順、障害対応の初動は [docs/operations.md](docs/operations.md) を参照する。Cloudflare Workers は GitHub の `main` ブランチと連携済みで、push（merge を含む）で自動ビルド・デプロイされる。本番 Supabase へのマイグレーション適用（`npm run release`）は自動デプロイの対象外のため、引き続き手動で行う。
 
 ## アクセス制御（管理者操作の Basic 認証）
 
@@ -116,4 +116,3 @@ cp .env.example .env
 - **フィルタ精度（AI取り込みレビューの採用可否）**: `npm run eval:filter`（DB 接続のみで可、サーバー起動は不要）。`scripts/eval/eval-filter.mjs` が `src/lib/importers/article-ai.ts` の現在のシステムプロンプトと、収集済み全記事（title/summary/tags/収集時のAI判定）を並べて出力する。Claude Code がプロンプトの基準に照らして各記事を自分で読み直し、収集時の判定とズレがあれば（例: 主題がポケモンでないのに accepted=true）プロンプトを修正して再実行する。
 - **タグ精度**: `npm run eval:tags`（DB 接続のみで可）。`scripts/eval/eval-tags.mjs` がタグごとの使用件数とサンプル記事タイトルを出力し、使用1件のみのタグ一覧も出す。Claude Code が表記ゆれ・重複・ノイズタグを判定し、`normalizeTagName`（`src/lib/importers/article-ai.ts`）や関連マイグレーションで是正して再実行する。
 - 収集時に AI が新規タグを乱発しないよう、各インポーターは収集開始時に既存タグ上位（`fetchTopTagNames`、`src/lib/importers/common.ts`）を取得し、AIレビューのプロンプトに再利用ヒントとして渡している。この効果は次回以降の実収集（Qiita/Zenn/note の cron または手動実行）でしか確認できない点に注意。
-
