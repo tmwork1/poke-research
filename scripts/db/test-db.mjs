@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.SUPABASE_URL || 'http://localhost:54321';
-const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
 
 if (!key) {
   console.error('No SUPABASE key found in environment. Run scripts/db/setup-env.ps1 or set env vars.');

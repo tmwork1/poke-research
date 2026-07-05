@@ -25,15 +25,15 @@ function Read-Secret($prompt) {
 
 $supabaseUrl = Read-Host "SUPABASE_URL (default: http://localhost:54321)"
 if ([string]::IsNullOrWhiteSpace($supabaseUrl)) { $supabaseUrl = 'http://localhost:54321' }
-$anonKey = Read-Secret "SUPABASE_ANON_KEY (input hidden)"
-$serviceKey = Read-Secret "SUPABASE_SERVICE_KEY (input hidden)"
+$publishableKey = Read-Secret "SUPABASE_PUBLISHABLE_KEY (input hidden)"
+$secretKey = Read-Secret "SUPABASE_SECRET_KEY (input hidden)"
 $databaseUrl = Read-Host "DATABASE_URL (default: postgresql://postgres:postgres@localhost:54322/postgres)"
 if ([string]::IsNullOrWhiteSpace($databaseUrl)) { $databaseUrl = 'postgresql://postgres:postgres@localhost:54322/postgres' }
 
 $content = @()
 $content += "SUPABASE_URL=$supabaseUrl"
-$content += "SUPABASE_ANON_KEY=$anonKey"
-$content += "SUPABASE_SERVICE_KEY=$serviceKey"
+$content += "SUPABASE_PUBLISHABLE_KEY=$publishableKey"
+$content += "SUPABASE_SECRET_KEY=$secretKey"
 $content += "DATABASE_URL=$databaseUrl"
 
 Set-Content -Path $envPath -Value $content -Encoding UTF8

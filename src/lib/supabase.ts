@@ -26,24 +26,24 @@ function ensureProcessEnv() {
 
 function getSupabaseConfig() {
   const SUPABASE_URL = env.SUPABASE_URL || runtimeEnv.SUPABASE_URL || '';
-  const SUPABASE_ANON_KEY = env.SUPABASE_ANON_KEY || runtimeEnv.SUPABASE_ANON_KEY || '';
-  return { SUPABASE_URL, SUPABASE_ANON_KEY };
+  const SUPABASE_PUBLISHABLE_KEY = env.SUPABASE_PUBLISHABLE_KEY || runtimeEnv.SUPABASE_PUBLISHABLE_KEY || '';
+  return { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY };
 }
 
 export async function getSupabaseClient() {
-  const { SUPABASE_URL, SUPABASE_ANON_KEY } = getSupabaseConfig();
+  const { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } = getSupabaseConfig();
   ensureProcessEnv();
 
   const { createClient } = await import('@supabase/supabase-js');
 
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     // 開発中は環境変数が未設定でも手元で動かすことがあるため警告に留める
     // 実運用では例外を投げてもよい
     // eslint-disable-next-line no-console
-    console.warn('Supabase env vars not set: SUPABASE_URL or SUPABASE_ANON_KEY');
+    console.warn('Supabase env vars not set: SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY');
   }
 
-  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  return createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     detectSessionInUrl: false,
   });
 }

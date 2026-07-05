@@ -9,8 +9,8 @@ export default defineConfig({
   env: {
     schema: {
       SUPABASE_URL: envField.string({ context: 'server', access: 'secret', optional: true }),
-      SUPABASE_ANON_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
-      SUPABASE_SERVICE_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
+      SUPABASE_PUBLISHABLE_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
+      SUPABASE_SECRET_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
       DATABASE_URL: envField.string({ context: 'server', access: 'secret', optional: true }),
       QIITA_PER_PAGE: envField.string({ context: 'server', access: 'secret', optional: true }),
       QIITA_PAGES: envField.string({ context: 'server', access: 'secret', optional: true }),

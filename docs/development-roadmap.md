@@ -56,7 +56,7 @@
 - [ ] 検索とUIの両面でユーザーが迷わない状態まで仕上げる。UIはいったんフリーズし、M6以降で必要になった時点で再開する。
 
 ### M6: リリース準備と安定化
-- [x] CI/CD でマイグレーションと基本検証を自動化する。GitHub Actions（`.github/workflows/ci.yml`）で `npm run build` と、使い捨て Postgres コンテナへの `migrations/*.sql` 適用検証を `master` への push / pull request で自動実行する。本番 Supabase への実際の適用とデプロイは手動のまま維持する（`docs/operations.md` 参照）。
+- [x] CI/CD でマイグレーションと基本検証を自動化する。GitHub Actions（`.github/workflows/ci.yml`）で `npm run build` と、使い捨て Postgres コンテナへの `migrations/*.sql` 適用検証を `master` への push / pull request で自動実行する。Cloudflare Workers を GitHub の `master` ブランチと連携し、コードのビルド・デプロイは push で自動化した。本番 Supabase へのマイグレーション適用（`npm run release`）は自動デプロイの対象外のため手動のまま維持する（`docs/operations.md` 参照）。
 - [x] バックアップと復旧の運用手順を確立する。自前のバックアップ処理は実装せず、Supabase 標準のバックアップ機能に依拠する方針とし、復旧手順を `docs/operations.md` に文書化した。
 - [x] README、運用メモ、開発手順を整備して、引き継ぎしやすい状態にする。デプロイ手順・バックアップ／復旧手順・障害対応の初動を `docs/operations.md` として新設し、README に CI の説明と `docs/operations.md` への導線を追加した。
 

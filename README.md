@@ -63,7 +63,7 @@ cp .env.example .env
 - `npm run build`（Astro のビルドと型チェック）
 - 使い捨ての Postgres コンテナに対する `migrations/*.sql` の適用（本番 Supabase の資格情報は CI に置かない）
 
-本番へのデプロイ手順、バックアップ・復旧手順、障害対応の初動は [docs/operations.md](docs/operations.md) を参照する。デプロイ（`wrangler deploy`）は CI に含めず、手動で行う。
+本番へのデプロイ手順、バックアップ・復旧手順、障害対応の初動は [docs/operations.md](docs/operations.md) を参照する。Cloudflare Workers は GitHub の `master` ブランチと連携済みで、push（merge を含む）で自動ビルド・デプロイされる。本番 Supabase へのマイグレーション適用（`npm run release`）は自動デプロイの対象外のため、引き続き手動で行う。
 
 ## アクセス制御（管理者操作の Basic 認証）
 

@@ -20,6 +20,7 @@
 		"astro": "astro",
 		"generate-types": "wrangler types",
 		"deploy": "astro build && wrangler deploy",
+		"release": "node ./scripts/release.mjs",
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
