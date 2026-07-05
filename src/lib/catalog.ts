@@ -21,6 +21,8 @@ export interface ItemFilters {
 	kind?: string;
 	tag?: string;
 	sourceIds?: number[];
+	/** 公開日の下限（ISO 8601）。期間フィルタ用。 */
+	since?: string;
 	limit?: number;
 	order?: SortOrder;
 }
@@ -176,6 +178,10 @@ async function queryCatalogItems(
 
 	if (filters.kind?.trim()) {
 		query = query.eq('kind', filters.kind.trim());
+	}
+
+	if (filters.since) {
+		query = query.gte('published_at', filters.since);
 	}
 
 	if (searchTerm) {

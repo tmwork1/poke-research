@@ -1,6 +1,7 @@
 ---
 import type { CatalogItem, TagUsage } from '../lib/catalog';
 import type { Source } from '../lib/db-types';
+import { tokenizeQuery } from '../lib/highlight';
 import ItemCard from './ItemCard.astro';
 import ItemListJsonLd from './ItemListJsonLd.astro';
 import Pagination from './Pagination.astro';
@@ -19,6 +20,7 @@ interface Props {
 		tag: string;
 		sourceIds: number[];
 		sort: string;
+		period?: string;
 	};
 	pagination: {
 		page: number;
@@ -44,11 +46,15 @@ const {
 	loggedIn = false,
 } = Astro.props as Props;
 
-function buildUrl(overrides: Partial<{ q: string; tag: string; sourceIds: number[]; sort: string; page: number }>) {
+const highlightTokens = tokenizeQuery(filters.q);
+const hasActiveFilters = Boolean(filters.q || filters.tag || filters.sourceIds.length > 0 || filters.period);
+
+function buildUrl(overrides: Partial<{ q: string; tag: string; sourceIds: number[]; sort: string; period: string; page: number }>) {
 	const q = overrides.q !== undefined ? overrides.q : filters.q;
 	const tag = overrides.tag !== undefined ? overrides.tag : filters.tag;
 	const sourceIds = overrides.sourceIds !== undefined ? overrides.sourceIds : filters.sourceIds;
 	const sort = overrides.sort !== undefined ? overrides.sort : filters.sort;
+	const period = overrides.period !== undefined ? overrides.period : (filters.period ?? '');
 	const page = overrides.page;
 
 	const params = new URLSearchParams();
@@ -56,6 +62,7 @@ function buildUrl(overrides: Partial<{ q: string; tag: string; sourceIds: number
 	if (tag) params.set('tag', tag);
 	for (const sourceId of sourceIds) params.append('sourceId', String(sourceId));
 	if (sort && sort !== 'new') params.set('sort', sort);
+	if (period) params.set('period', period);
 	if (page && page > 1) params.set('page', String(page));
 
 	const qs = params.toString();
@@ -82,7 +89,10 @@ function toggleSource(sourceId: number) {
 		<form class="filters" method="get" action={basePath}>
 			<input type="hidden" name="tag" value={filters.tag} />
 			{filters.sourceIds.map((sourceId) => <input type="hidden" name="sourceId" value={sourceId} />)}
-			<input class="search-input" type="search" name="q" value={filters.q} placeholder="キーワードで検索（例: ダメージ計算）" aria-label="キーワード" />
+			<input class="search-input" type="search" name="q" value={filters.q} placeholder="キーワードで検索（例: ダメージ計算）" aria-label="キーワード" list="search-suggestions" />
+			<datalist id="search-suggestions">
+				{topTags.map((tag) => <option value={tag.name} />)}
+			</datalist>
 
 			<div class="filter-group">
 				<p class="filter-label">ソース</p>
@@ -109,6 +119,15 @@ function toggleSource(sourceId: number) {
 					<option value="oldest" selected={filters.sort === 'oldest'}>古い順</option>
 				</select>
 
+				<select name="period" class="sort-select" aria-label="期間">
+					<option value="" selected={!filters.period}>全期間</option>
+					<option value="1m" selected={filters.period === '1m'}>1ヶ月以内</option>
+					<option value="6m" selected={filters.period === '6m'}>半年以内</option>
+					<option value="1y" selected={filters.period === '1y'}>1年以内</option>
+				</select>
+
+				<span class="total-count">全{pagination.total}件</span>
+
 				<a class="reset-link" href={basePath}>条件をリセット</a>
 			</div>
 		</form>
@@ -123,6 +142,7 @@ function toggleSource(sourceId: number) {
 						bookmarked={bookmarkedItemIds.has(item.id)}
 						bookmarkCount={bookmarkCounts.get(item.id) ?? 0}
 						loggedIn={loggedIn}
+						highlightTokens={highlightTokens}
 					/>
 				))}
 			</div>
@@ -130,6 +150,27 @@ function toggleSource(sourceId: number) {
 			<div class="empty-state">
 				<h2>一致するアイテムがありません</h2>
 				<p>条件を緩めるか、キーワードを変えて再検索してください。</p>
+				{hasActiveFilters ? (
+					<div class="fallback">
+						<p class="fallback-label">条件を1つ外して探す:</p>
+						<div class="chip-group">
+							{filters.q ? <a class="chip" href={buildUrl({ q: '', page: undefined })}>キーワード「{filters.q}」を外す</a> : null}
+							{filters.tag ? <a class="chip" href={buildUrl({ tag: '', page: undefined })}>タグ「{filters.tag}」を外す</a> : null}
+							{filters.sourceIds.length > 0 ? <a class="chip" href={buildUrl({ sourceIds: [], page: undefined })}>ソースの絞り込みを外す</a> : null}
+							{filters.period ? <a class="chip" href={buildUrl({ period: '', page: undefined })}>期間の絞り込みを外す</a> : null}
+						</div>
+					</div>
+				) : null}
+				{topTags.length > 0 ? (
+					<div class="fallback">
+						<p class="fallback-label">よく使われているタグから探す:</p>
+						<div class="chip-group">
+							{topTags.slice(0, 6).map((tag) => (
+								<a class="chip" href={buildUrl({ q: '', tag: tag.name, sourceIds: [], period: '', page: undefined })}>#{tag.name}</a>
+							))}
+						</div>
+					</div>
+				) : null}
 			</div>
 		)}
 
@@ -223,6 +264,21 @@ function toggleSource(sourceId: number) {
 		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236a737d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h11'/%3E%3Cpath d='M3 12h8'/%3E%3Cpath d='M3 17h5'/%3E%3Cpath d='M17 4v16'/%3E%3Cpath d='M13 16l4 4 4-4'/%3E%3C/svg%3E");
 		color: inherit;
 		font-size: 0.85rem;
+	}
+
+	.total-count {
+		font-size: 0.85rem;
+		color: var(--text-muted);
+	}
+
+	.fallback {
+		margin-top: 16px;
+	}
+
+	.fallback-label {
+		margin: 0 0 8px;
+		font-size: 0.85rem;
+		color: var(--text-muted);
 	}
 
 	.reset-link {
