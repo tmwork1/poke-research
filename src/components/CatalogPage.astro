@@ -1,85 +1,58 @@
 ---
-import type { CatalogItem } from '../lib/catalog';
-import type { Source, Tag } from '../lib/db-types';
+import type { CatalogItem, TagUsage } from '../lib/catalog';
+import type { Source } from '../lib/db-types';
+import ItemCard from './ItemCard.astro';
 
 interface Props {
 	title: string;
-	lead: string;
+	eyebrow?: string;
 	basePath: string;
 	items: CatalogItem[];
-	tags: Tag[];
+	topTags: TagUsage[];
 	sources: Source[];
 	filters: {
 		q: string;
-		kind: string;
 		tag: string;
 		sourceId: string;
 	};
+	pagination: {
+		page: number;
+		totalPages: number;
+		total: number;
+	};
 }
 
-const { title, lead, basePath, items, tags, sources, filters } = Astro.props as Props;
+const { title, eyebrow, basePath, items, topTags, sources, filters, pagination } = Astro.props as Props;
 
-const kinds = [
-	{ value: '', label: 'すべて' },
-	{ value: 'article', label: '記事' },
-	{ value: 'library', label: 'ライブラリ' },
-	{ value: 'github', label: 'GitHub' },
-	{ value: 'paper', label: '論文' },
-	{ value: 'video', label: '動画' },
-];
+function buildUrl(overrides: Partial<{ q: string; tag: string; sourceId: string; page: number }>) {
+	const q = overrides.q !== undefined ? overrides.q : filters.q;
+	const tag = overrides.tag !== undefined ? overrides.tag : filters.tag;
+	const sourceId = overrides.sourceId !== undefined ? overrides.sourceId : filters.sourceId;
+	const page = overrides.page;
 
-const formatDate = new Intl.DateTimeFormat('ja-JP', {
-	year: 'numeric',
-	month: '2-digit',
-	day: '2-digit',
-});
+	const params = new URLSearchParams();
+	if (q) params.set('q', q);
+	if (tag) params.set('tag', tag);
+	if (sourceId) params.set('sourceId', sourceId);
+	if (page && page > 1) params.set('page', String(page));
 
-function formatDateLabel(value?: string | null) {
-	if (!value) return '未設定';
-	return formatDate.format(new Date(value));
+	const qs = params.toString();
+	return qs ? `${basePath}?${qs}` : basePath;
 }
+
+const prevPage = pagination.page - 1;
+const nextPage = pagination.page + 1;
 ---
 
 <section class="catalog">
-	<header class="hero">
-		<div>
-			<p class="eyebrow">Browse and search</p>
-			<h1>{title}</h1>
-			<p class="lead">{lead}</p>
-		</div>
-		<div class="summary-grid" aria-label="Catalog summary">
-			<div>
-				<strong>{items.length}</strong>
-				<span>Items</span>
-			</div>
-			<div>
-				<strong>{tags.length}</strong>
-				<span>Tags</span>
-			</div>
-			<div>
-				<strong>{sources.length}</strong>
-				<span>Sources</span>
-			</div>
-		</div>
-	</header>
+	{eyebrow ? <p class="eyebrow">{eyebrow}</p> : null}
+	<h1>{title}</h1>
 
 	<form class="filters" method="get" action={basePath}>
-		<label>
+		<input type="hidden" name="tag" value={filters.tag} />
+		<label class="field-q">
 			<span>キーワード</span>
 			<input type="search" name="q" value={filters.q} placeholder="例: ダメージ計算" />
-		</label>
-		<label>
-			<span>種別</span>
-			<select name="kind">
-				{ kinds.map((kind) => <option value={kind.value} selected={filters.kind === kind.value}>{kind.label}</option>) }
-			</select>
-		</label>
-		<label>
-			<span>タグ</span>
-			<select name="tag">
-				<option value="" selected={!filters.tag}>すべて</option>
-				{tags.map((tag) => <option value={tag.name} selected={filters.tag === tag.name}>{tag.name}</option>)}
-			</select>
 		</label>
 		<label>
 			<span>公開元</span>
@@ -94,38 +67,20 @@ function formatDateLabel(value?: string | null) {
 		</div>
 	</form>
 
-	{filters.q || filters.kind || filters.tag || filters.sourceId ? (
-		<p class="active-filters">
-			現在の条件: {filters.q ? `キーワード「${filters.q}」` : 'キーワードなし'} / {filters.kind || 'すべて'} / {filters.tag || 'すべて'} / {filters.sourceId || 'すべて'}
-		</p>
+	{topTags.length > 0 ? (
+		<div class="tag-cloud" aria-label="よく使われるタグ">
+			<a class={`chip ${!filters.tag ? 'active' : ''}`} href={buildUrl({ tag: '' })}>すべて</a>
+			{topTags.map((tag) => (
+				<a class={`chip ${filters.tag === tag.name ? 'active' : ''}`} href={buildUrl({ tag: tag.name })}>
+					{tag.name} <span class="chip-count">{tag.count}</span>
+				</a>
+			))}
+		</div>
 	) : null}
 
 	{items.length > 0 ? (
 		<div class="grid">
-			{items.map((item) => (
-				<article class="card">
-					<div class="card-head">
-						<span class="kind">{item.kind || 'untyped'}</span>
-						<a class="item-title" href={`/items/${item.id}`}>{item.title || `Item ${item.id}`}</a>
-					</div>
-					<p class="summary">{item.summary || '要約はまだ登録されていません。'}</p>
-					<div class="meta-row">
-						<span>{item.source?.name || '未設定の出典'}</span>
-						<span>{formatDateLabel(item.created_at)}</span>
-					</div>
-					{item.tags.length > 0 ? (
-						<div class="tag-list">
-							{item.tags.map((tag) => <span class="tag">#{tag.name}</span>)}
-						</div>
-					) : (
-						<p class="empty-tags">タグ未設定</p>
-					)}
-					<div class="card-actions">
-						<a href={`/items/${item.id}`}>詳細を見る</a>
-						{item.external_url ? <a href={item.external_url} target="_blank" rel="noreferrer">外部リンク</a> : null}
-					</div>
-				</article>
-			))}
+			{items.map((item) => <ItemCard item={item} />)}
 		</div>
 	) : (
 		<div class="empty-state">
@@ -133,6 +88,14 @@ function formatDateLabel(value?: string | null) {
 			<p>条件を緩めるか、キーワードを変えて再検索してください。</p>
 		</div>
 	)}
+
+	{pagination.totalPages > 1 ? (
+		<nav class="pagination" aria-label="ページ送り">
+			{prevPage >= 1 ? <a href={buildUrl({ page: prevPage })}>前へ</a> : <span class="disabled">前へ</span>}
+			<span class="page-indicator">{pagination.page} / {pagination.totalPages}</span>
+			{nextPage <= pagination.totalPages ? <a href={buildUrl({ page: nextPage })}>次へ</a> : <span class="disabled">次へ</span>}
+		</nav>
+	) : null}
 </section>
 
 <style>
@@ -141,75 +104,33 @@ function formatDateLabel(value?: string | null) {
 		gap: 24px;
 	}
 
-	.hero,
 	.filters,
-	.card,
 	.empty-state {
-		border: 1px solid rgba(255, 255, 255, 0.12);
-		background: rgba(8, 15, 29, 0.72);
-		backdrop-filter: blur(16px);
-		box-shadow: 0 20px 45px rgba(0, 0, 0, 0.22);
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		box-shadow: var(--shadow);
 	}
 
-	.hero {
-		display: flex;
-		justify-content: space-between;
-		gap: 20px;
-		padding: 28px;
-		border-radius: 28px;
-	}
-
-	.hero h1 {
+	.catalog h1 {
 		margin: 0;
-		font-family: Georgia, "Times New Roman", serif;
-		font-size: clamp(2rem, 4vw, 3.4rem);
+		font-size: clamp(1.8rem, 3.4vw, 2.6rem);
 	}
 
 	.eyebrow {
-		margin: 0 0 10px;
+		margin: 0 0 4px;
 		font-size: 0.75rem;
-		letter-spacing: 0.2em;
+		letter-spacing: 0.16em;
 		text-transform: uppercase;
-		color: rgba(238, 243, 255, 0.72);
-	}
-
-	.lead {
-		max-width: 62ch;
-		margin: 12px 0 0;
-		color: rgba(238, 243, 255, 0.82);
-		line-height: 1.75;
-	}
-
-	.summary-grid {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(80px, 1fr));
-		gap: 12px;
-		align-self: end;
-	}
-
-	.summary-grid div {
-		padding: 16px;
-		border-radius: 18px;
-		background: rgba(255, 255, 255, 0.05);
-		text-align: center;
-	}
-
-	.summary-grid strong {
-		display: block;
-		font-size: 1.8rem;
-	}
-
-	.summary-grid span {
-		color: rgba(238, 243, 255, 0.72);
-		font-size: 0.85rem;
+		color: var(--text-muted);
 	}
 
 	.filters {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: 2fr 1fr auto;
+		align-items: end;
 		gap: 16px;
 		padding: 20px;
-		border-radius: 24px;
+		border-radius: var(--radius-md);
 	}
 
 	.filters label {
@@ -219,9 +140,8 @@ function formatDateLabel(value?: string | null) {
 
 	.filters span {
 		font-size: 0.8rem;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: rgba(238, 243, 255, 0.72);
+		letter-spacing: 0.06em;
+		color: var(--text-muted);
 	}
 
 	.filters input,
@@ -229,49 +149,77 @@ function formatDateLabel(value?: string | null) {
 		width: 100%;
 		box-sizing: border-box;
 		padding: 12px 14px;
-		border: 1px solid rgba(255, 255, 255, 0.12);
-		border-radius: 14px;
-		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		background: #fff;
 		color: inherit;
+		font-size: 0.95rem;
 	}
 
 	.actions {
 		display: flex;
-		align-items: end;
+		align-items: center;
 		gap: 12px;
 		flex-wrap: wrap;
 	}
 
 	.actions button,
-	.actions a,
-	.card-actions a {
+	.actions a {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		gap: 8px;
 		padding: 12px 16px;
-		border-radius: 14px;
-		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 12px;
+		border: 1px solid var(--border);
 	}
 
 	.actions button {
-		background: linear-gradient(135deg, #f3cf72 0%, #f08c68 100%);
-		color: #111827;
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #fff;
 		font-weight: 700;
 	}
 
-	.actions a,
-	.card-actions a {
-		background: rgba(255, 255, 255, 0.05);
+	.actions a {
+		background: var(--bg-soft);
 	}
 
-	.active-filters {
-		margin: 0;
-		padding: 16px 20px;
-		border-left: 4px solid #f3cf72;
-		border-radius: 16px;
-		background: rgba(255, 255, 255, 0.04);
-		color: rgba(238, 243, 255, 0.9);
+	.tag-cloud {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 14px;
+		border-radius: 999px;
+		background: var(--card-bg);
+		border: 1px solid var(--border);
+		color: var(--text);
+		font-size: 0.88rem;
+	}
+
+	.chip:hover {
+		border-color: var(--accent);
+	}
+
+	.chip.active {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #fff;
+	}
+
+	.chip-count {
+		font-size: 0.78rem;
+		color: var(--text-muted);
+	}
+
+	.chip.active .chip-count {
+		color: rgba(255, 255, 255, 0.85);
 	}
 
 	.grid {
@@ -280,93 +228,44 @@ function formatDateLabel(value?: string | null) {
 		gap: 18px;
 	}
 
-	.card {
-		display: grid;
-		gap: 14px;
-		padding: 22px;
-		border-radius: 22px;
-	}
-
-	.card-head {
-		display: grid;
-		gap: 8px;
-	}
-
-	.kind {
-		font-size: 0.72rem;
-		letter-spacing: 0.18em;
-		text-transform: uppercase;
-		color: #f3cf72;
-	}
-
-	.item-title {
-		font-family: Georgia, "Times New Roman", serif;
-		font-size: 1.45rem;
-		font-weight: 700;
-		line-height: 1.3;
-	}
-
-	.summary {
-		margin: 0;
-		color: rgba(238, 243, 255, 0.82);
-		line-height: 1.7;
-	}
-
-	.meta-row,
-	.card-actions,
-	.tag-list {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 10px;
-	}
-
-	.meta-row {
-		font-size: 0.9rem;
-		color: rgba(238, 243, 255, 0.72);
-	}
-
-	.tag-list {
-		margin-top: 4px;
-	}
-
-	.tag,
-	.empty-tags {
-		padding: 6px 10px;
-		border-radius: 999px;
-		background: rgba(255, 255, 255, 0.06);
-		font-size: 0.85rem;
-	}
-
-	.empty-tags {
-		color: rgba(238, 243, 255, 0.68);
-	}
-
-	.card-actions {
-		margin-top: 4px;
-	}
-
 	.empty-state {
 		padding: 28px;
-		border-radius: 24px;
+		border-radius: var(--radius-lg);
 	}
 
 	.empty-state h2 {
 		margin-top: 0;
 	}
 
+	.pagination {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 16px;
+	}
+
+	.pagination a,
+	.pagination .disabled {
+		padding: 10px 18px;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+	}
+
+	.pagination .disabled {
+		color: var(--text-muted);
+		opacity: 0.5;
+	}
+
+	.page-indicator {
+		color: var(--text-muted);
+		font-size: 0.9rem;
+	}
+
 	@media (max-width: 960px) {
-		.hero,
 		.filters,
 		.grid {
 			grid-template-columns: 1fr;
-		}
-
-		.hero {
-			flex-direction: column;
-		}
-
-		.summary-grid {
-			width: 100%;
 		}
 	}
 </style>

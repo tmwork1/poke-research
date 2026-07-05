@@ -3,14 +3,16 @@
 // User-Agent を明示し、Zenn 同様に控えめな同時実行数で呼び出す。
 // 有料・メンバーシップ限定（プレビューのみ）の記事は本文を取得できないため収集対象外とする。
 import { reviewImportArticle } from './article-ai';
-import { mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
+import { fetchTopTagNames, mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
+import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
 
 const NOTE_API_BASE = 'https://note.com/api/v3';
 const NOTE_SOURCE_NAME = 'note';
 const NOTE_SOURCE_ORIGIN_URL = 'https://note.com/';
 const DEFAULT_KIND = 'article';
-const DEFAULT_QUERY = 'ポケモン';
+// キーワード自体は keywords.ts の共通リストから取る（note は単一クエリのみ対応）。
+const DEFAULT_QUERY = POKEMON_KEYWORDS[0];
 const MAX_AI_BODY_CHARS = 4000;
 const IMPORT_CONCURRENCY = 2;
 
@@ -69,15 +71,15 @@ function normalizeQuery(query?: string): string {
 }
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
+// 検索語（query）は収集内容の質に直結するため、env では管理せずコード（DEFAULT_QUERY）に一本化する。
 export interface NoteEnvDefaults {
-	NOTE_QUERY?: string;
 	NOTE_PAGES?: string | number;
 	NOTE_PER_PAGE?: string | number;
 }
 
 export function resolveNoteSyncOptions(env: NoteEnvDefaults, overrides: NoteSyncOptions = {}): Required<NoteSyncOptions> {
 	return {
-		query: overrides.query?.trim() || env.NOTE_QUERY?.trim() || DEFAULT_QUERY,
+		query: overrides.query?.trim() || DEFAULT_QUERY,
 		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.NOTE_PAGES, 1)),
 		perPage: parsePositiveInteger(overrides.perPage, parsePositiveInteger(env.NOTE_PER_PAGE, 10)),
 	};
@@ -204,7 +206,7 @@ function createItemMetadata(detail: NoteDetail, query: string, fetchedAt: string
 	};
 }
 
-async function processNoteKey(key: string, sourceId: number, query: string, fetchedAt: string): Promise<ImportItemOutcome> {
+async function processNoteKey(key: string, sourceId: number, query: string, fetchedAt: string, existingTags: string[]): Promise<ImportItemOutcome> {
 	// 詳細取得（非公式API）自体が失敗するケースも、記事単位の skipped として吸収する。
 	try {
 		const detail = await fetchNoteDetail(key);
@@ -223,6 +225,7 @@ async function processNoteKey(key: string, sourceId: number, query: string, fetc
 					url: detail.note_url,
 					authors: createAuthors(detail),
 					sourceTags: extractTags(detail),
+					existingTags,
 					createdAt: detail.publish_at,
 					updatedAt: detail.publish_at,
 					bodyExcerpt: createAiBodyExcerpt(detail),
@@ -261,7 +264,7 @@ export async function syncNoteCollection(options: NoteSyncOptions = {}): Promise
 	const perPage = parsePositiveInteger(options.perPage, 10);
 	const fetchedAt = new Date().toISOString();
 
-	const [keys, source] = await Promise.all([
+	const [keys, source, existingTags] = await Promise.all([
 		fetchReadableNoteKeys(query, pages, perPage),
 		upsertSourceByOriginUrl({
 			name: NOTE_SOURCE_NAME,
@@ -269,10 +272,11 @@ export async function syncNoteCollection(options: NoteSyncOptions = {}): Promise
 			originUrl: NOTE_SOURCE_ORIGIN_URL,
 			metadata: createSourceMetadata(query, fetchedAt, pages, perPage),
 		}),
+		fetchTopTagNames(),
 	]);
 
 	const itemResults = await mapWithConcurrency(keys, IMPORT_CONCURRENCY, (key) =>
-		processNoteKey(key, source.id, query, fetchedAt),
+		processNoteKey(key, source.id, query, fetchedAt, existingTags),
 	);
 
 	let inserted = 0;

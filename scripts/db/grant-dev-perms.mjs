@@ -2,7 +2,7 @@ import { Client } from 'pg';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
-  console.error('DATABASE_URL is not set in environment. Run scripts/setup-env.ps1 or set env vars.');
+  console.error('DATABASE_URL is not set in environment. Run scripts/db/setup-env.ps1 or set env vars.');
   process.exit(1);
 }
 

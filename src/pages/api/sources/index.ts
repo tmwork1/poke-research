@@ -16,19 +16,22 @@ export async function GET() {
   return jsonResponse({ data: sources });
 }
 
-export async function POST({ request }: { request: Request }) {
+export async function POST({ request, locals }: { request: Request; locals: App.Locals }) {
   const body = await readJsonBody<Partial<SourceInsert>>(request);
   if (body.response) return body.response;
   if (!body.data || !body.data.name) {
     return badRequest('name is required');
   }
 
-  const source = await insertSource({
-    name: body.data.name,
-    type: body.data.type ?? null,
-    origin_url: body.data.origin_url ?? null,
-    metadata: body.data.metadata ?? {},
-  });
+  const source = await insertSource(
+    {
+      name: body.data.name,
+      type: body.data.type ?? null,
+      origin_url: body.data.origin_url ?? null,
+      metadata: body.data.metadata ?? {},
+    },
+    locals.actor,
+  );
 
   return jsonResponse({ data: source }, 201);
 }

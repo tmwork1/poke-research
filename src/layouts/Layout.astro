@@ -1,6 +1,6 @@
 ---
 const {
-	title = 'Pokemon Research Hub',
+	title = 'Pokémon Research Hub',
 	description = 'ポケモンプログラミング情報ハブのローカル開発環境',
 } = Astro.props;
 ---
@@ -19,13 +19,15 @@ const {
 		<div class="shell">
 			<header class="topbar">
 				<div>
-					<p class="eyebrow">Information Hub</p>
-					<a class="brand" href="/">Pokemon Research Hub</a>
+					<a class="brand" href="/">Pokémon Research Hub</a>
 				</div>
 				<nav aria-label="Primary">
-					<a href="/">Top</a>
-					<a href="/items">Items</a>
-					<a href="/search">Search</a>
+					<a class="home-link" href="/" aria-label="Top">
+						<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M3 11l9-8 9 8" />
+							<path d="M5 10v10h14V10" />
+						</svg>
+					</a>
 				</nav>
 			</header>
 			<main class="page">
@@ -37,13 +39,23 @@ const {
 
 <style>
 	:global(:root) {
-		color-scheme: dark;
-		font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
-		background:
-			radial-gradient(circle at top left, rgba(111, 168, 255, 0.24), transparent 28%),
-			radial-gradient(circle at 85% 12%, rgba(253, 212, 98, 0.22), transparent 24%),
-			linear-gradient(180deg, #08111f 0%, #0d1729 42%, #101a2c 100%);
-		color: #eef3ff;
+		color-scheme: light;
+		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+
+		--bg: #f6f8fa;
+		--bg-soft: #eef1f4;
+		--card-bg: #ffffff;
+		--border: #e3e7eb;
+		--text: #232333;
+		--text-muted: #6a737d;
+		--accent: #1f9e7a;
+		--accent-dark: #157a5e;
+		--radius-lg: 20px;
+		--radius-md: 14px;
+		--shadow: 0 4px 16px rgba(35, 35, 51, 0.06);
+
+		background: var(--bg);
+		color: var(--text);
 	}
 
 	html,
@@ -54,7 +66,7 @@ const {
 	}
 
 	body {
-		background: transparent;
+		background: var(--bg);
 	}
 
 	a {
@@ -76,38 +88,34 @@ const {
 		padding: 10px 0 24px;
 	}
 
-	.eyebrow {
-		margin: 0 0 8px;
-		font-size: 0.72rem;
-		letter-spacing: 0.22em;
-		text-transform: uppercase;
-		color: rgba(238, 243, 255, 0.7);
-	}
-
 	.brand {
-		font-family: Georgia, "Times New Roman", serif;
-		font-size: clamp(1.5rem, 2.5vw, 2.3rem);
-		font-weight: 700;
-		letter-spacing: 0.02em;
+		font-size: clamp(1.3rem, 2.2vw, 1.7rem);
+		font-weight: 800;
+		letter-spacing: 0.01em;
+		color: var(--text);
 	}
 
 	nav {
 		display: flex;
-		gap: 18px;
+		gap: 12px;
 		flex-wrap: wrap;
 	}
 
-	nav a {
-		padding: 10px 14px;
-		border: 1px solid rgba(255, 255, 255, 0.12);
+	.home-link {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		border: 1px solid var(--border);
 		border-radius: 999px;
-		background: rgba(255, 255, 255, 0.05);
-		backdrop-filter: blur(12px);
+		background: var(--card-bg);
+		color: var(--text);
 	}
 
-	nav a:hover {
-		border-color: rgba(255, 255, 255, 0.22);
-		background: rgba(255, 255, 255, 0.09);
+	.home-link:hover {
+		border-color: var(--accent);
+		color: var(--accent-dark);
 	}
 
 	.page {

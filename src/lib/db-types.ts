@@ -54,3 +54,14 @@ export interface ItemRelation {
   created_at?: string;
 }
 
+export interface AuditLog {
+  id: number;
+  table_name: string;
+  record_id?: number | null;
+  action: string;
+  actor?: string | null;
+  before?: Record<string, any> | null;
+  after?: Record<string, any> | null;
+  created_at?: string;
+}
+

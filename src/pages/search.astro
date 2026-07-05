@@ -1,39 +1,13 @@
 ---
 export const prerender = false;
 
-import Layout from '../layouts/Layout.astro';
-import CatalogPage from '../components/CatalogPage.astro';
-import { fetchCatalogItems, fetchCatalogSources, fetchCatalogTags } from '../lib/catalog';
-import { parseOptionalPositiveInteger } from '../lib/params';
-
+// items一覧と検索結果は同じ画面に統合したため、既存リンクの互換用にリダイレクトのみ行う。
 const url = new URL(Astro.request.url);
-const filters = {
-	q: url.searchParams.get('q') ?? '',
-	kind: url.searchParams.get('kind') ?? '',
-	tag: url.searchParams.get('tag') ?? '',
-	sourceId: url.searchParams.get('sourceId') ?? '',
-};
-
-const [items, tags, sources] = await Promise.all([
-	fetchCatalogItems({
-		q: filters.q || undefined,
-		kind: filters.kind || undefined,
-		tag: filters.tag || undefined,
-		sourceId: parseOptionalPositiveInteger(filters.sourceId),
-	}),
-	fetchCatalogTags(),
-	fetchCatalogSources(),
-]);
+const params = new URLSearchParams();
+for (const key of ['q', 'tag', 'sourceId', 'page']) {
+	const value = url.searchParams.get(key);
+	if (value) params.set(key, value);
+}
+const qs = params.toString();
+return Astro.redirect(qs ? `/items?${qs}` : '/items', 301);
 ---
-
-<Layout title="Search | Pokemon Research Hub" description="検索結果画面">
-	<CatalogPage
-		title="検索結果"
-		lead="全文検索とタグ検索を組み合わせた結果を確認できます。条件の変更はそのまま再検索になります。"
-		basePath="/search"
-		items={items}
-		tags={tags}
-		sources={sources}
-		filters={filters}
-	/>
-</Layout>

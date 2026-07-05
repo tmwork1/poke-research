@@ -21,6 +21,7 @@ export interface ImportArticleReviewInput {
 	createdAt?: string;
 	updatedAt?: string;
 	sourceName?: string;
+	existingTags?: string[];
 }
 
 export interface ImportArticleReview {
@@ -38,7 +39,15 @@ interface OpenAIConfig {
 }
 
 export function normalizeTagName(tagName: string): string {
-	return tagName.trim().replace(/\s+/g, ' ');
+	// 大文字小文字違い（AI/ai）やアクセント記号違い（Pokédex/pokedex）のタグが
+	// 別タグとして重複しないよう、小文字・アクセント除去に統一する。
+	const COMBINING_DIACRITICS = new RegExp('[̀-ͯ]', 'g');
+	return tagName
+		.trim()
+		.replace(/\s+/g, ' ')
+		.normalize('NFKD')
+		.replace(COMBINING_DIACRITICS, '')
+		.toLowerCase();
 }
 
 function normalizeAiTags(tags: string[]): string[] {
@@ -62,7 +71,7 @@ function createOpenAIRequest(input: ImportArticleReviewInput, model: string) {
 			{
 				role: 'system',
 				content:
-					'あなたは記事収集前レビュー担当です。このハブはポケモンのプログラミング・開発に関する技術情報（ツール、API、データ解析、対戦・育成支援、ROMハック、ファンゲーム開発などの実装や手法を扱う記事）だけを収集対象とします。ポケモンに言及していても、体験談・エッセイ・創作小説・ニュース・商品紹介・ファン活動など技術的な実装や手法を扱わない記事は accepted を false にしてください。出力はJSONオブジェクトのみで、accepted/summary/tags/reason/confidence を含めてください。accepted は上記の技術情報としての基準を満たす場合のみ true にしてください。summary は日本語で3行以内の要約、tags は検索しやすい分類タグを3〜5個、reason は判定理由を簡潔に書いてください。',
+					'あなたは記事収集前レビュー担当です。このハブはポケモンのプログラミング・開発に関する技術情報（ツール、API、データ解析、対戦・育成支援、ROMハック、ファンゲーム開発などの実装や手法を扱う記事）だけを収集対象とします。判定は次の2条件を順に確認し、両方を満たす場合のみ accepted を true にしてください。(1) 記事の主題がポケモン（ゲーム本編、カードゲーム、関連データ・API・ファンコンテンツなど）に直接関係していること。ポケモンへの言及が全く無い記事や、一般的な技術記事の中でポケモンが一例・比喩として軽く触れられているだけで記事の主眼がポケモンではない記事は、技術的に優れていても accepted を false にしてください。一方、ポケモンのデータや仕組み（図鑑、進化、育成、対戦、カードなど）を実装・設計の題材として一貫して扱っている記事（例: ポケモンのデータ構造をクラス設計で学ぶ教材、ポケモンを例にしたオントロジー設計）は、一般的な技術を学ぶ目的であっても主題をポケモン関連とみなしてください。(2) 主題がポケモン関連であっても、体験談・エッセイ・創作小説・ニュース・商品紹介・ファン活動など技術的な実装や手法を扱わない記事は accepted を false にしてください。出力はJSONオブジェクトのみで、accepted/summary/tags/reason/confidence を含めてください。summary は日本語で3行以内の要約、tags は検索しやすい分類タグを3〜5個、reason は判定理由（上記のどちらの条件で判断したかが分かるように）を簡潔に書いてください。tags を選ぶ際は、user メッセージの existing_tags に同義・類似の概念があればそれを優先して再利用し、表記ゆれ（大文字小文字、送り仮名、カタカナ/英語表記の違いなど）で新しいタグを増やさないでください。',
 			},
 			{
 				role: 'user',
@@ -74,6 +83,7 @@ function createOpenAIRequest(input: ImportArticleReviewInput, model: string) {
 						url: input.url,
 						authors: input.authors,
 						source_tags: input.sourceTags,
+						existing_tags: input.existingTags ?? [],
 						created_at: input.createdAt,
 						updated_at: input.updatedAt,
 						body_excerpt: input.bodyExcerpt,

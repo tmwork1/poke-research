@@ -2,14 +2,17 @@
 // AI レビューとタグ同期を通して DB に反映する。ドキュメントのない API のため、
 // User-Agent を明示し、Qiita より控えめな同時実行数で呼び出す。
 import { reviewImportArticle } from './article-ai';
-import { mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
+import { fetchTopTagNames, mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
+import { ZENN_TOPICS } from './keywords';
 import { parsePositiveInteger } from '../params';
 
 const ZENN_API_BASE = 'https://zenn.dev/api';
 const ZENN_SOURCE_NAME = 'Zenn';
 const ZENN_SOURCE_ORIGIN_URL = 'https://zenn.dev/';
 const DEFAULT_KIND = 'article';
-const DEFAULT_TOPIC = 'pokemon';
+// 対象トピックは keywords.ts の共通リストから取る。カンマ区切りで複数指定できる
+// （例: "pokemon,pokemongo"）。取得時はトピックごとに叩いてマージ・重複排除する。
+const DEFAULT_TOPIC = ZENN_TOPICS.join(',');
 const MAX_AI_BODY_CHARS = 4000;
 const IMPORT_CONCURRENCY = 2;
 
@@ -59,15 +62,20 @@ function normalizeTopic(topic?: string): string {
 	return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_TOPIC;
 }
 
+// カンマ区切りの topic 文字列を、取得用の個別トピック配列に分解する。
+function splitTopics(topic: string): string[] {
+	return [...new Set(topic.split(',').map((t) => t.trim()).filter((t) => t.length > 0))];
+}
+
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
+// 対象トピック（topic）は収集内容の質に直結するため、env では管理せずコード（DEFAULT_TOPIC）に一本化する。
 export interface ZennEnvDefaults {
-	ZENN_TOPIC?: string;
 	ZENN_PAGES?: string | number;
 }
 
 export function resolveZennSyncOptions(env: ZennEnvDefaults, overrides: ZennSyncOptions = {}): Required<ZennSyncOptions> {
 	return {
-		topic: overrides.topic?.trim() || env.ZENN_TOPIC?.trim() || DEFAULT_TOPIC,
+		topic: overrides.topic?.trim() || DEFAULT_TOPIC,
 		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.ZENN_PAGES, 1)),
 	};
 }
@@ -107,22 +115,24 @@ async function fetchZennArticleDetail(slug: string): Promise<ZennArticleDetail> 
 	return article;
 }
 
-async function fetchZennSlugs(topic: string, pages: number): Promise<string[]> {
-	// 複数ページ取得時に同一記事が再登場しても、1 件だけ残す。
+async function fetchZennSlugs(topics: string[], pages: number): Promise<string[]> {
+	// 複数トピック・複数ページ取得時に同一記事が再登場しても、1 件だけ残す。
 	const slugs: string[] = [];
 	const seen = new Set<string>();
 
-	for (let page = 1; page <= pages; page += 1) {
-		const { articles, next_page } = await fetchZennListPage(topic, page);
-		if (articles.length === 0) break;
+	for (const topic of topics) {
+		for (let page = 1; page <= pages; page += 1) {
+			const { articles, next_page } = await fetchZennListPage(topic, page);
+			if (articles.length === 0) break;
 
-		for (const article of articles) {
-			if (seen.has(article.slug)) continue;
-			seen.add(article.slug);
-			slugs.push(article.slug);
+			for (const article of articles) {
+				if (seen.has(article.slug)) continue;
+				seen.add(article.slug);
+				slugs.push(article.slug);
+			}
+
+			if (next_page === null) break;
 		}
-
-		if (next_page === null) break;
 	}
 
 	return slugs;
@@ -191,7 +201,7 @@ function createItemMetadata(detail: ZennArticleDetail, topic: string, fetchedAt:
 	};
 }
 
-async function processZennSlug(slug: string, sourceId: number, topic: string, fetchedAt: string): Promise<ImportItemOutcome> {
+async function processZennSlug(slug: string, sourceId: number, topic: string, fetchedAt: string, existingTags: string[]): Promise<ImportItemOutcome> {
 	// 詳細取得（非公式API）自体が失敗するケースも、記事単位の skipped として吸収する。
 	try {
 		const detail = await fetchZennArticleDetail(slug);
@@ -208,6 +218,7 @@ async function processZennSlug(slug: string, sourceId: number, topic: string, fe
 					url,
 					authors: createAuthors(detail),
 					sourceTags: extractTags(detail),
+					existingTags,
 					createdAt: detail.published_at,
 					updatedAt: detail.body_updated_at ?? detail.published_at,
 					bodyExcerpt: createAiBodyExcerpt(detail),
@@ -245,18 +256,19 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 	const pages = parsePositiveInteger(options.pages, 1);
 	const fetchedAt = new Date().toISOString();
 
-	const [slugs, source] = await Promise.all([
-		fetchZennSlugs(topic, pages),
+	const [slugs, source, existingTags] = await Promise.all([
+		fetchZennSlugs(splitTopics(topic), pages),
 		upsertSourceByOriginUrl({
 			name: ZENN_SOURCE_NAME,
 			type: 'zenn',
 			originUrl: ZENN_SOURCE_ORIGIN_URL,
 			metadata: createSourceMetadata(topic, fetchedAt, pages),
 		}),
+		fetchTopTagNames(),
 	]);
 
 	const itemResults = await mapWithConcurrency(slugs, IMPORT_CONCURRENCY, (slug) =>
-		processZennSlug(slug, source.id, topic, fetchedAt),
+		processZennSlug(slug, source.id, topic, fetchedAt, existingTags),
 	);
 
 	let inserted = 0;

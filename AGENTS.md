@@ -24,7 +24,7 @@ Manage the background server with `astro dev stop`, `astro dev status`, and `ast
 
 ## Validation
 
-変更後は、その変更に最も近い検証を優先する。UI やアプリ全体に触れたら `npm run build`、DB やマイグレーションに触れたら `scripts/run-migrations.mjs` や `scripts/test-db.mjs` などの該当スクリプトを使う。
+変更後は、その変更に最も近い検証を優先する。UI やアプリ全体に触れたら `npm run build`、DB やマイグレーションに触れたら `scripts/db/run-migrations.mjs` や `scripts/db/test-db.mjs` などの該当スクリプトを使う。
 
 ドキュメント変更だけなら `git diff --check` で十分だが、コード変更を伴う場合は必ず実行可能な検証を 1 つ以上通す。
 

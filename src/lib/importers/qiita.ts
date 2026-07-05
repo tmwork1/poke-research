@@ -1,14 +1,21 @@
 // Qiita API から記事を収集し、AI レビューとタグ同期を通して DB に反映する。
 // 収集条件や provenance も metadata に残して、再現できる形で保存する。
 import { reviewImportArticle } from './article-ai';
-import { mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
+import { fetchTopTagNames, mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
+import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
 
 const QIITA_API_URL = 'https://qiita.com/api/v2/items';
 const QIITA_SOURCE_NAME = 'Qiita';
 const QIITA_SOURCE_ORIGIN_URL = 'https://qiita.com/';
 const DEFAULT_KIND = 'article';
-const DEFAULT_QUERY = 'ポケモン';
+// 本文全文一致だと「ポケモン」への一言だけの言及で無関係な記事まで拾ってしまうため、
+// タイトルまたはタグでの絞り込みに限定する（M5: eval-collectionでの検証）。
+// キーワード自体は keywords.ts の共通リストから組み立てる。
+const DEFAULT_QUERY = [
+	...POKEMON_KEYWORDS.map((keyword) => `title:${keyword}`),
+	`tag:${POKEMON_KEYWORDS[0]}`,
+].join(' OR ');
 const MAX_AI_BODY_CHARS = 4000;
 
 interface QiitaUser {
@@ -60,8 +67,8 @@ function normalizeQuery(query?: string): string {
 }
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
+// 検索語（query）は収集内容の質に直結するため、env では管理せずコード（DEFAULT_QUERY）に一本化する。
 export interface QiitaEnvDefaults {
-	QIITA_QUERY?: string;
 	QIITA_PAGES?: string | number;
 	QIITA_PER_PAGE?: string | number;
 	QIITA_TOKEN?: string;
@@ -69,7 +76,7 @@ export interface QiitaEnvDefaults {
 
 export function resolveQiitaSyncOptions(env: QiitaEnvDefaults, overrides: QiitaSyncOptions = {}): Required<QiitaSyncOptions> {
 	return {
-		query: overrides.query?.trim() || env.QIITA_QUERY?.trim() || DEFAULT_QUERY,
+		query: overrides.query?.trim() || DEFAULT_QUERY,
 		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.QIITA_PAGES, 1)),
 		perPage: parsePositiveInteger(overrides.perPage, parsePositiveInteger(env.QIITA_PER_PAGE, 20)),
 		token: overrides.token?.trim() || env.QIITA_TOKEN?.trim() || '',
@@ -207,7 +214,7 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 	const perPage = parsePositiveInteger(options.perPage, 20);
 	const fetchedAt = new Date().toISOString();
 
-	const [items, source] = await Promise.all([
+	const [items, source, existingTags] = await Promise.all([
 		fetchQiitaItems(query, pages, perPage, options.token),
 		upsertSourceByOriginUrl({
 			name: QIITA_SOURCE_NAME,
@@ -215,6 +222,7 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 			originUrl: QIITA_SOURCE_ORIGIN_URL,
 			metadata: createSourceMetadata(query, fetchedAt, perPage, pages),
 		}),
+		fetchTopTagNames(),
 	]);
 
 	const itemResults = await mapWithConcurrency(items, IMPORT_CONCURRENCY, (item) =>
@@ -229,6 +237,7 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 					url: item.url,
 					authors: createAuthors(item),
 					sourceTags: extractTags(item),
+					existingTags,
 					createdAt: item.created_at,
 					updatedAt: item.updated_at,
 					bodyExcerpt: createAiBodyExcerpt(item),

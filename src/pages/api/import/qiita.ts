@@ -1,5 +1,5 @@
 // Qiita 収集ジョブを API 経由で起動するエンドポイント。
-// デフォルトの検索条件は環境変数から読み、POST では上書きを受け付ける。
+// 既定の検索条件はコード（src/lib/importers/keywords.ts）で管理し、POST では明示的な上書きのみ受け付ける。
 import { env } from 'cloudflare:workers';
 
 import { badRequest, jsonResponse, methodNotAllowed, readJsonBody } from '../_shared';

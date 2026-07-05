@@ -12,7 +12,6 @@ export default defineConfig({
       SUPABASE_ANON_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
       SUPABASE_SERVICE_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
       DATABASE_URL: envField.string({ context: 'server', access: 'secret', optional: true }),
-      QIITA_QUERY: envField.string({ context: 'server', access: 'secret', optional: true }),
       QIITA_PER_PAGE: envField.string({ context: 'server', access: 'secret', optional: true }),
       QIITA_PAGES: envField.string({ context: 'server', access: 'secret', optional: true }),
       QIITA_TOKEN: envField.string({ context: 'server', access: 'secret', optional: true }),

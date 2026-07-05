@@ -20,20 +20,23 @@ export async function GET({ request }: { request: Request }) {
   return jsonResponse({ data: annotations, meta: { count: annotations.length } });
 }
 
-export async function POST({ request }: { request: Request }) {
+export async function POST({ request, locals }: { request: Request; locals: App.Locals }) {
   const body = await readJsonBody<Partial<AnnotationInsert>>(request);
   if (body.response) return body.response;
   if (!body.data || body.data.item_id === undefined) {
     return badRequest('item_id is required');
   }
 
-  const annotation = await insertAnnotation({
-    item_id: body.data.item_id,
-    author_id: body.data.author_id ?? null,
-    kind: body.data.kind ?? null,
-    value: body.data.value ?? null,
-    provenance: body.data.provenance ?? null,
-  });
+  const annotation = await insertAnnotation(
+    {
+      item_id: body.data.item_id,
+      author_id: body.data.author_id ?? null,
+      kind: body.data.kind ?? null,
+      value: body.data.value ?? null,
+      provenance: body.data.provenance ?? null,
+    },
+    locals.actor,
+  );
 
   return jsonResponse({ data: annotation }, 201);
 }

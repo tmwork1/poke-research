@@ -23,7 +23,15 @@ export async function GET({ params }: { params: Record<string, string | undefine
   return jsonResponse({ data: annotation });
 }
 
-async function updateHandler({ params, request }: { params: Record<string, string | undefined>; request: Request }) {
+async function updateHandler({
+  params,
+  request,
+  locals,
+}: {
+  params: Record<string, string | undefined>;
+  request: Request;
+  locals: App.Locals;
+}) {
   const id = parseIdParam(params);
   if (!id) return badRequest('valid id is required');
 
@@ -33,31 +41,45 @@ async function updateHandler({ params, request }: { params: Record<string, strin
     return badRequest('request body is required');
   }
 
-  const annotation = await updateAnnotation(id, {
-    ...(body.data.item_id !== undefined ? { item_id: body.data.item_id } : {}),
-    ...(body.data.author_id !== undefined ? { author_id: body.data.author_id } : {}),
-    ...(body.data.kind !== undefined ? { kind: body.data.kind } : {}),
-    ...(body.data.value !== undefined ? { value: body.data.value } : {}),
-    ...(body.data.provenance !== undefined ? { provenance: body.data.provenance } : {}),
-  });
+  const annotation = await updateAnnotation(
+    id,
+    {
+      ...(body.data.item_id !== undefined ? { item_id: body.data.item_id } : {}),
+      ...(body.data.author_id !== undefined ? { author_id: body.data.author_id } : {}),
+      ...(body.data.kind !== undefined ? { kind: body.data.kind } : {}),
+      ...(body.data.value !== undefined ? { value: body.data.value } : {}),
+      ...(body.data.provenance !== undefined ? { provenance: body.data.provenance } : {}),
+    },
+    locals.actor,
+  );
 
   if (!annotation) return notFound('annotation not found');
   return jsonResponse({ data: annotation });
 }
 
-export async function PUT(args: { params: Record<string, string | undefined>; request: Request }) {
+export async function PUT(args: { params: Record<string, string | undefined>; request: Request; locals: App.Locals }) {
   return updateHandler(args);
 }
 
-export async function PATCH(args: { params: Record<string, string | undefined>; request: Request }) {
+export async function PATCH(args: {
+  params: Record<string, string | undefined>;
+  request: Request;
+  locals: App.Locals;
+}) {
   return updateHandler(args);
 }
 
-export async function DELETE({ params }: { params: Record<string, string | undefined> }) {
+export async function DELETE({
+  params,
+  locals,
+}: {
+  params: Record<string, string | undefined>;
+  locals: App.Locals;
+}) {
   const id = parseIdParam(params);
   if (!id) return badRequest('valid id is required');
 
-  const deleted = await deleteAnnotation(id);
+  const deleted = await deleteAnnotation(id, locals.actor);
   if (!deleted) return notFound('annotation not found');
   return noContent();
 }

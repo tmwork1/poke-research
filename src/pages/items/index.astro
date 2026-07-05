@@ -3,37 +3,38 @@ export const prerender = false;
 
 import Layout from '../../layouts/Layout.astro';
 import CatalogPage from '../../components/CatalogPage.astro';
-import { fetchCatalogItems, fetchCatalogSources, fetchCatalogTags } from '../../lib/catalog';
+import { fetchCatalogItemsPage, fetchCatalogSources, fetchTopTags } from '../../lib/catalog';
 import { parseOptionalPositiveInteger } from '../../lib/params';
 
 const url = new URL(Astro.request.url);
 const filters = {
 	q: url.searchParams.get('q') ?? '',
-	kind: url.searchParams.get('kind') ?? '',
 	tag: url.searchParams.get('tag') ?? '',
 	sourceId: url.searchParams.get('sourceId') ?? '',
 };
+const page = parseOptionalPositiveInteger(url.searchParams.get('page')) ?? 1;
 
-const [items, tags, sources] = await Promise.all([
-	fetchCatalogItems({
+const [itemsPage, topTags, sources] = await Promise.all([
+	fetchCatalogItemsPage({
 		q: filters.q || undefined,
-		kind: filters.kind || undefined,
 		tag: filters.tag || undefined,
 		sourceId: parseOptionalPositiveInteger(filters.sourceId),
+		page,
 	}),
-	fetchCatalogTags(),
+	fetchTopTags(20),
 	fetchCatalogSources(),
 ]);
 ---
 
-<Layout title="Items | Pokemon Research Hub" description="アイテム一覧とフィルタ画面">
+<Layout title="Items | Pokémon Research Hub" description="アイテム一覧・検索画面">
 	<CatalogPage
-		title="アイテム一覧"
-		lead="キーワード、種別、タグ、公開元で絞り込みながら、各アイテムの詳細へ移動できます。"
+		title="アイテム一覧・検索"
+		eyebrow="Search items"
 		basePath="/items"
-		items={items}
-		tags={tags}
+		items={itemsPage.items}
+		topTags={topTags}
 		sources={sources}
 		filters={filters}
+		pagination={{ page: itemsPage.page, totalPages: itemsPage.totalPages, total: itemsPage.total }}
 	/>
 </Layout>

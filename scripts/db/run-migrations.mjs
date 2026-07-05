@@ -6,7 +6,7 @@ const migrationsDir = path.join(process.cwd(), 'migrations');
 const databaseUrl = process.env.DATABASE_URL;
 
 if (!databaseUrl) {
-  console.error('DATABASE_URL not set. Use scripts/setup-env.ps1 or export env.');
+  console.error('DATABASE_URL not set. Use scripts/db/setup-env.ps1 or export env.');
   process.exit(1);
 }
 

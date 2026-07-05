@@ -24,7 +24,15 @@ export async function GET({ params }: { params: Record<string, string | undefine
   return jsonResponse({ data: item });
 }
 
-async function updateHandler({ params, request }: { params: Record<string, string | undefined>; request: Request }) {
+async function updateHandler({
+  params,
+  request,
+  locals,
+}: {
+  params: Record<string, string | undefined>;
+  request: Request;
+  locals: App.Locals;
+}) {
   const id = parseIdParam(params);
   if (!id) return badRequest('valid id is required');
 
@@ -34,18 +42,22 @@ async function updateHandler({ params, request }: { params: Record<string, strin
     return badRequest('request body is required');
   }
 
-  const updated = await updateItem(id, {
-    ...(body.data.source_id !== undefined ? { source_id: body.data.source_id } : {}),
-    ...(body.data.external_url !== undefined ? { external_url: body.data.external_url } : {}),
-    ...(body.data.kind !== undefined ? { kind: body.data.kind } : {}),
-    ...(body.data.title !== undefined ? { title: body.data.title } : {}),
-    ...(body.data.authors !== undefined ? { authors: body.data.authors } : {}),
-    ...(body.data.summary !== undefined ? { summary: body.data.summary } : {}),
-    ...(body.data.published_at !== undefined ? { published_at: body.data.published_at } : {}),
-    ...(body.data.updated_at !== undefined ? { updated_at: body.data.updated_at } : {}),
-    ...(body.data.metadata !== undefined ? { metadata: body.data.metadata } : {}),
-    ...(body.data.version !== undefined ? { version: body.data.version } : {}),
-  });
+  const updated = await updateItem(
+    id,
+    {
+      ...(body.data.source_id !== undefined ? { source_id: body.data.source_id } : {}),
+      ...(body.data.external_url !== undefined ? { external_url: body.data.external_url } : {}),
+      ...(body.data.kind !== undefined ? { kind: body.data.kind } : {}),
+      ...(body.data.title !== undefined ? { title: body.data.title } : {}),
+      ...(body.data.authors !== undefined ? { authors: body.data.authors } : {}),
+      ...(body.data.summary !== undefined ? { summary: body.data.summary } : {}),
+      ...(body.data.published_at !== undefined ? { published_at: body.data.published_at } : {}),
+      ...(body.data.updated_at !== undefined ? { updated_at: body.data.updated_at } : {}),
+      ...(body.data.metadata !== undefined ? { metadata: body.data.metadata } : {}),
+      ...(body.data.version !== undefined ? { version: body.data.version } : {}),
+    },
+    locals.actor,
+  );
 
   if (!updated) return notFound('item not found');
 
@@ -54,19 +66,29 @@ async function updateHandler({ params, request }: { params: Record<string, strin
   return jsonResponse({ data: item });
 }
 
-export async function PUT(args: { params: Record<string, string | undefined>; request: Request }) {
+export async function PUT(args: { params: Record<string, string | undefined>; request: Request; locals: App.Locals }) {
   return updateHandler(args);
 }
 
-export async function PATCH(args: { params: Record<string, string | undefined>; request: Request }) {
+export async function PATCH(args: {
+  params: Record<string, string | undefined>;
+  request: Request;
+  locals: App.Locals;
+}) {
   return updateHandler(args);
 }
 
-export async function DELETE({ params }: { params: Record<string, string | undefined> }) {
+export async function DELETE({
+  params,
+  locals,
+}: {
+  params: Record<string, string | undefined>;
+  locals: App.Locals;
+}) {
   const id = parseIdParam(params);
   if (!id) return badRequest('valid id is required');
 
-  const deleted = await deleteItem(id);
+  const deleted = await deleteItem(id, locals.actor);
   if (!deleted) return notFound('item not found');
   return noContent();
 }

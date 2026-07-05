@@ -1,0 +1,97 @@
+---
+import type { CatalogItem } from '../lib/catalog';
+
+interface Props {
+	item: CatalogItem;
+}
+
+const { item } = Astro.props as Props;
+
+const formatDate = new Intl.DateTimeFormat('ja-JP', {
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit',
+});
+
+function formatDateLabel(value?: string | null) {
+	if (!value) return '未設定';
+	return formatDate.format(new Date(value));
+}
+
+const title = item.title || `Item ${item.id}`;
+---
+
+<article class="card">
+	{item.external_url ? (
+		<a class="item-title" href={item.external_url} target="_blank" rel="noreferrer">{title}</a>
+	) : (
+		<p class="item-title">{title}</p>
+	)}
+	<p class="summary">{item.summary || '要約はまだ登録されていません。'}</p>
+	<div class="meta-row">
+		<span>{formatDateLabel(item.published_at ?? item.created_at)}</span>
+		{item.source?.name ? <span>{item.source.name}</span> : null}
+	</div>
+	{item.tags.length > 0 ? (
+		<div class="tag-list">
+			{item.tags.map((tag) => <span class="tag">#{tag.name}</span>)}
+		</div>
+	) : (
+		<p class="empty-tags">タグ未設定</p>
+	)}
+</article>
+
+<style>
+	.card {
+		display: grid;
+		gap: 14px;
+		padding: 22px;
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		box-shadow: var(--shadow);
+	}
+
+	.item-title {
+		margin: 0;
+		font-size: 1.3rem;
+		font-weight: 700;
+		line-height: 1.4;
+		color: var(--text);
+	}
+
+	a.item-title:hover {
+		color: var(--accent-dark);
+	}
+
+	.summary {
+		margin: 0;
+		color: var(--text-muted);
+		line-height: 1.7;
+	}
+
+	.meta-row,
+	.tag-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+
+	.meta-row {
+		font-size: 0.88rem;
+		color: var(--text-muted);
+	}
+
+	.tag-list {
+		margin-top: 4px;
+	}
+
+	.tag,
+	.empty-tags {
+		padding: 6px 10px;
+		border-radius: 999px;
+		background: var(--bg-soft);
+		font-size: 0.82rem;
+		color: var(--text-muted);
+	}
+</style>

@@ -2,6 +2,7 @@
 // API ルートやスクリプト側は、ここを通して基本操作を揃えて使う。
 import { getSupabaseClient } from './supabase';
 import type { Annotation, Item, Source } from './db-types';
+import { recordAuditLog } from './audit';
 
 export const tables = {
   users: 'users',
@@ -43,7 +44,7 @@ async function selectById<T extends EntityWithId>(table: string, id: number): Pr
   return data || null;
 }
 
-async function insertOne<T>(table: string, row: object): Promise<T> {
+async function insertOne<T>(table: string, row: object, actor?: string): Promise<T> {
   const supabase = await getSupabaseClient();
   const { data, error } = await supabase
     .from<T>(table)
@@ -51,11 +52,25 @@ async function insertOne<T>(table: string, row: object): Promise<T> {
     .select()
     .single();
   if (error) throw error;
+  await recordAuditLog({
+    table,
+    recordId: (data as unknown as EntityWithId | null)?.id ?? null,
+    action: 'insert',
+    actor,
+    before: null,
+    after: data,
+  });
   return data as T;
 }
 
-async function updateOne<T extends EntityWithId>(table: string, id: number, row: object): Promise<T | null> {
+async function updateOne<T extends EntityWithId>(
+  table: string,
+  id: number,
+  row: object,
+  actor?: string,
+): Promise<T | null> {
   const supabase = await getSupabaseClient();
+  const before = await selectById<T>(table, id);
   const { data, error } = await supabase
     .from<T>(table)
     .update(row)
@@ -66,10 +81,13 @@ async function updateOne<T extends EntityWithId>(table: string, id: number, row:
     if ((error as any).status === 406 || (error as any).status === 404) return null;
     throw error;
   }
+  if (data) {
+    await recordAuditLog({ table, recordId: id, action: 'update', actor, before, after: data });
+  }
   return data || null;
 }
 
-async function deleteOne<T extends EntityWithId>(table: string, id: number): Promise<T | null> {
+async function deleteOne<T extends EntityWithId>(table: string, id: number, actor?: string): Promise<T | null> {
   const supabase = await getSupabaseClient();
   const { data, error } = await supabase
     .from<T>(table)
@@ -80,6 +98,9 @@ async function deleteOne<T extends EntityWithId>(table: string, id: number): Pro
   if (error) {
     if ((error as any).status === 406 || (error as any).status === 404) return null;
     throw error;
+  }
+  if (data) {
+    await recordAuditLog({ table, recordId: id, action: 'delete', actor, before: data, after: null });
   }
   return data || null;
 }
@@ -92,16 +113,16 @@ export async function getSourceById(id: number): Promise<Source | null> {
   return selectById<Source>(tables.sources, id);
 }
 
-export async function insertSource(source: SourceInsert): Promise<Source> {
-  return insertOne<Source>(tables.sources, source);
+export async function insertSource(source: SourceInsert, actor?: string): Promise<Source> {
+  return insertOne<Source>(tables.sources, source, actor);
 }
 
-export async function updateSource(id: number, source: SourceUpdate): Promise<Source | null> {
-  return updateOne<Source>(tables.sources, id, source);
+export async function updateSource(id: number, source: SourceUpdate, actor?: string): Promise<Source | null> {
+  return updateOne<Source>(tables.sources, id, source, actor);
 }
 
-export async function deleteSource(id: number): Promise<Source | null> {
-  return deleteOne<Source>(tables.sources, id);
+export async function deleteSource(id: number, actor?: string): Promise<Source | null> {
+  return deleteOne<Source>(tables.sources, id, actor);
 }
 
 export async function fetchAllItems(): Promise<Item[]> {
@@ -112,16 +133,16 @@ export async function getItemById(id: number): Promise<Item | null> {
   return selectById<Item>(tables.items, id);
 }
 
-export async function insertItem(item: ItemInsert): Promise<Item> {
-  return insertOne<Item>(tables.items, item);
+export async function insertItem(item: ItemInsert, actor?: string): Promise<Item> {
+  return insertOne<Item>(tables.items, item, actor);
 }
 
-export async function updateItem(id: number, item: ItemUpdate): Promise<Item | null> {
-  return updateOne<Item>(tables.items, id, item);
+export async function updateItem(id: number, item: ItemUpdate, actor?: string): Promise<Item | null> {
+  return updateOne<Item>(tables.items, id, item, actor);
 }
 
-export async function deleteItem(id: number): Promise<Item | null> {
-  return deleteOne<Item>(tables.items, id);
+export async function deleteItem(id: number, actor?: string): Promise<Item | null> {
+  return deleteOne<Item>(tables.items, id, actor);
 }
 
 export async function fetchAllAnnotations(): Promise<Annotation[]> {
@@ -132,16 +153,20 @@ export async function getAnnotationById(id: number): Promise<Annotation | null> 
   return selectById<Annotation>(tables.annotations, id);
 }
 
-export async function insertAnnotation(annotation: AnnotationInsert): Promise<Annotation> {
-  return insertOne<Annotation>(tables.annotations, annotation);
+export async function insertAnnotation(annotation: AnnotationInsert, actor?: string): Promise<Annotation> {
+  return insertOne<Annotation>(tables.annotations, annotation, actor);
 }
 
-export async function updateAnnotation(id: number, annotation: AnnotationUpdate): Promise<Annotation | null> {
-  return updateOne<Annotation>(tables.annotations, id, annotation);
+export async function updateAnnotation(
+  id: number,
+  annotation: AnnotationUpdate,
+  actor?: string,
+): Promise<Annotation | null> {
+  return updateOne<Annotation>(tables.annotations, id, annotation, actor);
 }
 
-export async function deleteAnnotation(id: number): Promise<Annotation | null> {
-  return deleteOne<Annotation>(tables.annotations, id);
+export async function deleteAnnotation(id: number, actor?: string): Promise<Annotation | null> {
+  return deleteOne<Annotation>(tables.annotations, id, actor);
 }
 
 export default {

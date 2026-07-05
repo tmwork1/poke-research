@@ -4,7 +4,7 @@ const url = process.env.SUPABASE_URL || 'http://localhost:54321';
 const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
 
 if (!key) {
-  console.error('No SUPABASE key found in environment. Run scripts/setup-env.ps1 or set env vars.');
+  console.error('No SUPABASE key found in environment. Run scripts/db/setup-env.ps1 or set env vars.');
   process.exit(1);
 }
 
@@ -60,7 +60,7 @@ async function main() {
     author_id: null,
     kind: 'note',
     value: { text: 'smoke test annotation' },
-    provenance: { source: 'scripts/test-db.mjs' },
+    provenance: { source: 'scripts/db/test-db.mjs' },
   };
 
   const { data: insertedAnnotation, error: annotationInsertError } = await supabase
@@ -96,6 +96,36 @@ async function main() {
   }
 
   console.log('M1 CRUD smoke test completed successfully.');
+
+  console.log('Running M4 audit_logs smoke test...');
+
+  const auditLog = {
+    table_name: 'items',
+    record_id: 1,
+    action: 'insert',
+    actor: 'smoke-test',
+    before: null,
+    after: { purpose: 'smoke-test' },
+  };
+
+  const { data: insertedAuditLog, error: auditInsertError } = await supabase
+    .from('audit_logs')
+    .insert([auditLog])
+    .select()
+    .single();
+  if (auditInsertError) {
+    console.error('Audit log insert error:', auditInsertError);
+    process.exit(8);
+  }
+  console.log('Inserted audit log:', insertedAuditLog);
+
+  const { error: auditDeleteError } = await supabase.from('audit_logs').delete().eq('id', insertedAuditLog.id);
+  if (auditDeleteError) {
+    console.error('Audit log delete error:', auditDeleteError);
+    process.exit(9);
+  }
+
+  console.log('M4 audit_logs smoke test completed successfully.');
 }
 
 main().catch((e) => { console.error(e); process.exit(99); });

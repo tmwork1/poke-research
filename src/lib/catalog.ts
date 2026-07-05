@@ -22,6 +22,18 @@ export interface ItemFilters {
 	limit?: number;
 }
 
+export interface TagUsage extends Tag {
+	count: number;
+}
+
+export interface CatalogItemsPage {
+	items: CatalogItem[];
+	total: number;
+	page: number;
+	pageSize: number;
+	totalPages: number;
+}
+
 interface ItemRow extends Item {
 	source?: CatalogSource | CatalogSource[] | null;
 	item_tags?: Array<{ tag?: Tag | Tag[] | null }>;
@@ -86,6 +98,13 @@ function normalizeItem(row: ItemRow): CatalogItem {
 	};
 }
 
+function escapeIlikeToken(token: string): string {
+	// ILIKE のワイルドカード文字をエスケープしたうえで前後に % を付け、
+	// PostgREST のフィルタ構文で特別扱いされる , . ( ) を避けるため二重引用符で囲む。
+	const escapedWildcards = token.replace(/[\\%_]/g, (ch) => `\\${ch}`).replace(/"/g, '\\"');
+	return `"%${escapedWildcards}%"`;
+}
+
 async function resolveItemIdsByTag(tagName: string): Promise<number[]> {
 	const supabase = await getSupabaseClient();
 	// タグ名から item_id を引くために、まず tag_id をまとめて解決する。
@@ -128,10 +147,17 @@ export async function fetchCatalogAnnotations(itemId?: number): Promise<Annotati
 	return data ?? [];
 }
 
-export async function fetchCatalogItems(filters: ItemFilters = {}): Promise<CatalogItem[]> {
+async function queryCatalogItems(
+	filters: ItemFilters,
+	options: { withCount?: boolean; offset?: number } = {},
+): Promise<{ data: ItemRow[]; count: number | null }> {
 	const searchTerm = filters.q?.trim();
 	const supabase = await getSupabaseClient();
-	let query = supabase.from('items').select(ITEM_SELECT).order('created_at', { ascending: false });
+	let query = supabase
+		.from('items')
+		.select(ITEM_SELECT, options.withCount ? { count: 'exact' } : undefined)
+		.order('published_at', { ascending: false, nullsFirst: false })
+		.order('created_at', { ascending: false });
 
 	if (filters.sourceId !== undefined) {
 		query = query.eq('source_id', filters.sourceId);
@@ -142,24 +168,87 @@ export async function fetchCatalogItems(filters: ItemFilters = {}): Promise<Cata
 	}
 
 	if (searchTerm) {
-		query = query.textSearch('search_vector', searchTerm, { type: 'websearch', config: 'simple' });
+		// 日本語は分かち書きされていないため、全文検索(tsvector)ではなく
+		// タイトル・要約への部分一致(ILIKE)をトークンごとにAND条件で積む。
+		const tokens = searchTerm.split(/\s+/).filter((token) => token.length > 0);
+		for (const token of tokens) {
+			const pattern = escapeIlikeToken(token);
+			query = query.or(`title.ilike.${pattern},summary.ilike.${pattern}`);
+		}
 	}
 
 	if (filters.tag?.trim()) {
 		// タグ条件は join の曖昧さを避けるため、先に item_id の集合へ落とす。
 		const itemIds = await resolveItemIdsByTag(filters.tag.trim());
-		if (itemIds.length === 0) return [];
+		if (itemIds.length === 0) return { data: [], count: 0 };
 		query = query.in('id', itemIds);
 	}
 
 	if (filters.limit && filters.limit > 0) {
-		// 一覧やホーム用の軽量取得では件数制限を優先する。
-		query = query.limit(filters.limit);
+		if (options.offset && options.offset > 0) {
+			query = query.range(options.offset, options.offset + filters.limit - 1);
+		} else {
+			query = query.limit(filters.limit);
+		}
 	}
 
-	const { data, error } = await query;
+	const { data, error, count } = await query;
 	if (error) throw error;
-	return ((data ?? []) as ItemRow[]).map(normalizeItem);
+	return { data: (data ?? []) as ItemRow[], count: count ?? null };
+}
+
+export async function fetchCatalogItems(filters: ItemFilters = {}): Promise<CatalogItem[]> {
+	const { data } = await queryCatalogItems(filters);
+	return data.map(normalizeItem);
+}
+
+const DEFAULT_PAGE_SIZE = 20;
+
+export async function fetchCatalogItemsPage(
+	filters: ItemFilters & { page?: number; pageSize?: number } = {},
+): Promise<CatalogItemsPage> {
+	const pageSize = filters.pageSize && filters.pageSize > 0 ? filters.pageSize : DEFAULT_PAGE_SIZE;
+	const page = filters.page && filters.page > 0 ? filters.page : 1;
+	const offset = (page - 1) * pageSize;
+
+	const { data, count } = await queryCatalogItems(
+		{ ...filters, limit: pageSize },
+		{ withCount: true, offset },
+	);
+
+	const total = count ?? data.length;
+	return {
+		items: data.map(normalizeItem),
+		total,
+		page,
+		pageSize,
+		totalPages: Math.max(1, Math.ceil(total / pageSize)),
+	};
+}
+
+export async function fetchTopTags(limit = 20): Promise<TagUsage[]> {
+	const supabase = await getSupabaseClient();
+	const { data, error } = await supabase.from('item_tags').select('tag:tags(id, name)');
+	if (error) throw error;
+
+	const counts = new Map<number, TagUsage>();
+	for (const row of (data ?? []) as Array<{ tag?: Tag | Tag[] | null }>) {
+		const rawTag = row.tag;
+		const tags = Array.isArray(rawTag) ? rawTag : rawTag ? [rawTag] : [];
+		for (const tag of tags) {
+			if (!tag?.id || !tag?.name) continue;
+			const existing = counts.get(tag.id);
+			if (existing) {
+				existing.count += 1;
+			} else {
+				counts.set(tag.id, { id: tag.id, name: tag.name, count: 1 });
+			}
+		}
+	}
+
+	return [...counts.values()]
+		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+		.slice(0, limit);
 }
 
 export async function fetchCatalogItemById(id: number): Promise<ItemDetail | null> {
