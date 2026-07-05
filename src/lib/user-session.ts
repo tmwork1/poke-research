@@ -52,7 +52,18 @@ function toSessionUser(user: { id: string; email?: string | null; user_metadata?
   return { id: user.id, email: user.email ?? null, displayName };
 }
 
+// `astro dev` 実行時のみ使うダミーユーザー。本番ビルドでは import.meta.env.DEV が false になるため使われない。
+// scripts/db/seed-dev-user.mjs で同じ id を auth.users/public.users に登録しておくことで、
+// Google ログインを経由せずお気に入り機能までそのまま検証できる。
+export const DEV_SESSION_USER: SessionUser = {
+  id: '00000000-0000-0000-0000-000000000001',
+  email: 'dev@localhost',
+  displayName: 'ローカル開発ユーザー',
+};
+
 export async function getSessionUser(request: Request, cookies: AstroCookies): Promise<SessionUser | null> {
+  if (import.meta.env.DEV) return DEV_SESSION_USER;
+
   const supabase = createUserSupabaseClient(request, cookies);
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) return null;
