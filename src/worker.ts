@@ -9,9 +9,9 @@ import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qi
 import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
 
 // wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
-const ZENN_CRON = '30 18 * * *';
-const NOTE_CRON = '0 19 * * *';
-const BLOG_CRON = '30 19 * * *';
+const ZENN_CRON = '30 21 * * *';
+const NOTE_CRON = '0 22 * * *';
+const BLOG_CRON = '30 22 * * *';
 
 export default {
 	async fetch(request, ctxEnv, ctx) {

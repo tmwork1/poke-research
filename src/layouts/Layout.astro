@@ -93,9 +93,6 @@ const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(sha
 			<main class="page">
 				<slot />
 			</main>
-			<footer class="site-footer">
-				<a href="https://x.com/ml7ddw0" target="_blank" rel="noreferrer">コンタクト（@ml7ddw0）</a>
-			</footer>
 		</div>
 		<div class="sidebar-overlay" id="sidebar-overlay" hidden></div>
 		<aside class="sidebar" id="sidebar-panel" aria-hidden="true" aria-label="メニュー">
@@ -565,15 +562,6 @@ const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(sha
 
 	.page {
 		padding-top: 12px;
-	}
-
-	.site-footer {
-		margin-top: 40px;
-		padding-top: 16px;
-		border-top: 1px solid var(--border);
-		text-align: center;
-		font-size: 0.82rem;
-		color: var(--text-muted);
 	}
 
 	@media (max-width: 720px) {

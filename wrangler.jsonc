@@ -12,9 +12,9 @@
 		"enabled": true
 	},
 	"triggers": {
-		// 毎日 18:00 UTC (JST 翌 03:00) に Qiita、18:30 UTC (JST 翌 03:30) に Zenn、19:00 UTC (JST 翌 04:00) に note、
-		// 19:30 UTC (JST 翌 04:30) にブログ（Brave Search）の収集ジョブを実行する。
+		// 毎日 21:00 UTC (JST 06:00) に Qiita、21:30 UTC (JST 06:30) に Zenn、22:00 UTC (JST 07:00) に note、
+		// 22:30 UTC (JST 07:30) にブログ（Brave Search）の収集ジョブを実行する。
 		// どれが起動したかは src/worker.ts の scheduled ハンドラが controller.cron で振り分ける。
-		"crons": ["0 18 * * *", "30 18 * * *", "0 19 * * *", "30 19 * * *"]
+		"crons": ["0 21 * * *", "30 21 * * *", "0 22 * * *", "30 22 * * *"]
 	}
 }
