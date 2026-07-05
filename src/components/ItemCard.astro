@@ -1,5 +1,6 @@
 ---
 import type { CatalogItem } from '../lib/catalog';
+import { splitForHighlight } from '../lib/highlight';
 import { formatTagLabel } from '../lib/tag-display';
 
 interface Props {
@@ -7,9 +8,11 @@ interface Props {
 	bookmarked?: boolean;
 	loggedIn?: boolean;
 	bookmarkCount?: number;
+	/** 検索キーワード。指定するとタイトル・要約内の一致箇所を <mark> で強調する。 */
+	highlightTokens?: string[];
 }
 
-const { item, bookmarked = false, loggedIn = false, bookmarkCount = 0 } = Astro.props as Props;
+const { item, bookmarked = false, loggedIn = false, bookmarkCount = 0, highlightTokens = [] } = Astro.props as Props;
 
 const formatDate = new Intl.DateTimeFormat('ja-JP', {
 	year: 'numeric',
@@ -23,6 +26,8 @@ function formatDateLabel(value?: string | null) {
 }
 
 const title = item.title || `Item ${item.id}`;
+const titleSegments = splitForHighlight(title, highlightTokens);
+const summarySegments = item.summary ? splitForHighlight(item.summary, highlightTokens) : [];
 
 const shareUrl = item.external_url
 	? `https://twitter.com/intent/tweet?url=${encodeURIComponent(item.external_url)}&text=${encodeURIComponent(title)}`
@@ -32,9 +37,9 @@ const shareUrl = item.external_url
 <article class="card">
 	<div class="card-head">
 		{item.external_url ? (
-			<a class="item-title" href={item.external_url} target="_blank" rel="noreferrer">{title}</a>
+			<a class="item-title" href={item.external_url} target="_blank" rel="noreferrer">{titleSegments.map((seg) => (seg.hit ? <mark>{seg.text}</mark> : seg.text))}</a>
 		) : (
-			<p class="item-title">{title}</p>
+			<p class="item-title">{titleSegments.map((seg) => (seg.hit ? <mark>{seg.text}</mark> : seg.text))}</p>
 		)}
 		<div class="card-actions">
 			{shareUrl ? (
@@ -68,7 +73,7 @@ const shareUrl = item.external_url
 	</div>
 	<p class="summary">
 		{item.summary ? <span class="ai-badge" title="この要約はAIによる自動生成です">AI要約</span> : null}
-		{item.summary || '要約はまだ登録されていません。'}
+		{item.summary ? summarySegments.map((seg) => (seg.hit ? <mark>{seg.text}</mark> : seg.text)) : '要約はまだ登録されていません。'}
 	</p>
 	<div class="tag-row">
 		{item.tags.length > 0 ? (
@@ -185,6 +190,13 @@ const shareUrl = item.external_url
 		margin: 0;
 		color: var(--text-muted);
 		line-height: 1.7;
+	}
+
+	mark {
+		background: #fff3bf;
+		color: inherit;
+		border-radius: 3px;
+		padding: 0 1px;
 	}
 
 	/* 要約がAI生成であることの出所表示（provenance 重視の方針に合わせる）。 */
