@@ -12,7 +12,11 @@ const sourceIds = url.searchParams
 	.map((value) => parseOptionalPositiveInteger(value))
 	.filter((value): value is number => value !== undefined);
 const sortParam = url.searchParams.get('sort');
-const sort = sortParam === 'popular' ? 'popular' : sortParam === 'oldest' ? 'oldest' : 'new';
+const sort =
+	sortParam === 'popular' ? 'popular'
+	: sortParam === 'oldest' ? 'oldest'
+	: sortParam === 'relevance' ? 'relevance'
+	: 'new';
 const filters = {
 	q: url.searchParams.get('q') ?? '',
 	tag: url.searchParams.get('tag') ?? '',

@@ -25,8 +25,12 @@ export interface ItemFilters {
 	order?: SortOrder;
 }
 
-export type CatalogSort = 'new' | 'oldest' | 'popular';
+export type CatalogSort = 'new' | 'oldest' | 'popular' | 'relevance';
 const POPULAR_SORT_CANDIDATE_POOL = 300;
+const RELEVANCE_SORT_CANDIDATE_POOL = 300;
+// タイトル一致は要約一致より強いシグナルとして重み付けする。
+const RELEVANCE_TITLE_WEIGHT = 3;
+const RELEVANCE_SUMMARY_WEIGHT = 1;
 
 export interface TagUsage extends Tag {
 	count: number;
@@ -216,6 +220,37 @@ export async function fetchCatalogItemsPage(
 ): Promise<CatalogItemsPage> {
 	const pageSize = filters.pageSize && filters.pageSize > 0 ? filters.pageSize : DEFAULT_PAGE_SIZE;
 	const page = filters.page && filters.page > 0 ? filters.page : 1;
+
+	const searchTerm = filters.q?.trim();
+	if (filters.sort === 'relevance' && searchTerm) {
+		// 検索クエリ(ILIKE)は一致した行しか返さないため「どこに・いくつ一致したか」の強さが
+		// 並びに反映されない。人気順と同じく直近の候補プールを取得し、タイトル一致 > 要約一致の
+		// 重み付けでJS側にてスコアリングする（プールは日付降順なので同点時は新しい順になる）。
+		const tokens = searchTerm.toLowerCase().split(/\s+/).filter((token) => token.length > 0);
+		const { data } = await queryCatalogItems({ ...filters, limit: RELEVANCE_SORT_CANDIDATE_POOL });
+		const candidates = data.map(normalizeItem);
+		const scored = candidates.map((item, index) => {
+			const title = (item.title ?? '').toLowerCase();
+			const summary = (item.summary ?? '').toLowerCase();
+			let score = 0;
+			for (const token of tokens) {
+				if (title.includes(token)) score += RELEVANCE_TITLE_WEIGHT;
+				if (summary.includes(token)) score += RELEVANCE_SUMMARY_WEIGHT;
+			}
+			return { item, index, score };
+		});
+		scored.sort((a, b) => b.score - a.score || a.index - b.index);
+
+		const total = scored.length;
+		const offset = (page - 1) * pageSize;
+		return {
+			items: scored.slice(offset, offset + pageSize).map((entry) => entry.item),
+			total,
+			page,
+			pageSize,
+			totalPages: Math.max(1, Math.ceil(total / pageSize)),
+		};
+	}
 
 	if (filters.sort === 'popular') {
 		// 人気順は集計用のビュー等を持たないため、直近の候補プール(最大 POPULAR_SORT_CANDIDATE_POOL 件)を
