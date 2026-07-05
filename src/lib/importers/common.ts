@@ -40,7 +40,7 @@ export async function mapWithConcurrency<T, R>(
 	return results;
 }
 
-async function ensureTags(tagNames: string[]): Promise<Map<string, number>> {
+async function ensureTags(tagNames: string[], tagLabels: Record<string, string> = {}): Promise<Map<string, number>> {
 	// 既存タグを先に引き、足りないタグだけをまとめて作成する。
 	const normalizedTagNames = [...new Set(tagNames.map(normalizeTagName).filter((tag) => tag.length > 0))];
 	const tagIdMap = new Map<string, number>();
@@ -56,9 +56,11 @@ async function ensureTags(tagNames: string[]): Promise<Map<string, number>> {
 
 	const missingTagNames = normalizedTagNames.filter((tagName) => !tagIdMap.has(tagName));
 	if (missingTagNames.length > 0) {
+		// 新規タグだけ、AI/収集元がそのまま使った表記を display_name として残す。
+		// 大文字小文字の表記決定は追加時点のものを尊重し、以後の取り込みでは上書きしない。
 		const { error: insertError } = await supabase
 			.from('tags')
-			.insert(missingTagNames.map((name) => ({ name })));
+			.insert(missingTagNames.map((name) => ({ name, display_name: tagLabels[name] && tagLabels[name] !== name ? tagLabels[name] : null })));
 		if (insertError && insertError.code !== '23505') throw insertError;
 
 		const { data: refreshedTags, error: refreshError } = await supabase
@@ -75,12 +77,12 @@ async function ensureTags(tagNames: string[]): Promise<Map<string, number>> {
 	return tagIdMap;
 }
 
-export async function syncItemTags(itemId: number, tagNames: string[]): Promise<void> {
+export async function syncItemTags(itemId: number, tagNames: string[], tagLabels: Record<string, string> = {}): Promise<void> {
 	// 全削除→再作成だと失敗時にタグが失われたまま残るため、差分だけ insert/delete する。
 	const normalizedTagNames = [...new Set(tagNames.map(normalizeTagName).filter((tag) => tag.length > 0))];
 	const supabase = await getSupabaseClient();
 
-	const tagIdMap = await ensureTags(normalizedTagNames);
+	const tagIdMap = await ensureTags(normalizedTagNames, tagLabels);
 	const desiredTagIds = new Set(
 		normalizedTagNames
 			.map((tagName) => tagIdMap.get(tagName))
@@ -175,6 +177,7 @@ export interface ItemUpsertPayload {
 export async function upsertItemByExternalUrl(
 	payload: ItemUpsertPayload,
 	tags: string[],
+	tagLabels: Record<string, string> = {},
 ): Promise<{ id: number; action: 'inserted' | 'updated' }> {
 	// action の判定は結果表示用の分類に過ぎず、書き込み自体は external_url の
 	// UNIQUE 制約(migrations/002)を前提にした upsert で原子的に行う。
@@ -209,8 +212,17 @@ export async function upsertItemByExternalUrl(
 	if (upsertError) throw upsertError;
 
 	const itemId = (upserted as { id: number }).id;
-	await syncItemTags(itemId, tags);
+	await syncItemTags(itemId, tags, tagLabels);
 	return { id: itemId, action };
+}
+
+export async function findItemVersionByExternalUrl(externalUrl: string): Promise<string | null> {
+	// Brave Search 経由のブログ収集は fetch/AIレビューのコストが他インポーターより重いため、
+	// 本文ハッシュ(version)が前回と同じなら再レビューを省略する差分検知に使う。
+	const supabase = await getSupabaseClient();
+	const { data, error } = await supabase.from('items').select('version').eq('external_url', externalUrl).limit(1);
+	if (error) throw error;
+	return data?.[0]?.version ?? null;
 }
 
 export interface ImportItemOutcome {

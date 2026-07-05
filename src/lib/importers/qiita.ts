@@ -1,6 +1,6 @@
 // Qiita API から記事を収集し、AI レビューとタグ同期を通して DB に反映する。
 // 収集条件や provenance も metadata に残して、再現できる形で保存する。
-import { reviewImportArticle } from './article-ai';
+import { buildTagLabels, reviewImportArticle } from './article-ai';
 import { fetchTopTagNames, mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
 import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';

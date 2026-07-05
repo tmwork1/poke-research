@@ -1,0 +1,63 @@
+---
+import type { TagUsage } from '../lib/catalog';
+import { formatTagLabel } from '../lib/tag-display';
+
+interface Props {
+	topTags: TagUsage[];
+	activeTag: string;
+	buildUrl: (overrides: { tag: string }) => string;
+}
+
+const { topTags, activeTag, buildUrl } = Astro.props as Props;
+---
+
+{topTags.length > 0 ? (
+	<div class="tag-cloud" aria-label="よく使われるタグ">
+		<a class={`chip ${!activeTag ? 'active' : ''}`} href={buildUrl({ tag: '' })}>すべて</a>
+		{topTags.map((tag) => (
+			<a class={`chip ${activeTag === tag.name ? 'active' : ''}`} href={buildUrl({ tag: tag.name })}>
+				{formatTagLabel(tag.name)} <span class="chip-count">{tag.count}</span>
+			</a>
+		))}
+	</div>
+) : null}
+
+<style>
+	.tag-cloud {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 14px;
+		border-radius: 999px;
+		background: var(--card-bg);
+		border: 1px solid var(--border);
+		color: var(--text);
+		font-size: 0.88rem;
+		text-decoration: none;
+	}
+
+	.chip:hover {
+		border-color: var(--accent);
+	}
+
+	.chip.active {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #fff;
+	}
+
+	.chip-count {
+		font-size: 0.78rem;
+		color: var(--text-muted);
+	}
+
+	.chip.active .chip-count {
+		color: rgba(255, 255, 255, 0.85);
+	}
+</style>

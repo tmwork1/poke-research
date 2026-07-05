@@ -1,0 +1,44 @@
+---
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import CatalogPage from '../../components/CatalogPage.astro';
+import { fetchBookmarkCounts, fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchCatalogSources, fetchTopTags } from '../../lib/catalog';
+import { parseOptionalPositiveInteger } from '../../lib/params';
+import { formatTagLabel } from '../../lib/tag-display';
+
+const tagName = decodeURIComponent(Astro.params.name ?? '');
+const tagLabel = formatTagLabel(tagName);
+const url = new URL(Astro.request.url);
+const page = parseOptionalPositiveInteger(url.searchParams.get('page')) ?? 1;
+
+const user = Astro.locals.user;
+
+const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
+	fetchCatalogItemsPage({ tag: tagName, page }),
+	fetchTopTags(20),
+	fetchCatalogSources(),
+	user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
+]);
+const bookmarkCounts = await fetchBookmarkCounts(itemsPage.items.map((item) => item.id));
+---
+
+<Layout
+	title={`#${tagLabel} の記事一覧 | PokeResearch`}
+	description={`「${tagLabel}」タグが付いたポケモンプログラミング関連記事の一覧です。`}
+	loggedIn={Boolean(user)}
+>
+	<CatalogPage
+		title={`#${tagLabel} の記事一覧`}
+		eyebrow="Tag"
+		basePath="/items"
+		items={itemsPage.items}
+		topTags={topTags}
+		sources={sources}
+		filters={{ q: '', tag: tagName, sourceIds: [], sort: 'new' }}
+		pagination={{ page: itemsPage.page, totalPages: itemsPage.totalPages, total: itemsPage.total }}
+		bookmarkedItemIds={bookmarkedItemIds}
+		bookmarkCounts={bookmarkCounts}
+		loggedIn={Boolean(user)}
+	/>
+</Layout>
