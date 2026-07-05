@@ -1,0 +1,84 @@
+---
+export const prerender = false;
+
+import Layout from '../layouts/Layout.astro';
+
+const user = Astro.locals.user;
+---
+
+<Layout
+	title="このサイトについて | PokeResearch"
+	description="PokeResearch の収集の仕組み、AI要約・タグ付けの方針、削除依頼の窓口について"
+	loggedIn={Boolean(user)}
+>
+	<section class="about">
+		<h1>このサイトについて</h1>
+		<p class="lead">
+			PokeResearch は、ポケモンに関するプログラミング・開発の技術記事を自動で収集・整理する情報ハブです。
+			ツールや API、データ解析、対戦・育成支援、ファンゲーム開発など「ポケモン × 技術」の記事を横断して探せます。
+		</p>
+
+		<h2>収集の仕組み</h2>
+		<p>
+			Qiita・Zenn・note・個人ブログ（Brave Search 経由）を毎日自動巡回し、収集した記事を
+			AI がレビューしています。AI レビューでは「主題がポケモンに直接関係しているか」
+			「技術的な実装・手法を扱っているか」の2点を確認し、両方を満たす記事だけを掲載します。
+		</p>
+		<p>
+			各アイテムには取得元・取得条件・AI の判定結果を記録しており、どこから来た情報かを
+			後から追跡できる形（provenance）で保存しています。
+		</p>
+
+		<h2>要約とタグについて</h2>
+		<p>
+			記事カードに表示される要約とタグは AI による自動生成です。内容の正確性には配慮していますが、
+			必ず元記事を確認してください。記事本文の著作権は各記事の著者に帰属し、
+			本サイトはタイトル・リンク・AI 生成の要約のみを掲載しています。
+		</p>
+
+		<h2>削除依頼・お問い合わせ</h2>
+		<p>
+			ご自身の記事の掲載を望まない場合や、誤った情報・不適切なタグを見つけた場合は、
+			<a href="https://x.com/ml7ddw0" target="_blank" rel="noreferrer">X: @ml7ddw0</a>
+			までご連絡ください。確認のうえ速やかに対応します。
+		</p>
+	</section>
+</Layout>
+
+<style>
+	.about {
+		max-width: 720px;
+		display: grid;
+		gap: 12px;
+		padding: 28px;
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		box-shadow: var(--shadow);
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 1.5rem;
+	}
+
+	h2 {
+		margin: 16px 0 0;
+		font-size: 1.1rem;
+	}
+
+	p {
+		margin: 0;
+		line-height: 1.8;
+		color: var(--text-muted);
+	}
+
+	.lead {
+		color: var(--text);
+	}
+
+	a {
+		color: var(--accent-dark);
+		text-decoration: underline;
+	}
+</style>
