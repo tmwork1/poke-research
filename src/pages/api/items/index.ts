@@ -15,11 +15,15 @@ export const prerender = false;
 
 export async function GET({ request }: { request: Request }) {
   const url = new URL(request.url);
+  const sourceIds = url.searchParams
+    .getAll('sourceId')
+    .map((value) => parseOptionalPositiveInteger(value))
+    .filter((value): value is number => value !== undefined);
   const items = await fetchCatalogItems({
     q: url.searchParams.get('q') ?? undefined,
     kind: url.searchParams.get('kind') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
-    sourceId: parseOptionalPositiveInteger(url.searchParams.get('sourceId')),
+    sourceIds: sourceIds.length > 0 ? sourceIds : undefined,
     limit: parseOptionalPositiveInteger(url.searchParams.get('limit')),
   });
 
@@ -31,7 +35,7 @@ export async function GET({ request }: { request: Request }) {
         q: url.searchParams.get('q') ?? '',
         kind: url.searchParams.get('kind') ?? '',
         tag: url.searchParams.get('tag') ?? '',
-        sourceId: url.searchParams.get('sourceId') ?? '',
+        sourceId: url.searchParams.getAll('sourceId').join(','),
         limit: url.searchParams.get('limit') ?? '',
       },
     },

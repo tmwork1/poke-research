@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /mypage
+
+Sitemap: https://poke-research.com/sitemap.xml

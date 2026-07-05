@@ -1,0 +1,47 @@
+---
+interface Props {
+	page: number;
+	totalPages: number;
+	buildUrl: (overrides: { page: number }) => string;
+}
+
+const { page, totalPages, buildUrl } = Astro.props as Props;
+
+const prevPage = page - 1;
+const nextPage = page + 1;
+---
+
+{totalPages > 1 ? (
+	<nav class="pagination" aria-label="ページ送り">
+		{prevPage >= 1 ? <a href={buildUrl({ page: prevPage })}>前へ</a> : <span class="disabled">前へ</span>}
+		<span class="page-indicator">{page} / {totalPages}</span>
+		{nextPage <= totalPages ? <a href={buildUrl({ page: nextPage })}>次へ</a> : <span class="disabled">次へ</span>}
+	</nav>
+) : null}
+
+<style>
+	.pagination {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 16px;
+	}
+
+	.pagination a,
+	.pagination .disabled {
+		padding: 10px 18px;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+	}
+
+	.pagination .disabled {
+		color: var(--text-muted);
+		opacity: 0.5;
+	}
+
+	.page-indicator {
+		color: var(--text-muted);
+		font-size: 0.9rem;
+	}
+</style>

@@ -14,13 +14,19 @@ export interface ItemDetail extends CatalogItem {
 	annotations: Annotation[];
 }
 
+export type SortOrder = 'asc' | 'desc';
+
 export interface ItemFilters {
 	q?: string;
 	kind?: string;
 	tag?: string;
-	sourceId?: number;
+	sourceIds?: number[];
 	limit?: number;
+	order?: SortOrder;
 }
+
+export type CatalogSort = 'new' | 'oldest' | 'popular';
+const POPULAR_SORT_CANDIDATE_POOL = 300;
 
 export interface TagUsage extends Tag {
 	count: number;
@@ -152,15 +158,16 @@ async function queryCatalogItems(
 	options: { withCount?: boolean; offset?: number } = {},
 ): Promise<{ data: ItemRow[]; count: number | null }> {
 	const searchTerm = filters.q?.trim();
+	const ascending = filters.order === 'asc';
 	const supabase = await getSupabaseClient();
 	let query = supabase
 		.from('items')
 		.select(ITEM_SELECT, options.withCount ? { count: 'exact' } : undefined)
-		.order('published_at', { ascending: false, nullsFirst: false })
-		.order('created_at', { ascending: false });
+		.order('published_at', { ascending, nullsFirst: false })
+		.order('created_at', { ascending });
 
-	if (filters.sourceId !== undefined) {
-		query = query.eq('source_id', filters.sourceId);
+	if (filters.sourceIds && filters.sourceIds.length > 0) {
+		query = query.in('source_id', filters.sourceIds);
 	}
 
 	if (filters.kind?.trim()) {
@@ -205,14 +212,37 @@ export async function fetchCatalogItems(filters: ItemFilters = {}): Promise<Cata
 const DEFAULT_PAGE_SIZE = 20;
 
 export async function fetchCatalogItemsPage(
-	filters: ItemFilters & { page?: number; pageSize?: number } = {},
+	filters: ItemFilters & { page?: number; pageSize?: number; sort?: CatalogSort } = {},
 ): Promise<CatalogItemsPage> {
 	const pageSize = filters.pageSize && filters.pageSize > 0 ? filters.pageSize : DEFAULT_PAGE_SIZE;
 	const page = filters.page && filters.page > 0 ? filters.page : 1;
-	const offset = (page - 1) * pageSize;
 
+	if (filters.sort === 'popular') {
+		// 人気順は集計用のビュー等を持たないため、直近の候補プール(最大 POPULAR_SORT_CANDIDATE_POOL 件)を
+		// 取得してからJS側でブックマーク数によりソート・ページングする。プール外の古いアイテムは対象外になる。
+		const { data } = await queryCatalogItems({ ...filters, limit: POPULAR_SORT_CANDIDATE_POOL });
+		const candidates = data.map(normalizeItem);
+		const bookmarkCounts = await fetchBookmarkCounts(candidates.map((item) => item.id));
+		const sorted = [...candidates].sort(
+			(a, b) => (bookmarkCounts.get(b.id) ?? 0) - (bookmarkCounts.get(a.id) ?? 0),
+		);
+
+		const total = sorted.length;
+		const offset = (page - 1) * pageSize;
+		return {
+			items: sorted.slice(offset, offset + pageSize),
+			total,
+			page,
+			pageSize,
+			totalPages: Math.max(1, Math.ceil(total / pageSize)),
+		};
+	}
+
+	// 古い順は新着順の逆順として扱う（DB側の並び替え方向を反転するだけ）。
+	const order: SortOrder = filters.sort === 'oldest' ? 'asc' : 'desc';
+	const offset = (page - 1) * pageSize;
 	const { data, count } = await queryCatalogItems(
-		{ ...filters, limit: pageSize },
+		{ ...filters, order, limit: pageSize },
 		{ withCount: true, offset },
 	);
 
@@ -270,6 +300,21 @@ export async function fetchCatalogItemById(id: number): Promise<ItemDetail | nul
 	};
 }
 
+export async function fetchBookmarkCounts(itemIds: number[]): Promise<Map<number, number>> {
+	const counts = new Map<number, number>();
+	if (itemIds.length === 0) return counts;
+
+	const supabase = await getSupabaseClient();
+	// PostgREST は item 別の group-by count を直接返せないため、行を取得してJS側で集計する。
+	const { data, error } = await supabase.from('bookmarks').select('item_id').in('item_id', itemIds);
+	if (error) throw error;
+
+	for (const row of (data ?? []) as Array<{ item_id: number }>) {
+		counts.set(row.item_id, (counts.get(row.item_id) ?? 0) + 1);
+	}
+	return counts;
+}
+
 export async function fetchBookmarkedItemIds(userId: string): Promise<Set<number>> {
 	const supabase = await getSupabaseClient();
 	const { data, error } = await supabase.from('bookmarks').select('item_id').eq('user_id', userId);
@@ -294,6 +339,76 @@ export async function fetchBookmarkedItems(userId: string): Promise<CatalogItem[
 		const item = Array.isArray(row.item) ? row.item[0] : row.item;
 		return item ? [normalizeItem(item)] : [];
 	});
+}
+
+const RECOMMENDATION_CANDIDATE_POOL = 100;
+const RECOMMENDATION_TAG_WEIGHT = 3;
+
+function tagUsageFromItems(items: CatalogItem[]): TagUsage[] {
+	const counts = new Map<number, TagUsage>();
+	for (const item of items) {
+		for (const tag of item.tags) {
+			const existing = counts.get(tag.id);
+			if (existing) {
+				existing.count += 1;
+			} else {
+				counts.set(tag.id, { id: tag.id, name: tag.name, count: 1 });
+			}
+		}
+	}
+	return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+export interface BookmarkedItemsResult {
+	items: CatalogItem[];
+	availableTags: TagUsage[];
+	total: number;
+}
+
+export async function fetchBookmarkedItemsFiltered(
+	userId: string,
+	options: { tag?: string; sort?: CatalogSort } = {},
+): Promise<BookmarkedItemsResult> {
+	const items = await fetchBookmarkedItems(userId);
+	const availableTags = tagUsageFromItems(items);
+	const filtered = options.tag ? items.filter((item) => item.tags.some((tag) => tag.name === options.tag)) : items;
+
+	let ordered: CatalogItem[];
+	if (options.sort === 'oldest') {
+		// fetchBookmarkedItems はブックマーク日時の降順で返すため、反転すれば古い順になる。
+		ordered = [...filtered].reverse();
+	} else if (options.sort === 'popular') {
+		const bookmarkCounts = await fetchBookmarkCounts(filtered.map((item) => item.id));
+		ordered = [...filtered].sort((a, b) => (bookmarkCounts.get(b.id) ?? 0) - (bookmarkCounts.get(a.id) ?? 0));
+	} else {
+		ordered = filtered;
+	}
+
+	return { items: ordered, availableTags, total: items.length };
+}
+
+export async function fetchRecommendedItems(userId: string, limit = 6): Promise<CatalogItem[]> {
+	const bookmarkedItemIds = await fetchBookmarkedItemIds(userId);
+
+	let preferredTagIds = new Set<number>();
+	if (bookmarkedItemIds.size > 0) {
+		const bookmarkedItems = await fetchBookmarkedItems(userId);
+		preferredTagIds = new Set(bookmarkedItems.flatMap((item) => item.tags.map((tag) => tag.id)));
+	}
+
+	const { data } = await queryCatalogItems({ limit: RECOMMENDATION_CANDIDATE_POOL });
+	const candidates = data.map(normalizeItem).filter((item) => !bookmarkedItemIds.has(item.id));
+	if (candidates.length === 0) return [];
+
+	const bookmarkCounts = await fetchBookmarkCounts(candidates.map((item) => item.id));
+	const scored = candidates.map((item) => {
+		const tagOverlap = item.tags.reduce((count, tag) => count + (preferredTagIds.has(tag.id) ? 1 : 0), 0);
+		const popularity = bookmarkCounts.get(item.id) ?? 0;
+		return { item, score: tagOverlap * RECOMMENDATION_TAG_WEIGHT + popularity };
+	});
+	scored.sort((a, b) => b.score - a.score);
+
+	return scored.slice(0, limit).map((entry) => entry.item);
 }
 
 export async function fetchCatalogOverview() {

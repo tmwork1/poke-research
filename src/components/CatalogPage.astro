@@ -2,6 +2,8 @@
 import type { CatalogItem, TagUsage } from '../lib/catalog';
 import type { Source } from '../lib/db-types';
 import ItemCard from './ItemCard.astro';
+import Pagination from './Pagination.astro';
+import TagCloud from './TagCloud.astro';
 
 interface Props {
 	title: string;
@@ -13,7 +15,8 @@ interface Props {
 	filters: {
 		q: string;
 		tag: string;
-		sourceId: string;
+		sourceIds: number[];
+		sort: string;
 	};
 	pagination: {
 		page: number;
@@ -21,6 +24,7 @@ interface Props {
 		total: number;
 	};
 	bookmarkedItemIds?: Set<number>;
+	bookmarkCounts?: Map<number, number>;
 	loggedIn?: boolean;
 }
 
@@ -34,81 +38,94 @@ const {
 	filters,
 	pagination,
 	bookmarkedItemIds = new Set<number>(),
+	bookmarkCounts = new Map<number, number>(),
 	loggedIn = false,
 } = Astro.props as Props;
 
-function buildUrl(overrides: Partial<{ q: string; tag: string; sourceId: string; page: number }>) {
+function buildUrl(overrides: Partial<{ q: string; tag: string; sourceIds: number[]; sort: string; page: number }>) {
 	const q = overrides.q !== undefined ? overrides.q : filters.q;
 	const tag = overrides.tag !== undefined ? overrides.tag : filters.tag;
-	const sourceId = overrides.sourceId !== undefined ? overrides.sourceId : filters.sourceId;
+	const sourceIds = overrides.sourceIds !== undefined ? overrides.sourceIds : filters.sourceIds;
+	const sort = overrides.sort !== undefined ? overrides.sort : filters.sort;
 	const page = overrides.page;
 
 	const params = new URLSearchParams();
 	if (q) params.set('q', q);
 	if (tag) params.set('tag', tag);
-	if (sourceId) params.set('sourceId', sourceId);
+	for (const sourceId of sourceIds) params.append('sourceId', String(sourceId));
+	if (sort && sort !== 'new') params.set('sort', sort);
 	if (page && page > 1) params.set('page', String(page));
 
 	const qs = params.toString();
 	return qs ? `${basePath}?${qs}` : basePath;
 }
 
-const prevPage = pagination.page - 1;
-const nextPage = pagination.page + 1;
+function toggleSource(sourceId: number) {
+	return filters.sourceIds.includes(sourceId)
+		? filters.sourceIds.filter((id) => id !== sourceId)
+		: [...filters.sourceIds, sourceId];
+}
 ---
 
 <section class="catalog">
 	{eyebrow ? <p class="eyebrow">{eyebrow}</p> : null}
-	<h1>{title}</h1>
 
-	<form class="filters" method="get" action={basePath}>
-		<input type="hidden" name="tag" value={filters.tag} />
-		<label class="field-q">
-			<span>キーワード</span>
-			<input type="search" name="q" value={filters.q} placeholder="例: ダメージ計算" />
-		</label>
-		<label>
-			<span>公開元</span>
-			<select name="sourceId">
-				<option value="" selected={!filters.sourceId}>すべて</option>
-				{sources.map((source) => <option value={source.id} selected={filters.sourceId === String(source.id)}>{source.name}</option>)}
-			</select>
-		</label>
-		<div class="actions">
-			<button type="submit">絞り込む</button>
-			<a href={basePath}>条件をリセット</a>
-		</div>
-	</form>
+	<section class="panel">
+		<form class="filters" method="get" action={basePath}>
+			<input type="hidden" name="tag" value={filters.tag} />
+			{filters.sourceIds.map((sourceId) => <input type="hidden" name="sourceId" value={sourceId} />)}
+			<input class="search-input" type="search" name="q" value={filters.q} placeholder="キーワードで検索（例: ダメージ計算）" aria-label="キーワード" />
 
-	{topTags.length > 0 ? (
-		<div class="tag-cloud" aria-label="よく使われるタグ">
-			<a class={`chip ${!filters.tag ? 'active' : ''}`} href={buildUrl({ tag: '' })}>すべて</a>
-			{topTags.map((tag) => (
-				<a class={`chip ${filters.tag === tag.name ? 'active' : ''}`} href={buildUrl({ tag: tag.name })}>
-					{tag.name} <span class="chip-count">{tag.count}</span>
-				</a>
-			))}
-		</div>
-	) : null}
+			<div class="filter-group">
+				<p class="filter-label">ソース</p>
+				<div class="chip-group" aria-label="公開元で絞り込む">
+					<a class:list={['chip', { active: filters.sourceIds.length === 0 }]} href={buildUrl({ sourceIds: [] })}>すべて</a>
+					{sources.map((source) => (
+						<a class:list={['chip', { active: filters.sourceIds.includes(source.id) }]} href={buildUrl({ sourceIds: toggleSource(source.id) })}>
+							{source.name}
+						</a>
+					))}
+				</div>
+			</div>
 
-	{items.length > 0 ? (
-		<div class="grid">
-			{items.map((item) => <ItemCard item={item} bookmarked={bookmarkedItemIds.has(item.id)} loggedIn={loggedIn} />)}
-		</div>
-	) : (
-		<div class="empty-state">
-			<h2>一致するアイテムがありません</h2>
-			<p>条件を緩めるか、キーワードを変えて再検索してください。</p>
-		</div>
-	)}
+			<div class="filter-group">
+				<p class="filter-label">タグ</p>
+				<TagCloud topTags={topTags} activeTag={filters.tag} buildUrl={buildUrl} />
+			</div>
 
-	{pagination.totalPages > 1 ? (
-		<nav class="pagination" aria-label="ページ送り">
-			{prevPage >= 1 ? <a href={buildUrl({ page: prevPage })}>前へ</a> : <span class="disabled">前へ</span>}
-			<span class="page-indicator">{pagination.page} / {pagination.totalPages}</span>
-			{nextPage <= pagination.totalPages ? <a href={buildUrl({ page: nextPage })}>次へ</a> : <span class="disabled">次へ</span>}
-		</nav>
-	) : null}
+			<div class="control-row">
+				<select name="sort" class="sort-select" aria-label="並び順">
+					<option value="new" selected={filters.sort === 'new'}>新着順</option>
+					<option value="popular" selected={filters.sort === 'popular'}>人気順</option>
+					<option value="oldest" selected={filters.sort === 'oldest'}>古い順</option>
+				</select>
+
+				<a class="reset-link" href={basePath}>条件をリセット</a>
+			</div>
+		</form>
+
+		<Pagination page={pagination.page} totalPages={pagination.totalPages} buildUrl={buildUrl} />
+
+		{items.length > 0 ? (
+			<div class="grid">
+				{items.map((item) => (
+					<ItemCard
+						item={item}
+						bookmarked={bookmarkedItemIds.has(item.id)}
+						bookmarkCount={bookmarkCounts.get(item.id) ?? 0}
+						loggedIn={loggedIn}
+					/>
+				))}
+			</div>
+		) : (
+			<div class="empty-state">
+				<h2>一致するアイテムがありません</h2>
+				<p>条件を緩めるか、キーワードを変えて再検索してください。</p>
+			</div>
+		)}
+
+		<Pagination page={pagination.page} totalPages={pagination.totalPages} buildUrl={buildUrl} />
+	</section>
 </section>
 
 <style>
@@ -117,16 +134,11 @@ const nextPage = pagination.page + 1;
 		gap: 24px;
 	}
 
-	.filters,
+	.panel,
 	.empty-state {
 		border: 1px solid var(--border);
 		background: var(--card-bg);
 		box-shadow: var(--shadow);
-	}
-
-	.catalog h1 {
-		margin: 0;
-		font-size: clamp(1.8rem, 3.4vw, 2.6rem);
 	}
 
 	.eyebrow {
@@ -137,68 +149,75 @@ const nextPage = pagination.page + 1;
 		color: var(--text-muted);
 	}
 
+	.panel {
+		display: grid;
+		gap: 20px;
+		padding: 24px;
+		border-radius: var(--radius-lg);
+	}
+
 	.filters {
 		display: grid;
-		grid-template-columns: 2fr 1fr auto;
-		align-items: end;
-		gap: 16px;
-		padding: 20px;
-		border-radius: var(--radius-md);
+		gap: 14px;
 	}
 
-	.filters label {
+	.filter-group {
 		display: grid;
-		gap: 8px;
+		gap: 10px;
 	}
 
-	.filters span {
-		font-size: 0.8rem;
-		letter-spacing: 0.06em;
+	.filter-label {
+		margin: 0;
+		font-size: 0.75rem;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
 		color: var(--text-muted);
 	}
 
-	.filters input,
-	.filters select {
+	.search-input {
 		width: 100%;
 		box-sizing: border-box;
-		padding: 12px 14px;
+		padding: 14px 18px;
 		border: 1px solid var(--border);
-		border-radius: 12px;
+		border-radius: 999px;
 		background: #fff;
 		color: inherit;
-		font-size: 0.95rem;
+		font-size: 1rem;
 	}
 
-	.actions {
+	.control-row {
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 14px;
 		flex-wrap: wrap;
+		padding-top: 18px;
+		border-top: 1px solid var(--border);
 	}
 
-	.actions button,
-	.actions a {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: 8px;
-		padding: 12px 16px;
-		border-radius: 12px;
+	.sort-select {
+		flex: none;
+		padding: 8px 10px 8px 30px;
 		border: 1px solid var(--border);
+		border-radius: 10px;
+		background-color: #fff;
+		background-repeat: no-repeat;
+		background-position: 8px center;
+		background-size: 14px 14px;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236a737d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h11'/%3E%3Cpath d='M3 12h8'/%3E%3Cpath d='M3 17h5'/%3E%3Cpath d='M17 4v16'/%3E%3Cpath d='M13 16l4 4 4-4'/%3E%3C/svg%3E");
+		color: inherit;
+		font-size: 0.85rem;
 	}
 
-	.actions button {
-		background: var(--accent);
-		border-color: var(--accent);
-		color: #fff;
-		font-weight: 700;
-	}
-
-	.actions a {
+	.reset-link {
+		padding: 8px 14px;
+		border-radius: 12px;
 		background: var(--bg-soft);
+		font-size: 0.85rem;
+		flex: none;
+		margin-left: auto;
 	}
 
-	.tag-cloud {
+	.chip-group {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;
@@ -214,6 +233,7 @@ const nextPage = pagination.page + 1;
 		border: 1px solid var(--border);
 		color: var(--text);
 		font-size: 0.88rem;
+		text-decoration: none;
 	}
 
 	.chip:hover {
@@ -226,15 +246,6 @@ const nextPage = pagination.page + 1;
 		color: #fff;
 	}
 
-	.chip-count {
-		font-size: 0.78rem;
-		color: var(--text-muted);
-	}
-
-	.chip.active .chip-count {
-		color: rgba(255, 255, 255, 0.85);
-	}
-
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -243,42 +254,24 @@ const nextPage = pagination.page + 1;
 
 	.empty-state {
 		padding: 28px;
-		border-radius: var(--radius-lg);
+		border-radius: var(--radius-md);
 	}
 
 	.empty-state h2 {
 		margin-top: 0;
 	}
 
-	.pagination {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 16px;
-	}
-
-	.pagination a,
-	.pagination .disabled {
-		padding: 10px 18px;
-		border-radius: 999px;
-		border: 1px solid var(--border);
-		background: var(--card-bg);
-	}
-
-	.pagination .disabled {
-		color: var(--text-muted);
-		opacity: 0.5;
-	}
-
-	.page-indicator {
-		color: var(--text-muted);
-		font-size: 0.9rem;
-	}
-
 	@media (max-width: 960px) {
-		.filters,
 		.grid {
 			grid-template-columns: 1fr;
 		}
 	}
 </style>
+
+<script>
+	document.querySelectorAll<HTMLSelectElement>('.sort-select').forEach((select) => {
+		select.addEventListener('change', () => {
+			select.form?.requestSubmit();
+		});
+	});
+</script>

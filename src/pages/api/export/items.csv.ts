@@ -23,11 +23,15 @@ const HEADERS = [
 
 export async function GET({ request }: { request: Request }) {
   const url = new URL(request.url);
+  const sourceIds = url.searchParams
+    .getAll('sourceId')
+    .map((value) => parseOptionalPositiveInteger(value))
+    .filter((value): value is number => value !== undefined);
   const items = await fetchCatalogItems({
     q: url.searchParams.get('q') ?? undefined,
     kind: url.searchParams.get('kind') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
-    sourceId: parseOptionalPositiveInteger(url.searchParams.get('sourceId')),
+    sourceIds: sourceIds.length > 0 ? sourceIds : undefined,
   });
 
   const rows = items.map((item) => [

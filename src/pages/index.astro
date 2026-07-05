@@ -3,18 +3,41 @@ export const prerender = false;
 
 import Layout from '../layouts/Layout.astro';
 import ItemCard from '../components/ItemCard.astro';
-import { fetchBookmarkedItemIds, fetchCatalogItems, type CatalogItem } from '../lib/catalog';
+import TagCloud from '../components/TagCloud.astro';
+import { fetchBookmarkCounts, fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchTopTags, type CatalogItem, type CatalogSort } from '../lib/catalog';
+import { parseOptionalPositiveInteger } from '../lib/params';
+
+const PAGE_SIZE = 12;
 
 const user = Astro.locals.user;
+const url = new URL(Astro.request.url);
+const activeTag = url.searchParams.get('tag') ?? '';
+const activeSort: CatalogSort = url.searchParams.get('sort') === 'popular' ? 'popular' : 'new';
+const page = parseOptionalPositiveInteger(url.searchParams.get('page')) ?? 1;
+
+function buildUrl(overrides: { tag: string }) {
+	const params = new URLSearchParams();
+	if (overrides.tag) params.set('tag', overrides.tag);
+	if (activeSort !== 'new') params.set('sort', activeSort);
+	const qs = params.toString();
+	return qs ? `/?${qs}` : '/';
+}
 
 let recentItems: CatalogItem[];
 let bookmarkedItemIds = new Set<number>();
+let bookmarkCounts = new Map<number, number>();
 let loadError = false;
+let hasMore = false;
+const topTags = await fetchTopTags(5);
 try {
-	[recentItems, bookmarkedItemIds] = await Promise.all([
-		fetchCatalogItems({ limit: 6 }),
+	const [itemsPage, bookmarks] = await Promise.all([
+		fetchCatalogItemsPage({ tag: activeTag || undefined, sort: activeSort, page, pageSize: PAGE_SIZE }),
 		user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
 	]);
+	recentItems = itemsPage.items;
+	hasMore = itemsPage.page < itemsPage.totalPages;
+	bookmarkedItemIds = bookmarks;
+	bookmarkCounts = await fetchBookmarkCounts(recentItems.map((item) => item.id));
 } catch (error) {
 	console.error('Failed to load recent items:', error);
 	loadError = true;
@@ -22,26 +45,33 @@ try {
 }
 ---
 
-<Layout title="PokeResearch" description="ポケモンプログラミング情報ハブのトップページ">
+<Layout title="PokeResearch" description="ポケモンプログラミング情報ハブのトップページ" loggedIn={Boolean(user)}>
 	<section class="home">
 		{loadError && (
 			<div class="empty" role="alert">
 				データの取得に失敗しました。しばらくしてから再度お試しください。
 			</div>
 		)}
+		<p class="eyebrow">Recent items</p>
 		<section class="panel">
-			<div class="section-head">
-				<div>
-					<p class="eyebrow">Recent items</p>
-					<h2>最近追加されたアイテム</h2>
-				</div>
-				<a href="/items">すべて見る</a>
+			<div class="tag-filter">
+				<TagCloud topTags={topTags} activeTag={activeTag} buildUrl={buildUrl} />
 			</div>
-			<div class="cards">
-				{recentItems.length > 0 ? recentItems.map((item) => <ItemCard item={item} bookmarked={bookmarkedItemIds.has(item.id)} loggedIn={Boolean(user)} />) : (
+			<form class="sort-row" method="get" action="/">
+				<input type="hidden" name="tag" value={activeTag} />
+				<select name="sort" class="sort-select" aria-label="並び順">
+					<option value="new" selected={activeSort !== 'popular'}>新着順</option>
+					<option value="popular" selected={activeSort === 'popular'}>人気順</option>
+				</select>
+			</form>
+			<div class="cards" data-page={page} data-has-more={hasMore ? 'true' : 'false'} data-tag={activeTag} data-sort={activeSort}>
+				{recentItems.length > 0 ? recentItems.map((item) => (
+					<ItemCard item={item} bookmarked={bookmarkedItemIds.has(item.id)} bookmarkCount={bookmarkCounts.get(item.id) ?? 0} loggedIn={Boolean(user)} />
+				)) : (
 					<div class="empty">まだアイテムがありません。 scripts/db/seed-sample-article.mjs でサンプルを投入できます。</div>
 				)}
 			</div>
+			<p class="loading-indicator" hidden>読み込み中...</p>
 		</section>
 	</section>
 </Layout>
@@ -67,31 +97,32 @@ try {
 		color: var(--text-muted);
 	}
 
-	.section-head a {
-		padding: 12px 16px;
-		border-radius: 12px;
-		background: var(--accent);
-		color: #fff;
-		font-weight: 700;
-		text-align: center;
-	}
-
 	.panel {
 		padding: 24px;
 		border-radius: var(--radius-lg);
 	}
 
-	.section-head {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 16px;
-		margin-bottom: 18px;
+	.tag-filter {
+		margin-bottom: 16px;
 	}
 
-	.section-head h2 {
-		margin: 0;
-		font-size: 1.6rem;
+	.sort-row {
+		display: flex;
+		justify-content: flex-start;
+		margin-bottom: 16px;
+	}
+
+	.sort-select {
+		padding: 8px 10px 8px 30px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background-color: #fff;
+		background-repeat: no-repeat;
+		background-position: 8px center;
+		background-size: 14px 14px;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236a737d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h11'/%3E%3Cpath d='M3 12h8'/%3E%3Cpath d='M3 17h5'/%3E%3Cpath d='M17 4v16'/%3E%3Cpath d='M13 16l4 4 4-4'/%3E%3C/svg%3E");
+		color: inherit;
+		font-size: 0.85rem;
 	}
 
 	.cards {
@@ -105,9 +136,73 @@ try {
 		border-radius: var(--radius-md);
 	}
 
+	.loading-indicator {
+		margin: 16px 0 0;
+		text-align: center;
+		font-size: 0.85rem;
+		color: var(--text-muted);
+	}
+
 	@media (max-width: 960px) {
 		.cards {
 			grid-template-columns: 1fr;
 		}
 	}
 </style>
+
+<script>
+	document.querySelectorAll<HTMLSelectElement>('.sort-select').forEach((select) => {
+		select.addEventListener('change', () => {
+			select.form?.requestSubmit();
+		});
+	});
+
+	const cardsEl = document.querySelector<HTMLDivElement>('.cards[data-page]');
+	const loadingIndicator = document.querySelector<HTMLElement>('.loading-indicator');
+
+	if (cardsEl) {
+		let page = Number(cardsEl.dataset.page ?? '1');
+		let hasMore = cardsEl.dataset.hasMore === 'true';
+		let loading = false;
+		const tag = cardsEl.dataset.tag ?? '';
+		const sort = cardsEl.dataset.sort ?? 'new';
+
+		const sentinel = document.createElement('div');
+		sentinel.setAttribute('aria-hidden', 'true');
+		cardsEl.insertAdjacentElement('afterend', sentinel);
+
+		const observer = new IntersectionObserver(async (entries) => {
+			if (!hasMore || loading || !entries.some((entry) => entry.isIntersecting)) return;
+			loading = true;
+			loadingIndicator?.removeAttribute('hidden');
+
+			const nextPage = page + 1;
+			const params = new URLSearchParams();
+			if (tag) params.set('tag', tag);
+			if (sort !== 'new') params.set('sort', sort);
+			params.set('page', String(nextPage));
+
+			try {
+				const response = await fetch(`/?${params.toString()}`);
+				if (!response.ok) throw new Error(`failed to load more items: ${response.status}`);
+				const html = await response.text();
+				const nextCards = new DOMParser().parseFromString(html, 'text/html').querySelector('.cards[data-page]');
+				if (nextCards) {
+					cardsEl.append(...nextCards.children);
+					page = Number(nextCards.getAttribute('data-page') ?? String(nextPage));
+					hasMore = nextCards.getAttribute('data-has-more') === 'true';
+				} else {
+					hasMore = false;
+				}
+			} catch (error) {
+				console.error('Failed to load more items:', error);
+			} finally {
+				loading = false;
+				loadingIndicator?.setAttribute('hidden', '');
+				if (!hasMore) observer.disconnect();
+			}
+		}, { rootMargin: '400px' });
+
+		observer.observe(sentinel);
+	}
+</script>
