@@ -25,4 +25,4 @@ if (!process.env.DATABASE_URL) {
 
 run('npm run migrate');
 
-console.log('\nMigrations applied. Push/merge to main to trigger the Cloudflare auto-deploy. See docs/operations.md for post-deploy checks.');
+console.log('\nMigrations applied. Push/merge to main to trigger the Cloudflare auto-deploy. See docs/reference/operations.md for post-deploy checks.');

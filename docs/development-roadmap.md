@@ -41,7 +41,7 @@
   - [x] Zenn（非公式 API。`topicname` によるトピック検索、`/api/articles/{slug}` で本文・タグを取得）
   - [x] note（非公式 API。`/api/v3/searches` によるキーワード検索、`/api/v3/notes/{key}` で本文・タグを取得。有料/メンバーシップ限定記事は `can_read` で除外）
   - GitHub（リポジトリ）は対象外とする。閲覧者にとって記事よりリポジトリは読むハードルが高く、この情報ハブの想定読者に合わないため。
-  - 個人ブログは特定ブログの購読ではなく、Brave Search API（公式・ドキュメント化された検索API）でのキーワード検索により発見する方針とする。実装はリリース後のアップデートで対応し、M3 の完了条件には含めない。
+  - [x] 個人ブログは特定ブログの購読ではなく、Brave Search API（公式・ドキュメント化された検索API）でのキーワード検索により発見する方針とし、実装した（`src/lib/brave.ts`、`src/lib/importers/blog.ts`）。除外ドメイン（Qiita/Zenn/note/GitHub/YouTube/X）は検索クエリの `-site:` と結果フィルタの両方で除く。任意サイトの本文抽出は Cloudflare の `HTMLRewriter` で行い（`article`→`main`→`body` の順にフォールバック）、`items.version` に本文ハッシュを保存して差分が無ければ AI レビューを省略する。詳細仕様は [docs/spec/brave-search-blog-import.md](spec/brave-search-blog-import.md) を参照。
   - YouTube は対象外とする。YouTube Data API v3 で検索自体は可能だが、記事本文に相当するテキスト（字幕・文字起こし）を任意の動画から確実に取得する手段が無く、概要欄だけでは AI レビューの精度が確保できないため。
   - Brave Search API での自動発見を補う形で、UI から記事単体の URL を投稿できる手動登録機能も将来検討する（ブログのトップページ単位ではなく、記事そのものの URL に限定する。ブログ単位だと更新の有無を追う仕組み＝RSS 自動検出などが別途必要になり、対象ブログによっては検知できないため）。実装はリリース後のアップデートで対応し、M3 の完了条件には含めない。
 
@@ -53,20 +53,20 @@
 ### M5: 検索最適化とUI詳細設計
 - [x] 実データを使って検索条件（絞り込み、全文検索、タグ、フィルタの組み合わせ）を検証し、精度と使い勝手を最適化する。全文検索が日本語で機能していなかった問題（`search_vector` → `pg_trgm`）、タグの大文字小文字重複、AIレビューの採用基準の甘さ、Qiita収集クエリが本文全文一致でノイズを大量に拾っていた問題の4点を修正した。詳細は [2026-07-05](progress/2026-07-05.md) を参照。
 - [x] 一覧・検索結果画面のUIを詳細設計し、情報設計とレイアウトを磨き込む（アイテム詳細画面は情報量が薄いため廃止し、カードから元記事へ直接遷移する構成に統一した）。アクセントカラーをQiitaの緑と被らない色味に調整し、検索ページ上部に英語表記（eyebrow）を追加、ヘッダー右上のナビをTopのホームアイコン1つに簡略化した。
-- [ ] 検索とUIの両面でユーザーが迷わない状態まで仕上げる。UIはいったんフリーズし、M6以降で必要になった時点で再開する。
+- [x] 検索とUIの両面で、一覧・トップ・詳細画面の情報設計を反復的に磨き込んだ（冗長な見出し・装飾・重複情報の削除、日付表示を元記事の公開日基準に変更など）。詳細は [2026-07-05](progress/2026-07-05.md) を参照。追加のUI改善アイデアは [docs/plan/ui_improve_plan_20260705.md](plan/ui_improve_plan_20260705.md) に整理し、必要になった時点で着手する。
 
 ### M6: リリース準備と安定化
-- [x] CI/CD でマイグレーションと基本検証を自動化する。GitHub Actions（`.github/workflows/ci.yml`）で `npm run build` と、使い捨て Postgres コンテナへの `migrations/*.sql` 適用検証を `master` への push / pull request で自動実行する。Cloudflare Workers を GitHub の `master` ブランチと連携し、コードのビルド・デプロイは push で自動化した。本番 Supabase へのマイグレーション適用（`npm run release`）は自動デプロイの対象外のため手動のまま維持する（`docs/operations.md` 参照）。
-- [x] バックアップと復旧の運用手順を確立する。自前のバックアップ処理は実装せず、Supabase 標準のバックアップ機能に依拠する方針とし、復旧手順を `docs/operations.md` に文書化した。
-- [x] README、運用メモ、開発手順を整備して、引き継ぎしやすい状態にする。デプロイ手順・バックアップ／復旧手順・障害対応の初動を `docs/operations.md` として新設し、README に CI の説明と `docs/operations.md` への導線を追加した。
+- [x] CI/CD でマイグレーションと基本検証を自動化する。GitHub Actions（`.github/workflows/ci.yml`）で `npm run build` と、使い捨て Postgres コンテナへの `migrations/*.sql` 適用検証を `master` への push / pull request で自動実行する。Cloudflare Workers を GitHub の `master` ブランチと連携し、コードのビルド・デプロイは push で自動化した。本番 Supabase へのマイグレーション適用（`npm run release`）は自動デプロイの対象外のため手動のまま維持する（`docs/reference/operations.md` 参照）。
+- [x] バックアップと復旧の運用手順を確立する。自前のバックアップ処理は実装せず、Supabase 標準のバックアップ機能に依拠する方針とし、復旧手順を `docs/reference/operations.md` に文書化した。
+- [x] README、運用メモ、開発手順を整備して、引き継ぎしやすい状態にする。デプロイ手順・バックアップ／復旧手順・障害対応の初動を `docs/reference/operations.md` として新設し、README に CI の説明と `docs/reference/operations.md` への導線を追加した。
 
 ### M7: Googleログインとマイページ
 - [x] Supabase Auth 経由の Google ログインを実装した（コードは完了、`npm run build`・`astro dev`（本番Supabase接続）で疎通確認済み）。本番でのGoogleプロバイダ有効化（Supabaseダッシュボード＋Google Cloud Console、ユーザー操作）待ちのため、実際のログイン成功は未確認。
 - [x] ログイン後にアクセスできる `/mypage` を追加し、お気に入り（ブックマーク）機能を実装した（`migrations/007_add_bookmarks.sql`、`/api/bookmarks*`、`ItemCard`のトグルボタン）。本番マイグレーション適用待ち。
 - [x] 管理者Basic認証とは別レーンの認可として実装し（`src/middleware.ts`）、items/sources/annotationsの編集権限は変更していない。
-- 詳細仕様は [docs/spec-mypage-auth.md](spec-mypage-auth.md) を参照。実装内容・検証状況は [2026-07-05](progress/2026-07-05.md) を参照。
-- 実装はM6（デプロイ）後、本番環境（Supabaseのホスト済みプロジェクト）を対象に行う。ローカルSupabase CLIスタックでの事前検証は行わない。
-- 残作業: (1) [x] Google Cloud ConsoleでのOAuthクライアントID作成（ローカル・本番用の2つを作成済み）／[x] ローカルSupabase CLIスタック（`test/supabase`側）でのGoogleプロバイダ有効化・ローカルDBへの006/007適用・`curl`でのリダイレクト疎通確認は完了。Google Cloud Console側でローカル用リダイレクトURI（`http://127.0.0.1:54321/auth/v1/callback`）が登録済みかは未確認／[ ] 本番SupabaseダッシュボードでのGoogleプロバイダ有効化（Client ID/Secretの登録が必要、未着手）、(2) `npm run release`による本番マイグレーション（006/007）適用、(3) 本番環境でのログイン〜お気に入り操作のエンドツーエンド確認。
+- [x] ローカル開発は `import.meta.env.DEV` 時のみダミーセッションユーザーでGoogle認証をバイパスし、本番のみ実際のGoogleログインを要求する構成にした（ビルド後の`dist`からダミー分岐が除去されることを確認済み）。
+- [x] 本番環境でのGoogle Cloud Console／Supabaseダッシュボード設定（OAuthクライアント、リダイレクトURI、Google プロバイダ有効化）、`npm run release`による本番マイグレーション（006/007）適用、ブラウザでの実ログイン〜`/mypage`表示〜お気に入り追加/削除のエンドツーエンド確認まで完了した。
+- 詳細仕様は [docs/spec/mypage-auth.md](spec/mypage-auth.md) を参照。実装内容・検証状況は [2026-07-05](progress/2026-07-05.md) を参照。
 
 ### 横断的に継続すること
 - [ ] スキーマ変更時は、API と画面の整合性も同時に確認する。
