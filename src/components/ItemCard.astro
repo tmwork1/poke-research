@@ -3,9 +3,11 @@ import type { CatalogItem } from '../lib/catalog';
 
 interface Props {
 	item: CatalogItem;
+	bookmarked?: boolean;
+	loggedIn?: boolean;
 }
 
-const { item } = Astro.props as Props;
+const { item, bookmarked = false, loggedIn = false } = Astro.props as Props;
 
 const formatDate = new Intl.DateTimeFormat('ja-JP', {
 	year: 'numeric',
@@ -22,11 +24,26 @@ const title = item.title || `Item ${item.id}`;
 ---
 
 <article class="card">
-	{item.external_url ? (
-		<a class="item-title" href={item.external_url} target="_blank" rel="noreferrer">{title}</a>
-	) : (
-		<p class="item-title">{title}</p>
-	)}
+	<div class="card-head">
+		{item.external_url ? (
+			<a class="item-title" href={item.external_url} target="_blank" rel="noreferrer">{title}</a>
+		) : (
+			<p class="item-title">{title}</p>
+		)}
+		<button
+			type="button"
+			class:list={['bookmark-toggle', { active: bookmarked }]}
+			data-item-id={item.id}
+			data-bookmarked={bookmarked ? 'true' : 'false'}
+			data-logged-in={loggedIn ? 'true' : 'false'}
+			aria-pressed={bookmarked ? 'true' : 'false'}
+			aria-label={bookmarked ? 'お気に入りから削除' : 'お気に入りに追加'}
+		>
+			<svg viewBox="0 0 24 24" width="18" height="18" fill={bookmarked ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+			</svg>
+		</button>
+	</div>
 	<p class="summary">{item.summary || '要約はまだ登録されていません。'}</p>
 	<div class="meta-row">
 		<span>{formatDateLabel(item.published_at ?? item.created_at)}</span>
@@ -52,6 +69,13 @@ const title = item.title || `Item ${item.id}`;
 		box-shadow: var(--shadow);
 	}
 
+	.card-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
 	.item-title {
 		margin: 0;
 		font-size: 1.3rem;
@@ -61,6 +85,29 @@ const title = item.title || `Item ${item.id}`;
 	}
 
 	a.item-title:hover {
+		color: var(--accent-dark);
+	}
+
+	.bookmark-toggle {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 34px;
+		height: 34px;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+
+	.bookmark-toggle:hover {
+		border-color: var(--accent);
+		color: var(--accent-dark);
+	}
+
+	.bookmark-toggle.active {
 		color: var(--accent-dark);
 	}
 
@@ -95,3 +142,45 @@ const title = item.title || `Item ${item.id}`;
 		color: var(--text-muted);
 	}
 </style>
+
+<script>
+	function bindBookmarkToggle(button: HTMLButtonElement) {
+		if (button.dataset.bound === 'true') return;
+		button.dataset.bound = 'true';
+
+		button.addEventListener('click', async () => {
+			if (button.dataset.loggedIn !== 'true') {
+				window.location.href = '/api/auth/login';
+				return;
+			}
+
+			const itemId = button.dataset.itemId;
+			const wasBookmarked = button.dataset.bookmarked === 'true';
+			button.disabled = true;
+			try {
+				const response = wasBookmarked
+					? await fetch(`/api/bookmarks/${itemId}`, { method: 'DELETE' })
+					: await fetch('/api/bookmarks', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ itemId: Number(itemId) }),
+						});
+				if (!response.ok) throw new Error(`bookmark request failed: ${response.status}`);
+
+				const nowBookmarked = !wasBookmarked;
+				button.dataset.bookmarked = String(nowBookmarked);
+				button.setAttribute('aria-pressed', String(nowBookmarked));
+				button.setAttribute('aria-label', nowBookmarked ? 'お気に入りから削除' : 'お気に入りに追加');
+				button.classList.toggle('active', nowBookmarked);
+				const svg = button.querySelector('svg');
+				svg?.setAttribute('fill', nowBookmarked ? 'currentColor' : 'none');
+			} catch (error) {
+				console.error('Failed to toggle bookmark:', error);
+			} finally {
+				button.disabled = false;
+			}
+		});
+	}
+
+	document.querySelectorAll<HTMLButtonElement>('.bookmark-toggle').forEach(bindBookmarkToggle);
+</script>

@@ -2,7 +2,7 @@
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"compatibility_date": "2026-07-03",
 	"compatibility_flags": ["global_fetch_strictly_public"],
-	"name": "pokemon-research",
+	"name": "poke-research",
 	"main": "./src/worker.ts",
 	"assets": {
 		"directory": "./dist",

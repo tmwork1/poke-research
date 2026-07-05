@@ -3,12 +3,18 @@ export const prerender = false;
 
 import Layout from '../layouts/Layout.astro';
 import ItemCard from '../components/ItemCard.astro';
-import { fetchCatalogItems, type CatalogItem } from '../lib/catalog';
+import { fetchBookmarkedItemIds, fetchCatalogItems, type CatalogItem } from '../lib/catalog';
+
+const user = Astro.locals.user;
 
 let recentItems: CatalogItem[];
+let bookmarkedItemIds = new Set<number>();
 let loadError = false;
 try {
-	recentItems = await fetchCatalogItems({ limit: 6 });
+	[recentItems, bookmarkedItemIds] = await Promise.all([
+		fetchCatalogItems({ limit: 6 }),
+		user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
+	]);
 } catch (error) {
 	console.error('Failed to load recent items:', error);
 	loadError = true;
@@ -32,7 +38,7 @@ try {
 				<a href="/items">すべて見る</a>
 			</div>
 			<div class="cards">
-				{recentItems.length > 0 ? recentItems.map((item) => <ItemCard item={item} />) : (
+				{recentItems.length > 0 ? recentItems.map((item) => <ItemCard item={item} bookmarked={bookmarkedItemIds.has(item.id)} loggedIn={Boolean(user)} />) : (
 					<div class="empty">まだアイテムがありません。 scripts/db/seed-sample-article.mjs でサンプルを投入できます。</div>
 				)}
 			</div>

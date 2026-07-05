@@ -61,11 +61,12 @@
 - [x] README、運用メモ、開発手順を整備して、引き継ぎしやすい状態にする。デプロイ手順・バックアップ／復旧手順・障害対応の初動を `docs/operations.md` として新設し、README に CI の説明と `docs/operations.md` への導線を追加した。
 
 ### M7: Googleログインとマイページ
-- [ ] Supabase Auth 経由の Google ログインを実装し、一般ユーザーが認証できるようにする。
-- [ ] ログイン後にアクセスできる `/mypage` を追加し、お気に入り（ブックマーク）機能を提供する。
-- [ ] 管理者Basic認証とは別レーンの認可として実装し、items/sources/annotationsの編集権限は変更しない。
-- 詳細仕様は [docs/spec-mypage-auth.md](spec-mypage-auth.md) を参照。
+- [x] Supabase Auth 経由の Google ログインを実装した（コードは完了、`npm run build`・`astro dev`（本番Supabase接続）で疎通確認済み）。本番でのGoogleプロバイダ有効化（Supabaseダッシュボード＋Google Cloud Console、ユーザー操作）待ちのため、実際のログイン成功は未確認。
+- [x] ログイン後にアクセスできる `/mypage` を追加し、お気に入り（ブックマーク）機能を実装した（`migrations/007_add_bookmarks.sql`、`/api/bookmarks*`、`ItemCard`のトグルボタン）。本番マイグレーション適用待ち。
+- [x] 管理者Basic認証とは別レーンの認可として実装し（`src/middleware.ts`）、items/sources/annotationsの編集権限は変更していない。
+- 詳細仕様は [docs/spec-mypage-auth.md](spec-mypage-auth.md) を参照。実装内容・検証状況は [2026-07-05](progress/2026-07-05.md) を参照。
 - 実装はM6（デプロイ）後、本番環境（Supabaseのホスト済みプロジェクト）を対象に行う。ローカルSupabase CLIスタックでの事前検証は行わない。
+- 残作業: (1) [x] Google Cloud ConsoleでのOAuthクライアントID作成（ローカル・本番用の2つを作成済み）／[x] ローカルSupabase CLIスタック（`test/supabase`側）でのGoogleプロバイダ有効化・ローカルDBへの006/007適用・`curl`でのリダイレクト疎通確認は完了。Google Cloud Console側でローカル用リダイレクトURI（`http://127.0.0.1:54321/auth/v1/callback`）が登録済みかは未確認／[ ] 本番SupabaseダッシュボードでのGoogleプロバイダ有効化（Client ID/Secretの登録が必要、未着手）、(2) `npm run release`による本番マイグレーション（006/007）適用、(3) 本番環境でのログイン〜お気に入り操作のエンドツーエンド確認。
 
 ### 横断的に継続すること
 - [ ] スキーマ変更時は、API と画面の整合性も同時に確認する。

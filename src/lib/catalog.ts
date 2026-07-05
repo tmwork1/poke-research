@@ -270,6 +270,32 @@ export async function fetchCatalogItemById(id: number): Promise<ItemDetail | nul
 	};
 }
 
+export async function fetchBookmarkedItemIds(userId: string): Promise<Set<number>> {
+	const supabase = await getSupabaseClient();
+	const { data, error } = await supabase.from('bookmarks').select('item_id').eq('user_id', userId);
+	if (error) throw error;
+	return new Set((data ?? []).map((row) => row.item_id));
+}
+
+interface BookmarkRow {
+	item?: ItemRow | ItemRow[] | null;
+}
+
+export async function fetchBookmarkedItems(userId: string): Promise<CatalogItem[]> {
+	const supabase = await getSupabaseClient();
+	const { data, error } = await supabase
+		.from('bookmarks')
+		.select(`item:items (${ITEM_SELECT})`)
+		.eq('user_id', userId)
+		.order('created_at', { ascending: false });
+	if (error) throw error;
+
+	return (data ?? []).flatMap((row: BookmarkRow) => {
+		const item = Array.isArray(row.item) ? row.item[0] : row.item;
+		return item ? [normalizeItem(item)] : [];
+	});
+}
+
 export async function fetchCatalogOverview() {
 	const [items, tags, sources, annotations] = await Promise.all([
 		fetchCatalogItems({ limit: 6 }),

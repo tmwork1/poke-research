@@ -1,4 +1,4 @@
-# pokemon-research
+# poke-research
 
 ポケモンプログラミング情報を収集・整理・検索する Astro + Supabase + Cloudflare ベースの情報ハブ。
 

@@ -1,0 +1,150 @@
+---
+export const prerender = false;
+
+import Layout from '../layouts/Layout.astro';
+import ItemCard from '../components/ItemCard.astro';
+import { fetchBookmarkedItems, type CatalogItem } from '../lib/catalog';
+
+const user = Astro.locals.user;
+
+let bookmarkedItems: CatalogItem[] = [];
+let loadError = false;
+if (user) {
+	try {
+		bookmarkedItems = await fetchBookmarkedItems(user.id);
+	} catch (error) {
+		console.error('Failed to load bookmarks:', error);
+		loadError = true;
+	}
+}
+---
+
+<Layout title="マイページ | PokeResearch" description="ログインとお気に入りの管理">
+	{user ? (
+		<section class="mypage">
+			<div class="account-panel">
+				<div class="account-info">
+					<p class="display-name">{user.displayName ?? user.email ?? 'ログイン中'}</p>
+					{user.email ? <p class="email">{user.email}</p> : null}
+				</div>
+				<form method="post" action="/api/auth/logout">
+					<button type="submit">ログアウト</button>
+				</form>
+			</div>
+
+			<h1>お気に入り</h1>
+
+			{loadError ? (
+				<div class="empty" role="alert">お気に入りの取得に失敗しました。しばらくしてから再度お試しください。</div>
+			) : bookmarkedItems.length > 0 ? (
+				<div class="cards">
+					{bookmarkedItems.map((item) => <ItemCard item={item} bookmarked loggedIn />)}
+				</div>
+			) : (
+				<div class="empty">お気に入りはまだありません。<a href="/items">一覧</a>からアイテムを追加できます。</div>
+			)}
+		</section>
+	) : (
+		<section class="login-panel">
+			<h1>マイページ</h1>
+			<p>Google アカウントでログインすると、お気に入り機能が使えます。</p>
+			<a class="login-button" href="/api/auth/login">Google でログイン</a>
+		</section>
+	)}
+</Layout>
+
+<style>
+	.mypage {
+		display: grid;
+		gap: 24px;
+	}
+
+	.mypage h1 {
+		margin: 0;
+		font-size: 1.6rem;
+	}
+
+	.account-panel {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 22px;
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		box-shadow: var(--shadow);
+	}
+
+	.display-name {
+		margin: 0;
+		font-size: 1.15rem;
+		font-weight: 700;
+	}
+
+	.email {
+		margin: 4px 0 0;
+		color: var(--text-muted);
+		font-size: 0.9rem;
+	}
+
+	.account-panel button {
+		padding: 10px 16px;
+		border-radius: 12px;
+		border: 1px solid var(--border);
+		background: var(--bg-soft);
+		color: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 18px;
+	}
+
+	.empty {
+		padding: 20px;
+		border-radius: var(--radius-md);
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		box-shadow: var(--shadow);
+	}
+
+	.login-panel {
+		display: grid;
+		gap: 14px;
+		max-width: 480px;
+		padding: 32px;
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		box-shadow: var(--shadow);
+	}
+
+	.login-panel h1 {
+		margin: 0;
+		font-size: 1.6rem;
+	}
+
+	.login-panel p {
+		margin: 0;
+		color: var(--text-muted);
+	}
+
+	.login-button {
+		justify-self: start;
+		padding: 12px 20px;
+		border-radius: 12px;
+		background: var(--accent);
+		color: #fff;
+		font-weight: 700;
+	}
+
+	@media (max-width: 960px) {
+		.cards {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

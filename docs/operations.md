@@ -13,7 +13,7 @@
 
 ## デプロイ手順
 
-前提: Cloudflare Workers（`pokemon-research`）は GitHub の `main` ブランチと連携済みで、push（PR の merge を含む）で自動ビルド・デプロイされる。手元での作業は、自動デプロイの対象外である本番 Supabase 側の対応のみ。
+前提: Cloudflare Workers（`poke-research`）は GitHub の `main` ブランチと連携済みで、push（PR の merge を含む）で自動ビルド・デプロイされる。手元での作業は、自動デプロイの対象外である本番 Supabase 側の対応のみ。
 
 1. `migrations/` に新しいマイグレーションファイルがあるか確認する。
 2. スキーマを変更した場合のみ、`scripts/db/test-db.mjs` を本番の `SUPABASE_URL` / `SUPABASE_SECRET_KEY` で実行し、CRUD が成功することを確認する（テストデータは自動で削除される）。
@@ -22,7 +22,7 @@
    ```bash
    npm run release
    ```
-5. `main` へ push / merge する。ビルド状況は Cloudflare ダッシュボードの **Workers & Pages → pokemon-research → Deployments** で確認できる。
+5. `main` へ push / merge する。ビルド状況は Cloudflare ダッシュボードの **Workers & Pages → poke-research → Deployments** で確認できる。
 6. デプロイ後、本番 URL（https://poke-research.com/）の閲覧系エンドポイント（`GET /api/items` など）と Basic 認証付きの書き込み系エンドポイントを一度叩いて動作確認する。
 
 `npm run deploy`（`wrangler deploy`）は、Cloudflare 連携が使えない緊急時や `main` を経由しない検証用の手動デプロイ手段として残している。

@@ -163,7 +163,7 @@ async function fetchQiitaPage(query: string, page: number, perPage: number, toke
 	url.searchParams.set('per_page', String(perPage));
 
 	const headers: HeadersInit = {
-		'User-Agent': 'pokemon-research-qiita-importer',
+		'User-Agent': 'poke-research-qiita-importer',
 	};
 
 	if (token) {

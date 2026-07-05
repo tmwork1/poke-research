@@ -40,6 +40,18 @@ jobs:
           node-version: '22.12.0'
           cache: 'npm'
       - run: npm ci
+      - name: Stub Supabase auth schema
+        # 006番マイグレーションは Supabase が管理する auth.users を参照する。
+        # CIの素の postgres:16 にはこのスキーマが無いため、DDL検証に必要な最小限を用意する。
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "
+            CREATE SCHEMA IF NOT EXISTS auth;
+            CREATE TABLE IF NOT EXISTS auth.users (
+              id uuid PRIMARY KEY,
+              email text,
+              raw_user_meta_data jsonb DEFAULT '{}'::jsonb
+            );
+          "
       - name: Apply migrations to a fresh database
         run: npm run migrate
         env:

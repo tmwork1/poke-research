@@ -20,9 +20,22 @@ interface Props {
 		totalPages: number;
 		total: number;
 	};
+	bookmarkedItemIds?: Set<number>;
+	loggedIn?: boolean;
 }
 
-const { title, eyebrow, basePath, items, topTags, sources, filters, pagination } = Astro.props as Props;
+const {
+	title,
+	eyebrow,
+	basePath,
+	items,
+	topTags,
+	sources,
+	filters,
+	pagination,
+	bookmarkedItemIds = new Set<number>(),
+	loggedIn = false,
+} = Astro.props as Props;
 
 function buildUrl(overrides: Partial<{ q: string; tag: string; sourceId: string; page: number }>) {
 	const q = overrides.q !== undefined ? overrides.q : filters.q;
@@ -80,7 +93,7 @@ const nextPage = pagination.page + 1;
 
 	{items.length > 0 ? (
 		<div class="grid">
-			{items.map((item) => <ItemCard item={item} />)}
+			{items.map((item) => <ItemCard item={item} bookmarked={bookmarkedItemIds.has(item.id)} loggedIn={loggedIn} />)}
 		</div>
 	) : (
 		<div class="empty-state">

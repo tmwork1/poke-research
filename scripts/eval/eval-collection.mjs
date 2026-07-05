@@ -8,7 +8,7 @@
 // 収集済みDBの記事（eval-filter.mjsの対象）はこのAPIが返した結果からAIレビューで
 // 選別された後のものなので、ここで見るのはそれより手前の母集団そのもの。
 
-const USER_AGENT = 'pokemon-research-eval';
+const USER_AGENT = 'poke-research-eval';
 
 async function fetchQiitaTitles(query, pages = 2, perPage = 100) {
 	const titles = [];
