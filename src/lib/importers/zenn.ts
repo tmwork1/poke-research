@@ -2,7 +2,16 @@
 // AI レビューとタグ同期を通して DB に反映する。ドキュメントのない API のため、
 // User-Agent を明示し、Qiita より控えめな同時実行数で呼び出す。
 import { reviewImportArticle } from './article-ai';
-import { fetchTopTagNames, mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
+import {
+	fetchTopTagNames,
+	mapWithConcurrency,
+	processImportItem,
+	stripHtml,
+	truncateBodyForStorage,
+	upsertItemByExternalUrl,
+	upsertSourceByOriginUrl,
+	type ImportItemOutcome,
+} from './common';
 import { ZENN_TOPICS } from './keywords';
 import { parsePositiveInteger } from '../params';
 
@@ -151,9 +160,13 @@ function extractTags(detail: ZennArticleDetail): string[] {
 	return [...new Set((detail.topics ?? []).map((topic) => topic.name?.trim()).filter((name): name is string => Boolean(name)))];
 }
 
+function extractBodyText(detail: ZennArticleDetail): string {
+	return stripHtml(detail.body_html ?? '');
+}
+
 function createAiBodyExcerpt(detail: ZennArticleDetail): string {
 	// 長すぎる本文は OpenAI 送信用に切り詰めて、コストと応答の安定性を守る。
-	const text = stripHtml(detail.body_html ?? '');
+	const text = extractBodyText(detail);
 	return text.length > MAX_AI_BODY_CHARS ? text.slice(0, MAX_AI_BODY_CHARS) : text;
 }
 
@@ -236,6 +249,7 @@ async function processZennSlug(slug: string, sourceId: number, topic: string, fe
 						updatedAt: detail.body_updated_at ?? detail.published_at,
 						metadata: createItemMetadata(detail, topic, fetchedAt, review),
 						version: detail.body_updated_at ?? detail.published_at,
+						body: truncateBodyForStorage(extractBodyText(detail)),
 					},
 					review.tags.length > 0 ? review.tags : extractTags(detail),
 				),

@@ -3,6 +3,13 @@
 import { normalizeTagName, type ImportArticleReview } from './article-ai';
 import { getSupabaseClient } from '../supabase';
 
+// 本文は検索対象を広げるために保存するが、行が肥大化しないよう妥当な長さで切り詰める。
+const MAX_STORED_BODY_CHARS = 20000;
+
+export function truncateBodyForStorage(text: string): string {
+	return text.length > MAX_STORED_BODY_CHARS ? text.slice(0, MAX_STORED_BODY_CHARS) : text;
+}
+
 export function stripHtml(value: string): string {
 	// AI への入力や要約生成でノイズになりやすいタグを先に除去する。
 	return value
@@ -212,6 +219,8 @@ export interface ItemUpsertPayload {
 	updatedAt: string | null;
 	metadata: Record<string, unknown>;
 	version: string;
+	/** 検索対象を広げるための本文テキスト（migrations/015）。未取得なら省略可。 */
+	body?: string | null;
 }
 
 export async function upsertItemByExternalUrl(
@@ -244,6 +253,7 @@ export async function upsertItemByExternalUrl(
 				updated_at: payload.updatedAt,
 				metadata: payload.metadata,
 				version: payload.version,
+				body: payload.body ?? null,
 			},
 			{ onConflict: 'external_url' },
 		)

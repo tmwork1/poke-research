@@ -31,6 +31,8 @@ export interface Item {
   created_at?: string;
   /** bookmarks の INSERT/DELETE トリガー（migrations/013）で維持されるキャッシュ列。 */
   bookmarks_count?: number;
+  /** 検索対象を広げるための本文テキスト（migrations/015）。妥当な長さに切り詰めて保存する。 */
+  body?: string | null;
 }
 
 export interface Tag {

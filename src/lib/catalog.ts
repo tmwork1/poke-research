@@ -34,6 +34,9 @@ const RELEVANCE_SORT_CANDIDATE_POOL = 300;
 // タイトル一致は要約一致より強いシグナルとして重み付けする。
 const RELEVANCE_TITLE_WEIGHT = 3;
 const RELEVANCE_SUMMARY_WEIGHT = 1;
+// 本文一致は要約一致と同じ「本文中に言及がある」シグナルとして同重み扱いにする
+// （本文は新規収集分にしか無く null のことも多いため、タイトル・要約より強くはしない）。
+const RELEVANCE_BODY_WEIGHT = 1;
 
 export interface TagUsage extends Tag {
 	count: number;
@@ -79,6 +82,10 @@ const ITEM_SELECT = `
 		)
 	)
 `;
+
+// 関連度順ソートの本文スコアリングにのみ使う select。body は最大2万字と大きいため、
+// 通常の一覧表示（ITEM_SELECT）には含めず必要な時だけ追加取得する。
+const ITEM_SELECT_WITH_BODY = `${ITEM_SELECT},\n\tbody\n`;
 
 function normalizeSource(source: ItemRow['source']): CatalogSource | null {
 	if (!source) return null;
@@ -163,14 +170,14 @@ export async function fetchCatalogAnnotations(itemId?: number): Promise<Annotati
 
 async function queryCatalogItems(
 	filters: ItemFilters,
-	options: { withCount?: boolean; offset?: number; orderBy?: 'published_at' | 'bookmarks_count' } = {},
+	options: { withCount?: boolean; offset?: number; orderBy?: 'published_at' | 'bookmarks_count'; includeBody?: boolean } = {},
 ): Promise<{ data: ItemRow[]; count: number | null }> {
 	const searchTerm = filters.q?.trim();
 	const ascending = filters.order === 'asc';
 	const supabase = await getSupabaseClient();
 	let query = supabase
 		.from('items')
-		.select(ITEM_SELECT, options.withCount ? { count: 'exact' } : undefined);
+		.select(options.includeBody ? ITEM_SELECT_WITH_BODY : ITEM_SELECT, options.withCount ? { count: 'exact' } : undefined);
 
 	if (options.orderBy === 'bookmarks_count') {
 		// 人気順: bookmarks_count 降順を主キーに、公開日時降順を同数時のタイブレークにする。
@@ -198,11 +205,13 @@ async function queryCatalogItems(
 
 	if (searchTerm) {
 		// 日本語は分かち書きされていないため、全文検索(tsvector)ではなく
-		// タイトル・要約への部分一致(ILIKE)をトークンごとにAND条件で積む。
+		// タイトル・要約・本文への部分一致(ILIKE)をトークンごとにAND条件で積む。
+		// 本文(migrations/015)は新規収集分にのみ入るため、古いアイテムは body が null で
+		// 一致しないだけで、条件自体は安全に共存できる。
 		const tokens = searchTerm.split(/\s+/).filter((token) => token.length > 0);
 		for (const token of tokens) {
 			const pattern = escapeIlikeToken(token);
-			query = query.or(`title.ilike.${pattern},summary.ilike.${pattern}`);
+			query = query.or(`title.ilike.${pattern},summary.ilike.${pattern},body.ilike.${pattern}`);
 		}
 	}
 
@@ -248,18 +257,21 @@ export async function fetchCatalogItemsPage(
 	const searchTerm = filters.q?.trim();
 	if (filters.sort === 'relevance' && searchTerm) {
 		// 検索クエリ(ILIKE)は一致した行しか返さないため「どこに・いくつ一致したか」の強さが
-		// 並びに反映されない。人気順と同じく直近の候補プールを取得し、タイトル一致 > 要約一致の
+		// 並びに反映されない。人気順と同じく直近の候補プールを取得し、タイトル一致 > 要約一致 ≒ 本文一致の
 		// 重み付けでJS側にてスコアリングする（プールは日付降順なので同点時は新しい順になる）。
+		// 本文はスコアリングのためだけに候補プール分を追加取得する（一覧表示には使わない）。
 		const tokens = searchTerm.toLowerCase().split(/\s+/).filter((token) => token.length > 0);
-		const { data } = await queryCatalogItems({ ...filters, limit: RELEVANCE_SORT_CANDIDATE_POOL });
+		const { data } = await queryCatalogItems({ ...filters, limit: RELEVANCE_SORT_CANDIDATE_POOL }, { includeBody: true });
 		const candidates = data.map(normalizeItem);
 		const scored = candidates.map((item, index) => {
 			const title = (item.title ?? '').toLowerCase();
 			const summary = (item.summary ?? '').toLowerCase();
+			const body = (item.body ?? '').toLowerCase();
 			let score = 0;
 			for (const token of tokens) {
 				if (title.includes(token)) score += RELEVANCE_TITLE_WEIGHT;
 				if (summary.includes(token)) score += RELEVANCE_SUMMARY_WEIGHT;
+				if (body.includes(token)) score += RELEVANCE_BODY_WEIGHT;
 			}
 			return { item, index, score };
 		});
