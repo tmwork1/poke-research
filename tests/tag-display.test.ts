@@ -21,5 +21,14 @@ describe('formatTagLabel', () => {
 
 	it('複合語は単語単位で整形する', () => {
 		assert.equal(formatTagLabel('github actions'), 'GitHub Actions');
+		assert.equal(formatTagLabel('restful api'), 'RESTful API');
+	});
+
+	it('略語・固有表記はタグ全体一致で正しい大文字小文字にする', () => {
+		assert.equal(formatTagLabel('rag'), 'RAG');
+		assert.equal(formatTagLabel('scikit-learn'), 'scikit-learn');
+		assert.equal(formatTagLabel('gorilla-mux'), 'gorilla/mux');
+		assert.equal(formatTagLabel('watsonx'), 'watsonx');
+		assert.equal(formatTagLabel('macos'), 'macOS');
 	});
 });
