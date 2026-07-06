@@ -9,18 +9,21 @@
 // 注意（実装上の重複について）: src/lib/brave.ts・src/lib/importers/{blog,keywords}.ts の一部は
 // `cloudflare:workers` に依存する importers/*.ts からのみ import されるか、実行時に
 // import.meta 経由でしか読めないためプレーンな Node スクリプトから直接 import せず、
-// 同等のロジック（クエリ組み立て・除外ドメイン判定）をここに複製する。唯一の管理場所は
-// 引き続き src/lib/importers/keywords.ts であり、変更したら本スクリプトも同期すること。
+// 同等のロジック（クエリ組み立て・除外ドメイン判定）をここに複製する。ただしトピック固有の
+// キーワード・除外ドメインは cloudflare:workers に依存しない src/config/topic.config.mjs を
+// 直接 import するため、トピック設定を変更してもここを個別に直す必要はない。
+
+import { topic } from '../../src/config/topic.config.mjs';
 
 const BRAVE_WEB_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 
-// src/lib/importers/keywords.ts の POKEMON_KEYWORDS と一致させること。
-const POKEMON_KEYWORDS = ['ポケモン', 'ポケカ', 'ポケットモンスター', 'pokemon', 'pokeapi', 'ダメージ計算 実装'];
+const POKEMON_KEYWORDS = topic.collection.searchKeywords;
 
-// 同ファイルの EXCLUDED_BLOG_DOMAINS（クエリの -site: と結果フィルタの両方で使う）。
+// src/lib/importers/keywords.ts の EXCLUDED_BLOG_DOMAINS（クエリの -site: と結果フィルタの両方で使う）。
+// 先頭の共通ドメインはトピックに依らないためここでも直書きし、トピック固有分だけ config から取る。
 const EXCLUDED_BLOG_DOMAINS = [
 	'qiita.com', 'zenn.dev', 'note.com', 'github.com', 'youtube.com', 'x.com', 'twitter.com',
-	'yakkun.com', 'gamewith.jp', 'appmedia.jp', 'game8.jp', 'altema.jp', 'gamerch.com',
+	...topic.collection.extraExcludedBlogDomains,
 ];
 
 // 同ファイルの FILTERED_BLOG_DOMAINS（結果フィルタのみ、クエリの -site: には含めない）。

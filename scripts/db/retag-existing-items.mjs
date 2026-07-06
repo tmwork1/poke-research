@@ -9,9 +9,11 @@
 // `import { env } from 'cloudflare:workers'` に依存しており、Cloudflare Workers 実行環境
 // 前提のためプレーンな Node スクリプトから import できない（他の scripts/db/*.mjs も同じ理由
 // で src/lib を import せず、同等のロジックをスクリプト内に複製している）。そのため本スクリプト
-// でも reviewImportArticle（プロンプト・応答パース）と syncItemTags（タグ差分同期）相当の
-// ロジックをこのファイル内に複製している。プロンプトやタグ同期ロジックを変更した場合は、
-// src/lib/importers/article-ai.ts / common.ts と本ファイルの両方を更新すること。
+// でも reviewImportArticle（応答パース）と syncItemTags（タグ差分同期）相当のロジックを
+// このファイル内に複製している。ただし system prompt 自体は src/config/ai-review-prompt.mjs・
+// topic.config.mjs（cloudflare:workers に依存しないプレーンJS）を直接 import して共有するため、
+// トピック設定を変更してもここを個別に直す必要はない。タグ同期ロジックを変更した場合は、
+// src/lib/importers/common.ts と本ファイルの両方を更新すること。
 //
 // 挙動:
 //   - items を id 昇順で走査し、各アイテムの title/external_url/authors/本文/現在のタグを
@@ -34,6 +36,8 @@
 //   node --env-file=.env scripts/db/retag-existing-items.mjs --service=blog --dry-run --limit=20
 //   node --env-file=.env scripts/db/retag-existing-items.mjs             # 全件実行（要事前確認）
 import { createClient } from '@supabase/supabase-js';
+import { topic } from '../../src/config/topic.config.mjs';
+import { buildSystemPrompt } from '../../src/config/ai-review-prompt.mjs';
 
 const MAX_AI_TAGS = 5; // src/lib/importers/article-ai.ts の normalizeAiTags と合わせる
 const MAX_AI_BODY_CHARS = 4000; // 各インポーター（qiita/zenn/note/blog）の MAX_AI_BODY_CHARS と合わせる
@@ -73,12 +77,11 @@ if (!url || !key || !apiKey) {
 const supabase = createClient(url, key, { detectSessionInUrl: false });
 
 // ---------------------------------------------------------------------------
-// 以下、src/lib/importers/article-ai.ts 相当（プロンプト・OpenAI 呼び出し・応答パース）。
-// システムプロンプトは同ファイルの createOpenAIRequest からそのまま複製している。
+// 以下、src/lib/importers/article-ai.ts 相当（OpenAI 呼び出し・応答パース）。
+// システムプロンプトは src/config/ai-review-prompt.mjs の buildSystemPrompt を共有する。
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT =
-  'あなたは記事収集前レビュー担当です。このハブはポケモンのプログラミング・開発に関する技術情報（ツール、API、データ解析、対戦・育成支援、ROMハック、ファンゲーム開発などの実装や手法を扱う記事）だけを収集対象とします。判定は次の2条件を順に確認し、両方を満たす場合のみ accepted を true にしてください。(1) 記事の主題がポケモン（ゲーム本編、カードゲーム、関連データ・API・ファンコンテンツなど）に直接関係していること。ポケモンへの言及が全く無い記事や、一般的な技術記事の中でポケモンが一例・比喩として軽く触れられているだけで記事の主眼がポケモンではない記事は、技術的に優れていても accepted を false にしてください。一方、ポケモンのデータや仕組み（図鑑、進化、育成、対戦、カードなど）を実装・設計の題材として一貫して扱っている記事（例: ポケモンのデータ構造をクラス設計で学ぶ教材、ポケモンを例にしたオントロジー設計）は、一般的な技術を学ぶ目的であっても主題をポケモン関連とみなしてください。(2) 主題がポケモン関連であっても、体験談・エッセイ・創作小説・ニュース・商品紹介・ファン活動、ツール・Webアプリ・サービスの提供ページそのもの（ダメージ計算ツールや育成支援ツールの画面、アプリストアの配布ページなど。ツールの実装や仕組みを解説する記事は対象だが、ツールを利用するためのページ自体は対象外）、攻略情報・ゲームプレイ解説（技構成やデッキ構築などゲーム内容のみを扱い、プログラミング的な実装や手法を扱わないもの）、他ページへのリンクやコメントの集約ページ（ソーシャルブックマーク、ピン、ミラー、ポータルのトップページなど）など技術的な実装や手法を扱わない記事は accepted を false にしてください。出力はJSONオブジェクトのみで、accepted/summary/tags/reason/confidence を含めてください。summary は日本語の要約で、だ・である調または体言止めの常体を使い、2文以内・全体で120字程度に収めてください（ですます調や「〜について解説しています」のような冗長な言い回しは使わないでください）。reason は判定理由（上記のどちらの条件で判断したかが分かるように）を簡潔に書いてください。tags は検索や絞り込みに役立つ具体的なタグを3〜5個選んでください。次の3点を必ず守ってください。(a) 「システム開発」「設計パターン」「プログラミング」「技術記事」「開発」「実装」のように、ほぼ全ての技術記事に当てはまり、そのタグ単体で検索すると無関係な記事まで大量にヒットしてしまう一般語は使わず、記事で実際に使われている技術要素（具体的な言語・フレームワーク・ライブラリ・アルゴリズム・手法名。「設計パターン」ではなく実際に登場する具体的なパターン名や技術名）と、記事が扱うポケモン側の具体的対象（カードゲーム、ROM改造、対戦・育成、図鑑データなど記事内容に応じたもの）を優先してください。(b) 新しいタグを作る前に必ず existing_tags を確認し、同義・類似の概念や綴りが非常に近い語があれば新しい表記を作らず existing_tags の表記をそのまま使ってください。特にカタカナ語の濁点・半濁点の打ち間違いに注意し（正しい表記は「ポケモンカード」であり「ポケモンカート」ではありません）、綴りに自信が持てない場合は不確かな新規タグを作らないでください。(c) タグは本文・タイトルに実際に登場する技術要素だけを使い、ページの見た目や種類から使用技術を推測して付けないでください（本文に言語名やフレームワーク名が出てこないページに javascript や react などのタグを付けてはいけません）。このハブの記事は全てポケモン関連であることが前提のため、「ポケモン」「pokemon」など主題そのものを指すだけのタグは付けないでください。同様に、わざ名・ゲームタイトル・ゲーム内の場所や道具の名称といったゲーム内固有名詞（例: 「ハイドロポンプ」「ダイヤモンドパール」）や、カードの相場・鑑定などコレクション用語も、技術情報の検索や絞り込みに役立たないためタグにせず、記事が扱うポケモン側の対象はカードゲーム・ROM改造・対戦・育成のような分類の粒度で表してください。';
+const SYSTEM_PROMPT = buildSystemPrompt(topic);
 
 function normalizeTagName(tagName) {
   // 大文字小文字違い（AI/ai）やアクセント記号違い（Pokédex/pokedex）のタグが

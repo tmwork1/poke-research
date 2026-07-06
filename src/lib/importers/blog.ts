@@ -15,13 +15,14 @@ import {
 	type ImportItemOutcome,
 } from './common';
 import { EXCLUDED_BLOG_DOMAINS, isExcludedBlogDomain, KNOWN_BLOG_PLATFORMS, OTHER_BLOG_SOURCE, POKEMON_KEYWORDS } from './keywords';
+import { topic } from '../../config/topic.config.mjs';
 
 const DEFAULT_KIND = 'article';
 const MIN_BODY_CHARS = 200;
 const MAX_AI_BODY_CHARS = 4000;
 const IMPORT_CONCURRENCY = 2;
 const FETCH_TIMEOUT_MS = 10_000;
-const BLOG_USER_AGENT = 'poke-research-blog-importer (+https://poke-research.com)';
+const BLOG_USER_AGENT = `${topic.site.slug}-blog-importer (+${topic.site.url})`;
 
 const EXCLUDED_TEXT_TAGS = 'nav, header, footer, aside, script, style';
 

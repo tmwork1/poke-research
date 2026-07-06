@@ -1,10 +1,11 @@
 // 検索エンジンのクロール・インデックス対応のため、静的ページとタグ別ページを列挙する。
 import { methodNotAllowed } from './api/_shared';
 import { fetchCatalogItems, fetchTopTags } from '../lib/catalog';
+import { topic } from '../config/topic.config.mjs';
 
 export const prerender = false;
 
-const SITE_URL = 'https://poke-research.com';
+const SITE_URL = topic.site.url;
 const SITEMAP_TAG_LIMIT = 50;
 
 function escapeXml(value: string): string {

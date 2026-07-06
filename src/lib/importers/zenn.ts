@@ -14,6 +14,7 @@ import {
 } from './common';
 import { ZENN_TOPICS } from './keywords';
 import { parsePositiveInteger } from '../params';
+import { topic } from '../../config/topic.config.mjs';
 
 const ZENN_API_BASE = 'https://zenn.dev/api';
 const ZENN_SOURCE_NAME = 'Zenn';
@@ -100,7 +101,7 @@ async function fetchZennListPage(topic: string, page: number): Promise<ZennListR
 	url.searchParams.set('page', String(page));
 
 	const response = await fetch(url, {
-		headers: { 'User-Agent': 'poke-research-zenn-importer' },
+		headers: { 'User-Agent': `${topic.site.slug}-zenn-importer` },
 	});
 	if (!response.ok) {
 		const detail = await response.text();
@@ -112,7 +113,7 @@ async function fetchZennListPage(topic: string, page: number): Promise<ZennListR
 
 async function fetchZennArticleDetail(slug: string): Promise<ZennArticleDetail> {
 	const response = await fetch(zennUrl(`/articles/${slug}`), {
-		headers: { 'User-Agent': 'poke-research-zenn-importer' },
+		headers: { 'User-Agent': `${topic.site.slug}-zenn-importer` },
 	});
 	if (!response.ok) {
 		const detail = await response.text();

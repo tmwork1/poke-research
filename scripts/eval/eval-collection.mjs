@@ -8,7 +8,9 @@
 // 収集済みDBの記事（eval-filter.mjsの対象）はこのAPIが返した結果からAIレビューで
 // 選別された後のものなので、ここで見るのはそれより手前の母集団そのもの。
 
-const USER_AGENT = 'poke-research-eval';
+import { topic } from '../../src/config/topic.config.mjs';
+
+const USER_AGENT = `${topic.site.slug}-eval`;
 
 async function fetchQiitaTitles(query, pages = 2, perPage = 100) {
 	const titles = [];
@@ -95,7 +97,7 @@ async function main() {
 	// 既定値は各インポーター（qiita.ts/note.ts）の実際のDEFAULT_QUERYと一致させること。
 	// 検索語自体の唯一の管理場所は src/lib/importers/keywords.ts。
 	const qiitaQuery = process.env.QIITA_QUERY?.trim() || 'title:ポケモン OR title:ポケカ OR tag:ポケモン';
-	const zennTopic = process.env.ZENN_TOPIC?.trim() || 'pokemon';
+	const zennTopic = process.env.ZENN_TOPIC?.trim() || topic.collection.zennTopics[0];
 	const noteQuery = process.env.NOTE_QUERY?.trim() || 'ポケモン';
 
 	console.log('AIレビュー前の生の検索結果（タイトルのみ）。ポケモンのプログラミング・開発と');

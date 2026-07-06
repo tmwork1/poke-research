@@ -5,6 +5,7 @@ import Layout from '../../layouts/Layout.astro';
 import CatalogPage from '../../components/CatalogPage.astro';
 import { fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchCatalogSources, fetchTopTags } from '../../lib/catalog';
 import { parseOptionalPositiveInteger } from '../../lib/params';
+import { topic } from '../../config/topic.config.mjs';
 
 const url = new URL(Astro.request.url);
 const sourceIds = url.searchParams
@@ -67,7 +68,7 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 ---
 
 <Layout
-	title="Items | PokeResearch"
+	title={`Items | ${topic.site.name}`}
 	description="アイテム一覧・検索画面"
 	loggedIn={Boolean(user)}
 	canonicalPath={canonicalPath}

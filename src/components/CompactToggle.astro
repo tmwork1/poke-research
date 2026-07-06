@@ -74,7 +74,9 @@
 </style>
 
 <script>
-	const STORAGE_KEY = 'pokeresearch:compact-view';
+	import { topic } from '../config/topic.config.mjs';
+
+	const STORAGE_KEY = `${topic.site.storageKeyPrefix}:compact-view`;
 
 	function syncInputs(isCompact: boolean) {
 		document.querySelectorAll<HTMLInputElement>('.compact-toggle-input').forEach((input) => {

@@ -1,7 +1,9 @@
 // リンク切れ検出（migrations/016）の状態遷移・到達性判定ロジック。
 // DB(Supabase)・Cloudflare 実行環境への依存を持たないため、node --test から直接ユニットテストできる
 // （src/lib/importers/link-check.ts が DB I/O 部分を担い、ここは判定の中身だけを持つ）。
-const USER_AGENT = 'poke-research-link-checker (+https://poke-research.com)';
+import { topic } from '../config/topic.config.mjs';
+
+const USER_AGENT = `${topic.site.slug}-link-checker (+${topic.site.url})`;
 
 export type LinkCheckOutcome = 'ok' | 'suspect' | 'broken' | 'recovered' | 'unchanged' | 'skipped';
 

@@ -4,6 +4,7 @@ export const prerender = false;
 import Layout from '../../layouts/Layout.astro';
 import { fetchTopTags } from '../../lib/catalog';
 import { formatTagLabel } from '../../lib/tag-display';
+import { topic } from '../../config/topic.config.mjs';
 
 // 全タグを見渡せるインデックス。内部リンク（SEO）とタグ探索の起点を兼ねる。
 // top_tags RPC は limit 指定式のため、実質全件が返る大きめの上限を渡す。
@@ -13,8 +14,8 @@ const user = Astro.locals.user;
 ---
 
 <Layout
-	title="タグ一覧 | PokeResearch"
-	description="PokeResearch に収録された記事のタグ一覧です。使用回数の多い順に表示しています。"
+	title={`タグ一覧 | ${topic.site.name}`}
+	description={`${topic.site.name} に収録された記事のタグ一覧です。使用回数の多い順に表示しています。`}
 	loggedIn={Boolean(user)}
 >
 	<section class="tags-index">
