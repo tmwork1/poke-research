@@ -1,6 +1,8 @@
 import { Client } from 'pg';
+import { requireDropTargetHost } from './require-drop-target-host.mjs';
 
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres';
+requireDropTargetHost(databaseUrl);
 const client = new Client({ connectionString: databaseUrl });
 
 const tables = ['annotations','item_tags','items','research_note_items','research_notes','sources','tags','users'];
