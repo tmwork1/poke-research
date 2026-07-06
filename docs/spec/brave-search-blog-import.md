@@ -110,10 +110,10 @@ Qiita/Zenn/note は API 呼び出しコストが実質ゼロに近く、毎回 `
 埋め尽くしてしまう。そのため `src/lib/importers/keywords.ts` の `KNOWN_BLOG_PLATFORMS`
 （はてなブログ、Speaker Deck、GitHub Pages 等の許可リスト）に載っているドメインはサービス単位
 （ユーザーごとのサブドメインをまとめて1レコード、Qiita/Zenn/note と同じ発想）、載っていない
-ドメインは共通の `OTHER_BLOG_SOURCE`（`その他の個人ブログ`）にまとめる（`resolveBlogSource`）。
+ドメインは共通の `OTHER_BLOG_SOURCE`（`その他`）にまとめる（`resolveBlogSource`）。
 
 - `name`: 許可リストに一致すればそのプラットフォーム名（例: `はてなブログ`）、一致しなければ
-  `その他の個人ブログ`。
+  `その他`（個人ブログに限らず Stack Overflow・企業テックブログ等も混ざるため、ブログを冠しない名称にする）。
 - `type`: `'blog'`（`sources.type` は自由文字列で、UI側に type 別の分岐ロジックは無いため追加のUI対応は不要 — `src/lib/catalog.ts` / `ItemCard.astro` 確認済み。`ItemCard.astro` の blog バッジ表示は `source.name` ではなく記事URLのドメインから直接算出しているため、source をサービス単位に集約してもカード上の表示は個別ドメインのまま保たれる）。
 - `originUrl`: 許可リストに一致すれば `https://<プラットフォームのドメイン>/`、一致しなければ
   `OTHER_BLOG_SOURCE.originUrl`（`https://other-blogs.poke-research.invalid/`）。
