@@ -39,8 +39,7 @@
 - [x] **無限スクロールの状態保持**（優先度: 中 / 工数: 中）— 実装済み（`history.replaceState`、`feat/infinite-scroll-ux`）
 - [x] **トップと検索ページのページング方式の不統一を解消**（優先度: 低 / 工数: 小〜中）— [docs/reference/pagination-policy.md](../reference/pagination-policy.md) で意図的な使い分けとして文書化済み
 - [x] **ローディングスケルトン**（優先度: 低 / 工数: 小）— 実装済み
-- [ ] **モバイルでのログアウト導線の確認**（優先度: 低 / 工数: 小）
-  ヘッダーの `account-dropdown` は hover / focus-within 依存でタッチでは開けない（サイドバー側にログアウトがあるため致命的ではないが、挙動として不整合）。**未修正（2026-07-06再確認）。**
+- [x] **モバイルでのログアウト導線の確認**（優先度: 低 / 工数: 小）— 2026-07-06 実装。`.mypage-tab-wrap` にタップでの開閉トグル（外側クリック/Escapeで閉じる）を追加し、hover/focus-within 前提だった `account-dropdown` をタッチ環境でも開けるようにした。
 - [x] **サイドバーのフォーカス制御**（優先度: 中 / 工数: 小）— 実装済み（`inert` 化・フォーカス移動）
 - [x] **無限スクロール追加分のスクリーンリーダー通知**（優先度: 低 / 工数: 小）— 実装済み（`aria-live`）
 - [x] **モバイルでの共有に Web Share API を使う**（優先度: 低 / 工数: 小）— 実装済み（`navigator.share` + リンクコピー）
@@ -64,8 +63,7 @@
 - [x] **タグAI解説（explanation）のバックフィル方針決定**（優先度: 中 / 工数: 小〜中）— 2026-07-06 方針決定（バックフィルスクリプト実行）。`scripts/db/backfill-tag-explanations.mjs` をコミットし本番で実行したところ対象0件（178タグ全件が`explained_at`設定済みで、進捗ログの「28件中7件」は既に別経路で解消済みだった）。スクリプトは今後の遡及用に残す。
 - [ ] **重複記事の検出**（優先度: 中 / 工数: 中）— `scripts/db/detect-duplicate-items.mjs` 未コミットのドラフトあり（URL正規化+タイトル類似度、`--apply`で`item_relations`へ記録）。未実行・未コミット。
   同一記事の Qiita / Zenn / 個人ブログへのクロスポストが別アイテムとして並ぶ可能性がある。タイトル類似度や正規化URLで検出し、`item_relations` で「同一内容」として束ねる。
-- [ ] **リンク切れの定期検出**（優先度: 中 / 工数: 中）
-  元記事の削除・非公開化を検出する仕組みが無い。cron で外部URLを定期チェックし、404 が続くアイテムに印を付ける（または一覧から隠す）。
+- [x] **リンク切れの定期検出**（優先度: 中 / 工数: 中）— 2026-07-06 実装。`migrations/016` で `items.link_status`/`link_checked_at`/`link_broken_since` を追加し、2回連続でHEAD/GETが失敗したものだけを`broken`にする状態機械（`src/lib/link-status.ts`）でチェック。`src/worker.ts` に5つ目のcron（`0 23 * * *`）として配線し、`queryCatalogItems` で`broken`を一覧から除外。**本番未適用**（migration 016・新cronのデプロイは別途確認）。
 - [x] **記事更新の検知と表示**（優先度: 低 / 工数: 中）— 実装済み（更新バッジ）
 - [x] **AI要約であることの明示**（優先度: 中 / 工数: 小）— 2026-07-06 実装（カード要約に「AI要約」バッジ）
   カードの要約はAI生成だが出所表示が無い。透明性のため「AI要約」のラベルを小さく付ける（provenance 重視という本プロジェクトの方針とも整合する）。
@@ -101,8 +99,7 @@
 - [x] **収集ジョブの実行履歴の記録と可視化**（優先度: 中 / 工数: 中）— 実装済み（`import_runs` + `GET /api/import/runs`、`feat/ops-reliability`）
 - [x] **書き込みAPIのレートリミット**（優先度: 中 / 工数: 中）— 実装済み（固定ウィンドウ、`/api/bookmarks`）
 - [x] **状態変更APIのCSRF対策の確認**（優先度: 中 / 工数: 小〜中）— 実装済み（Origin検証 + SameSite=Lax確認済み）
-- [ ] **エラー監視の導入**（優先度: 中 / 工数: 小〜中）
-  サーバー側例外が `console.error` 止まり。Cloudflare Workers Logs / Logpush、または Sentry 等で集約し、ユーザーが踏んだエラーに気づけるようにする。
+- [x] **エラー監視の導入**（優先度: 中 / 工数: 小〜中）— 2026-07-06 実装。`middleware.ts` でページ/APIレンダリング中の未処理例外を try/catch し、収集ジョブと同じ `sendOperationalAlert`（Discord/Slack Webhook）で通知するようにした（新規の外部サービス契約は不要）。Sentry等の専用エラートラッカー導入は別途判断。
 - [ ] **アクセス解析の導入**（優先度: 中 / 工数: 小）- **不要**
   どのページ・タグ・検索語が使われているか計測手段が無い。プライバシー配慮型（Cloudflare Web Analytics 等）を入れ、改善の優先度判断に使う。
 - [ ] **E2Eテストの整備**（優先度: 中 / 工数: 大）
@@ -114,12 +111,9 @@
 
 ## 7. コード整理（小粒）
 
-- [ ] **CatalogPage の未使用 `title` prop の削除**（優先度: 低 / 工数: 小）
-  見出し廃止後も `title` prop が残っており、呼び出し側から渡されているが描画されない。インターフェースから落とす。
-- [ ] **ソート select 等の重複スタイル・スクリプトの共通化**（優先度: 低 / 工数: 小）
-  `.sort-select`（データURI背景含む）と submit スクリプトが index / mypage / CatalogPage に3重に重複している。`SortSelect.astro` として切り出す。
-- [ ] **`fetchCatalogOverview` など未使用コードの棚卸し**（優先度: 低 / 工数: 小）
-  アイテム詳細画面の廃止で使われなくなった関数（`fetchCatalogItemById` 等も要確認）を整理する。
+- [x] **CatalogPage の未使用 `title` prop の削除**（優先度: 低 / 工数: 小）— 2026-07-06 実装。`Props`・呼び出し側（items/index.astro、tags/[name].astro）から削除。
+- [x] **ソート select 等の重複スタイル・スクリプトの共通化**（優先度: 低 / 工数: 小）— 2026-07-06 実装。`SortSelect.astro` を新設し、CatalogPage（sort・period）・トップ・マイページの重複を解消。
+- [x] **`fetchCatalogOverview` など未使用コードの棚卸し**（優先度: 低 / 工数: 小）— 2026-07-06 確認。呼び出し箇所ゼロだった `fetchCatalogOverview` のみ削除（他の export は全て使用中）。catalog.ts のユニットテスト追加は、モジュールが `cloudflare:workers` を静的importする関係で `node --test` から読み込めず断念（既存テストが「内部importゼロのファイルのみ」を対象にしている理由と同一）。カバレッジ追加には import 構造の見直しが必要で、別課題として残す。
 
 ---
 
