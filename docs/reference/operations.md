@@ -47,7 +47,8 @@
 
 ## 監視・アラート
 
-- **収集失敗の通知**: `src/lib/notify.ts`（`sendOperationalAlert`）が cron ジョブ失敗時に `ALERT_WEBHOOK_URL`（Discord/Slack の Incoming Webhook）へ通知する。実装済みだがシークレット未設定のため、現状は通知が飛ばない。運用を始めるなら `wrangler secret put ALERT_WEBHOOK_URL` で設定する。
+- **収集失敗の通知**: `src/lib/notify.ts`（`sendOperationalAlert`）が cron ジョブ失敗時に `ALERT_WEBHOOK_URL`（Discord の Incoming Webhook）へ通知する。2026-07-07 にシークレットを設定済みで、本番で有効。
+- **週次DBレビュー**: 毎週月曜 20:30 UTC (JST 05:30) に `src/lib/maintenance-review.ts` が items/sources の重複候補を検出し（DB非書き換え・課金なし）、`sendMaintenanceReport` で同じ Webhook へ要約を通知する。統合が必要な候補は `scripts/db/merge-item.mjs` / `merge-source.mjs` を人手で確認して実行する。
 - **実行履歴**: 収集ジョブ（cron・手動 API とも）は `import_runs` テーブル（`migrations/014_add_import_runs.sql`、`src/lib/import-runs.ts`）に1行ずつ記録される（provider/trigger/status/fetched/inserted/updated/skipped/error/started_at/finished_at）。直近50件は `GET /api/import/runs`（Basic 認証必須、`/api/audit` と同じ扱い）で確認できる。記録自体の失敗はジョブを止めず `console.error` に留める。
 - **エラー監視**: Cloudflare Workers Logs（`observability` 有効済み）を一次の手段とする。Sentry 等の外部 APM 導入は当面保留（コストと運用負荷に見合う障害頻度が確認できてから検討する）。
 - **死活監視**: 外形監視（UptimeRobot 等）は未設定。要アカウント作成のため、導入する場合は本番 URL（`https://poke-research.com/`）への定期 GET 監視から始めることを推奨する。
