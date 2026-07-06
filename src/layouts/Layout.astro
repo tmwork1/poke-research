@@ -254,7 +254,7 @@ const websiteJsonLd = JSON.stringify({
 
 <style>
 	:global(:root) {
-		color-scheme: light;
+		color-scheme: light dark;
 		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
 
 		--bg: #f6f8fa;
@@ -265,12 +265,28 @@ const websiteJsonLd = JSON.stringify({
 		--text-muted: #6a737d;
 		--accent: #1f9e7a;
 		--accent-dark: #157a5e;
+		--mark-bg: #fff3bf;
 		--radius-lg: 20px;
 		--radius-md: 14px;
 		--shadow: 0 4px 16px rgba(35, 35, 51, 0.06);
 
 		background: var(--bg);
 		color: var(--text);
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:global(:root) {
+			--bg: #16181d;
+			--bg-soft: #1b1e24;
+			--card-bg: #1e2128;
+			--border: #33373f;
+			--text: #e6e6eb;
+			--text-muted: #9a9ea6;
+			--accent: #33b992;
+			--accent-dark: #5fd1ac;
+			--mark-bg: #5c4d1a;
+			--shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+		}
 	}
 
 	html,
