@@ -13,7 +13,7 @@
 
 ## デプロイ手順
 
-前提: Cloudflare Workers（`poke-research`）は GitHub の `main` ブランチと連携済みで、push（PR の merge を含む）で自動ビルド・デプロイされる。手元での作業は、自動デプロイの対象外である本番 Supabase 側の対応のみ。ブランチ運用（作業ブランチの切り方、PR、マージ方法）は [AGENTS.md](../../AGENTS.md) の「Git」を参照する。
+前提: Cloudflare Workers（`poke-research`）は GitHub の `main` ブランチと連携済みで、push（PR の merge を含む）で自動ビルド・デプロイされる。手元での作業は、自動デプロイの対象外である本番 Supabase 側の対応のみ。ブランチ運用（作業ブランチの切り方、PR、マージ方法）は [CLAUDE.md](../../CLAUDE.md) の「Git」を参照する。
 
 1. `migrations/` に新しいマイグレーションファイルがあるか確認する。
 2. スキーマを変更した場合のみ、`scripts/db/test-db.mjs` を本番の `SUPABASE_URL` / `SUPABASE_SECRET_KEY` で実行し、CRUD が成功することを確認する（テストデータは自動で削除される）。

@@ -2,7 +2,7 @@
 
 このリポジトリは、ポケモンプログラミング情報を収集・整理・検索する Astro + Supabase + Cloudflare ベースの情報ハブである。
 
-作業前に [docs/development-roadmap.md](docs/development-roadmap.md) と最新の [docs/progress](docs/progress) を確認し、現在の優先度と進捗を把握する。既存の実装方針は [AGENTS.md](AGENTS.md) と合わせて扱い、両者に矛盾が出ないようにする。
+作業前に [docs/development-roadmap.md](docs/development-roadmap.md) と最新の [docs/progress](docs/progress) を確認し、現在の優先度と進捗を把握する。
 
 変更は最小限で、根本原因に対処する。既存の設計や命名、データモデル、API 形状をむやみに変えず、関連しない不具合の修正は混ぜない。
 
