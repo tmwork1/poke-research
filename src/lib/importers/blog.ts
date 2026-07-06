@@ -14,7 +14,7 @@ import {
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
 } from './common';
-import { EXCLUDED_BLOG_DOMAINS, KNOWN_BLOG_PLATFORMS, OTHER_BLOG_SOURCE, POKEMON_KEYWORDS } from './keywords';
+import { EXCLUDED_BLOG_DOMAINS, isExcludedBlogDomain, KNOWN_BLOG_PLATFORMS, OTHER_BLOG_SOURCE, POKEMON_KEYWORDS } from './keywords';
 
 const DEFAULT_KIND = 'article';
 const MIN_BODY_CHARS = 200;
@@ -76,11 +76,14 @@ function buildSearchQuery(keyword: string): string {
 function isExcludedDomain(url: string): boolean {
 	let hostname: string;
 	try {
-		hostname = new URL(url).hostname.replace(/^www\./, '');
+		hostname = new URL(url).hostname;
 	} catch {
 		return true;
 	}
-	return EXCLUDED_BLOG_DOMAINS.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+	// 実際の判定（EXCLUDED_BLOG_DOMAINS + FILTERED_BLOG_DOMAINS）は keywords.ts の
+	// isExcludedBlogDomain に委譲する。cloudflare:workers 非依存の純粋関数として
+	// そちらでユニットテストする。
+	return isExcludedBlogDomain(hostname);
 }
 
 // 有名どころのブログサービスはユーザーごとのサブドメインをまとめてサービス単位の source にし、
