@@ -11,7 +11,7 @@
 ├── migrations/                  # Supabase (Postgres) 用マイグレーション
 ├── scripts/
 │   ├── db/                      # マイグレーション適用・CRUD スモークテスト
-│   └── eval/                    # 収集/検索/フィルタ/タグ精度の評価スクリプト（M5）
+│   └── eval/                    # 収集/検索/フィルタ/タグ精度の評価スクリプト（試行→評価→修正）
 ├── src
 │   ├── components/               # CatalogPage / ItemCard など
 │   ├── layouts/Layout.astro
@@ -117,7 +117,7 @@ cp .env.example .env
 - 手動で起動したい場合は、ローカルなら `npm run collect:check-links`、デプロイ後は `POST /api/import/check-links` を叩く。`id` をキーに更新するだけなので、何度実行しても副作用は増えない（冪等）。
 - 失敗時: `wrangler tail` などで `[cron:link-check] check failed` を確認する。記事単位（fetch失敗・DB更新失敗）の失敗は `skipped` に吸収されるため、ジョブ全体が落ちるのは Supabase 未接続など致命的なケースのみ。復旧を確認したら、次回 cron を待つか手動実行で再実行すればよい。
 
-## M5: 検索・フィルタ・タグの精度を最適化するフロー
+## 検索・フィルタ・タグの精度を最適化するフロー
 
 実データに対して「試行→Claude Codeが評価→修正→再実行」のループを回すためのスクリプト群。OpenAI 等の外部AIでの自動採点は使わず、Claude Code 自身が出力を読んで判定する（コストをかけないため）。4つの観点は独立したスクリプトに分かれており、それぞれ単独で反復できる。
 
@@ -126,3 +126,4 @@ cp .env.example .env
 - **フィルタ精度（AI取り込みレビューの採用可否）**: `npm run eval:filter`（DB 接続のみで可、サーバー起動は不要）。`scripts/eval/eval-filter.mjs` が `src/lib/importers/article-ai.ts` の現在のシステムプロンプトと、収集済み全記事（title/summary/tags/収集時のAI判定）を並べて出力する。Claude Code がプロンプトの基準に照らして各記事を自分で読み直し、収集時の判定とズレがあれば（例: 主題がポケモンでないのに accepted=true）プロンプトを修正して再実行する。
 - **タグ精度**: `npm run eval:tags`（DB 接続のみで可）。`scripts/eval/eval-tags.mjs` がタグごとの使用件数とサンプル記事タイトルを出力し、使用1件のみのタグ一覧も出す。Claude Code が表記ゆれ・重複・ノイズタグを判定し、`normalizeTagName`（`src/lib/importers/article-ai.ts`）や関連マイグレーションで是正して再実行する。
 - 収集時に AI が新規タグを乱発しないよう、各インポーターは収集開始時に既存タグ上位（`fetchTopTagNames`、`src/lib/importers/common.ts`）を取得し、AIレビューのプロンプトに再利用ヒントとして渡している。この効果は次回以降の実収集（Qiita/Zenn/note の cron または手動実行）でしか確認できない点に注意。
+- `npm run eval:all` で上記4観点（収集クエリ/検索/フィルタ/タグ）に加えて `scripts/db/detect-duplicate-items.mjs`（重複items検出）も1コマンドでまとめて実行できる（`scripts/eval/eval-all.mjs`）。検索精度の実行に必要な開発サーバーが未起動なら自動で `astro dev --background` を起動し、このスクリプトが起動した場合に限り終了時に停止する。個人ブログ（Brave Search）のクエリ精度は Brave の無料枠（月1000件）を消費するため既定では実行せず、`npm run eval:all -- --with-blog` を付けたときのみ実行する。
