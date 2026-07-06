@@ -6,6 +6,7 @@ import { env } from 'cloudflare:workers';
 import { sendOperationalAlert } from './lib/notify';
 import { runAndRecord } from './lib/import-runs';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
+import { checkLinks, resolveLinkCheckOptions } from './lib/importers/link-check';
 import { resolveNoteSyncOptions, syncNoteCollection } from './lib/importers/note';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
 import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
@@ -14,6 +15,7 @@ import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn
 const ZENN_CRON = '30 21 * * *';
 const NOTE_CRON = '0 22 * * *';
 const BLOG_CRON = '30 22 * * *';
+const LINK_CHECK_CRON = '0 23 * * *';
 
 export default {
 	async fetch(request, ctxEnv, ctx) {
@@ -26,6 +28,8 @@ export default {
 			ctx.waitUntil(runScheduledNoteImport());
 		} else if (controller.cron === BLOG_CRON) {
 			ctx.waitUntil(runScheduledBlogImport());
+		} else if (controller.cron === LINK_CHECK_CRON) {
+			ctx.waitUntil(runScheduledLinkCheck());
 		} else {
 			ctx.waitUntil(runScheduledQiitaImport());
 		}
@@ -105,5 +109,23 @@ async function runScheduledBlogImport(): Promise<void> {
 	} catch (error) {
 		console.error('[cron:blog] sync failed', error);
 		await sendOperationalAlert(env, 'ブログ（Brave Search）収集ジョブが失敗しました', error);
+	}
+}
+
+async function runScheduledLinkCheck(): Promise<void> {
+	// 記事単位の失敗（fetch失敗・DB更新失敗）は checkLinks 内で skipped として吸収される。
+	// 失敗時は次回 cron 実行を待つか、POST /api/import/check-links を手動で叩けば再実行できる
+	// （対象の再選定はチェック間隔と link_checked_at に基づくため冪等）。
+	try {
+		const result = await runAndRecord('link-check', 'cron', () => checkLinks(resolveLinkCheckOptions(env)));
+		console.log('[cron:link-check] check completed', {
+			fetched: result.fetched,
+			inserted: result.inserted,
+			updated: result.updated,
+			skipped: result.skipped,
+		});
+	} catch (error) {
+		console.error('[cron:link-check] check failed', error);
+		await sendOperationalAlert(env, 'リンク切れ検出ジョブが失敗しました', error);
 	}
 }

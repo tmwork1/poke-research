@@ -179,6 +179,11 @@ async function queryCatalogItems(
 		.from('items')
 		.select(options.includeBody ? ITEM_SELECT_WITH_BODY : ITEM_SELECT, options.withCount ? { count: 'exact' } : undefined);
 
+	// リンク切れ検出（migrations/016）で broken と確定したアイテムは、検索・タグ・新着などの
+	// 一覧（RSS/サイトマップも fetchCatalogItems 経由のため同様）から隠す。詳細ページ（
+	// fetchCatalogItemById）やブックマーク一覧は別クエリのため対象外のまま残す。
+	query = query.neq('link_status', 'broken');
+
 	if (options.orderBy === 'bookmarks_count') {
 		// 人気順: bookmarks_count 降順を主キーに、公開日時降順を同数時のタイブレークにする。
 		query = query
