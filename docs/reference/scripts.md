@@ -54,11 +54,12 @@
 - **収集後**（backfill や新ソース追加の後）: 重複・新タグは収集が作るため、`detect-duplicate-items`（`eval:all` に含まれる）の結果確認と `backfill-tag-explanations` を行う。
 - **AI取り込みプロンプト（`src/lib/importers/article-ai.ts`）や要約基準の変更後**: 既存記事が旧基準のまま残るため `retag-existing-items` の要否を検討する。
 
-`merge-tag` は上記とは別に、`eval:all` の `eval:tags` 出力でノイズタグ・表記ゆれが見えたときに使う。同様に `merge-source` は `detect-duplicate-sources` の出力で重複sourceが見えたときに使う。`eval-annotations`・`eval-broken-links` は上記2トリガーとは独立に、annotations件数が増えてきたときや月次の目視確認のタイミングで都度実行する。
+`merge-tag` は上記とは別に、`eval:all` の `eval:tags` 出力でノイズタグ・表記ゆれが見えたときに使う。同様に `merge-source` は `detect-duplicate-sources` の出力で重複sourceが見えたときに使う。`merge-item` は `detect-duplicate-items` の出力で重複itemが見えたとき、著者・内容を確認して同一記事と判断できたペアにのみ使う（タイトルが似ているだけで内容が別の記事は統合対象外）。`eval-annotations`・`eval-broken-links` は上記2トリガーとは独立に、annotations件数が増えてきたときや月次の目視確認のタイミングで都度実行する。
 
 | スクリプト | コマンド | 用途 | 課金 |
 |---|---|---|---|
-| `scripts/db/detect-duplicate-items.mjs` | `node scripts/db/detect-duplicate-items.mjs` | 同一記事のクロスポスト候補を、URL正規化一致 or タイトル類似度で検出し一覧表示する。読み取り専用（DBに書き込まない）。統合・削除は手動対応（「検出→確認→削除」を自動で一本化する対話的ヘルパーは、判断そのものを人手で行う必要があるためユーザー判断により不要と確定し、実装しない）。`npm run eval:all` の既定ステップにも含まれる。 | なし |
+| `scripts/db/detect-duplicate-items.mjs` | `node scripts/db/detect-duplicate-items.mjs` | 同一記事のクロスポスト候補を、URL正規化一致 or タイトル類似度で検出し一覧表示する。読み取り専用（DBに書き込まない）。「検出→確認→削除」を自動で一本化する対話的ヘルパーは、判断そのものを人手で行う必要があるためユーザー判断により不要と確定し、実装しない。統合は`merge-item.mjs`で行う。`npm run eval:all` の既定ステップにも含まれる。 | なし |
+| `scripts/db/merge-item.mjs <from-id> <to-id>` | `node scripts/db/merge-item.mjs 34 224` | 重複item統合。`merge-source.mjs`と同様のパターン（`item_tags`/`bookmarks`を付け替え、`annotations`は付け替えたうえで`from`を削除）。冪等。`--dry-run`で付け替え対象件数と削除予定itemの表示のみ行える。本番実行前にユーザー確認必須。 | なし |
 | `scripts/db/merge-tag.mjs <from> <to>` | `node scripts/db/merge-tag.mjs ポケモンカート ポケモンカード` | 誤字・表記ゆれタグを正しいタグへ統合する（`item_tags`付け替え→`from`削除）。冪等。本番実行前にユーザー確認必須。 | なし |
 | `scripts/db/backfill-tag-explanations.mjs` | `node --env-file=.env scripts/db/backfill-tag-explanations.mjs` | `explained_at`未設定のタグへ、AIによる平易な解説をまとめて生成する。冪等（生成済みはスキップ）。OpenAI課金に注意。 | OpenAI（未解説タグの件数分） |
 | `scripts/db/retag-existing-items.mjs` | `node --env-file=.env scripts/db/retag-existing-items.mjs [--dry-run] [--id=] [--limit=] [--service=]` | 既存アイテムへ現行のAI取り込みプロンプトを再適用し、summary/タグを最新基準で更新し直す。不採用判定になった場合は自動削除せず警告のみ。全件実行はOpenAI課金が大きいので事前確認。 | OpenAI（既定は全件、`--limit`等で抑制。`--dry-run`でも呼び出しあり） |
@@ -86,4 +87,4 @@
 
 ## ドキュメント化されていない/確認が必要な既知の穴
 
-[docs/plan/review-scripts-gaps-20260706.md](../plan/review-scripts-gaps-20260706.md) に、sources重複検出・使用0件タグ検出・items重複の運用ループ化・AIフィルタ偽陰性レビュー・annotationsレビュー・リンク切れ目視レビューの6点を優先度/工数付きで整理してあったが、2026-07-06時点で全項目が解消済み。sources重複検出・使用0件タグ検出・annotationsレビュー・リンク切れ目視レビューの4点は本表に実装済みとして反映済み。items重複の運用ループ化（#3）は、検出→確認→削除を自動で一本化する対話的ヘルパーを不要とユーザーが確定判断し、検出（`detect-duplicate-items`）と削除実行（既存の手動対応）を分離したまま運用する方針でクローズした。AIフィルタ偽陰性レビュー（#4）は案A（棄却記事も`items`に保存し一覧・検索から除外、`migrations/018`）を採用して`eval-filter.mjs`に実装済み。残項目は無い。
+[docs/plan/review-scripts-gaps-20260706.md](../plan/review-scripts-gaps-20260706.md) に、sources重複検出・使用0件タグ検出・items重複の運用ループ化・AIフィルタ偽陰性レビュー・annotationsレビュー・リンク切れ目視レビューの6点を優先度/工数付きで整理してあったが、2026-07-06時点で全項目が解消済み。sources重複検出・使用0件タグ検出・annotationsレビュー・リンク切れ目視レビューの4点は本表に実装済みとして反映済み。items重複の運用ループ化（#3）は、検出→確認→削除を自動で一本化する対話的ヘルパーを不要とユーザーが確定判断し、検出（`detect-duplicate-items`）と削除実行（`merge-item.mjs`による手動対応）を分離したまま運用する方針でクローズした。AIフィルタ偽陰性レビュー（#4）は案A（棄却記事も`items`に保存し一覧・検索から除外、`migrations/018`）を採用して`eval-filter.mjs`に実装済み。残項目は無い。
