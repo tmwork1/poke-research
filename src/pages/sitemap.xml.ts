@@ -1,6 +1,6 @@
 // 検索エンジンのクロール・インデックス対応のため、静的ページとタグ別ページを列挙する。
 import { methodNotAllowed } from './api/_shared';
-import { fetchTopTags } from '../lib/catalog';
+import { fetchCatalogItems, fetchTopTags } from '../lib/catalog';
 
 export const prerender = false;
 
@@ -11,17 +11,41 @@ function escapeXml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-export async function GET() {
-  const topTags = await fetchTopTags(SITEMAP_TAG_LIMIT);
+interface SitemapUrl {
+  loc: string;
+  lastmod?: string;
+}
 
-  const staticUrls = [`${SITE_URL}/`, `${SITE_URL}/items`];
-  const tagUrls = topTags.map((tag) => `${SITE_URL}/tags/${encodeURIComponent(tag.name)}`);
+export async function GET() {
+  const [topTags, latestItems] = await Promise.all([
+    fetchTopTags(SITEMAP_TAG_LIMIT),
+    // 最新記事1件の公開日を、更新頻度の高いページ（トップ・一覧）の lastmod に流用する。
+    fetchCatalogItems({ limit: 1 }),
+  ]);
+  const latestItem = latestItems[0];
+  const latestPublishedAt = latestItem ? latestItem.published_at ?? latestItem.created_at : undefined;
+  const lastmod = latestPublishedAt ? new Date(latestPublishedAt).toISOString() : undefined;
+
+  const staticUrls: SitemapUrl[] = [
+    { loc: `${SITE_URL}/`, lastmod },
+    { loc: `${SITE_URL}/items`, lastmod },
+    { loc: `${SITE_URL}/tags` },
+    { loc: `${SITE_URL}/about` },
+  ];
+  // タグごとの最新記事日時までは追わず、全タグ共通で lastmod を割り切って付与する
+  // （タグ別に問い合わせると RPC 呼び出しが taggedURL 数分増えてしまうため）。
+  const tagUrls: SitemapUrl[] = topTags.map((tag) => ({
+    loc: `${SITE_URL}/tags/${encodeURIComponent(tag.name)}`,
+    lastmod,
+  }));
 
   const urls = [...staticUrls, ...tagUrls]
-    .map((url) => `
+    .map(
+      (url) => `
   <url>
-    <loc>${escapeXml(url)}</loc>
-  </url>`)
+    <loc>${escapeXml(url.loc)}</loc>${url.lastmod ? `\n    <lastmod>${url.lastmod}</lastmod>` : ''}
+  </url>`,
+    )
     .join('');
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>

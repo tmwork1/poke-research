@@ -5,11 +5,16 @@ const {
 	loggedIn = false,
 	// SVG を無視するクローラー・SNS があるため、共有用画像は PNG を既定にする。
 	ogImage = '/og-image.png',
+	// クエリ違いの重複ページを正規化したい場合に、ページ側から明示的なパスを渡す。
+	// 省略時は現在の pathname（クエリを含まない）をそのまま使う。
+	canonicalPath,
+	// 検索結果・ページングなど中身が薄い/重複しがちなページで true にする。
+	noindex = false,
 } = Astro.props;
 
 const user = Astro.locals.user;
 const pathname = Astro.url.pathname;
-const canonicalUrl = new URL(pathname, Astro.site);
+const canonicalUrl = new URL(canonicalPath ?? pathname, Astro.site);
 const ogImageUrl = new URL(ogImage, Astro.site);
 
 const shareText = 'ポケモン×プログラミングの記事をまとめた情報ハブです';
@@ -53,6 +58,8 @@ const websiteJsonLd = JSON.stringify({
 		<link rel="alternate" type="application/rss+xml" title="PokeResearch 新着" href="/rss.xml" />
 		<meta name="generator" content={Astro.generator} />
 		<meta name="description" content={description} />
+		<link rel="canonical" href={canonicalUrl.toString()} />
+		{noindex && <meta name="robots" content="noindex, follow" />}
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={description} />
 		<meta property="og:type" content="website" />

@@ -34,6 +34,21 @@ const filters = {
 };
 const page = parseOptionalPositiveInteger(url.searchParams.get('page')) ?? 1;
 
+// クエリの組み合わせごとに大量の重複ページができるため、検索条件が付いた URL は
+// 基本的に noindex とし、canonical は /items（クエリなし）へ寄せる。
+// ただし tag を1つだけ指定した状態は実質的にタグページと同じ内容のため、
+// canonical をそのタグページ（/tags/{name}）へ正規化する。
+const rawTagParams = url.searchParams.getAll('tag');
+const hasOtherQueryParams =
+	url.searchParams.has('q') ||
+	url.searchParams.has('sourceId') ||
+	url.searchParams.has('sort') ||
+	url.searchParams.has('period') ||
+	url.searchParams.has('page');
+const isSingleTagOnly = rawTagParams.length === 1 && !hasOtherQueryParams;
+const hasAnyQueryParam = hasOtherQueryParams || rawTagParams.length > 0;
+const canonicalPath = isSingleTagOnly ? `/tags/${encodeURIComponent(rawTagParams[0])}` : '/items';
+
 const user = Astro.locals.user;
 
 const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
@@ -51,7 +66,13 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 ]);
 ---
 
-<Layout title="Items | PokeResearch" description="アイテム一覧・検索画面" loggedIn={Boolean(user)}>
+<Layout
+	title="Items | PokeResearch"
+	description="アイテム一覧・検索画面"
+	loggedIn={Boolean(user)}
+	canonicalPath={canonicalPath}
+	noindex={hasAnyQueryParam}
+>
 	<CatalogPage
 		title="アイテム一覧・検索"
 		eyebrow="Search items"

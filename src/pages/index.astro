@@ -16,6 +16,9 @@ const url = new URL(Astro.request.url);
 const activeTag = url.searchParams.get('tag') ?? '';
 const activeSort: CatalogSort = url.searchParams.get('sort') === 'popular' ? 'popular' : 'new';
 const page = parseOptionalPositiveInteger(url.searchParams.get('page')) ?? 1;
+// トップページはタグ/並び替え/ページングの組み合わせで内容が変わるため、
+// クエリ付きの表示は noindex にし、canonical は常に / へ寄せる。
+const noindex = url.searchParams.has('tag') || url.searchParams.has('sort') || url.searchParams.has('page');
 
 function buildUrl(overrides: { tag: string }) {
 	const params = new URLSearchParams();
@@ -45,7 +48,13 @@ try {
 }
 ---
 
-<Layout title="PokeResearch" description="ポケモンプログラミング情報ハブのトップページ" loggedIn={Boolean(user)}>
+<Layout
+	title="PokeResearch"
+	description="ポケモンプログラミング情報ハブのトップページ"
+	loggedIn={Boolean(user)}
+	canonicalPath="/"
+	noindex={noindex}
+>
 	<section class="home">
 		<ItemListJsonLd items={recentItems} />
 		{loadError && (
