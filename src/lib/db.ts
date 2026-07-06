@@ -10,7 +10,6 @@ export const tables = {
   items: 'items',
   tags: 'tags',
   item_tags: 'item_tags',
-  item_relations: 'item_relations',
   annotations: 'annotations',
 } as const;
 
