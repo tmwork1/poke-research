@@ -17,6 +17,10 @@ export interface TagUsage extends Tag {
 	count: number;
 }
 
+export interface SourceUsage extends Source {
+	count: number;
+}
+
 export interface ItemRow extends Item {
 	source?: CatalogSource | CatalogSource[] | null;
 	item_tags?: Array<{ tag?: Tag | Tag[] | null }>;

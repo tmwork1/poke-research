@@ -1,6 +1,5 @@
 ---
-import type { CatalogItem, TagUsage } from '../lib/catalog';
-import type { Source } from '../lib/db-types';
+import type { CatalogItem, SourceUsage, TagUsage } from '../lib/catalog';
 import { tokenizeQuery } from '../lib/highlight';
 import ItemCard from './ItemCard.astro';
 import ItemListJsonLd from './ItemListJsonLd.astro';
@@ -14,7 +13,7 @@ interface Props {
 	basePath: string;
 	items: CatalogItem[];
 	topTags: TagUsage[];
-	sources: Source[];
+	sources: SourceUsage[];
 	filters: {
 		q: string;
 		tags: string[];
@@ -75,12 +74,7 @@ function toggleSource(sourceId: number) {
 
 <section class="catalog">
 	<ItemListJsonLd items={items} />
-	{eyebrow ? (
-		<div class="eyebrow-row">
-			<p class="eyebrow">{eyebrow}</p>
-			<CompactToggle />
-		</div>
-	) : null}
+	{eyebrow ? <p class="eyebrow">{eyebrow}</p> : null}
 
 	<section class="panel">
 		<form class="filters" method="get" action={basePath}>
@@ -97,7 +91,7 @@ function toggleSource(sourceId: number) {
 					<a class:list={['chip', { active: filters.sourceIds.length === 0 }]} href={buildUrl({ sourceIds: [] })}>すべて</a>
 					{sources.map((source) => (
 						<a class:list={['chip', { active: filters.sourceIds.includes(source.id) }]} href={buildUrl({ sourceIds: toggleSource(source.id) })}>
-							{source.name}
+							{source.name} <span class="chip-count">{source.count}</span>
 						</a>
 					))}
 				</div>
@@ -137,7 +131,10 @@ function toggleSource(sourceId: number) {
 			</div>
 		</form>
 
-		<Pagination page={pagination.page} totalPages={pagination.totalPages} buildUrl={buildUrl} />
+		<div class="top-controls">
+			<Pagination page={pagination.page} totalPages={pagination.totalPages} buildUrl={buildUrl} />
+			<div class="compact-toggle-slot"><CompactToggle /></div>
+		</div>
 
 		{items.length > 0 ? (
 			<div class="grid">
@@ -198,16 +195,8 @@ function toggleSource(sourceId: number) {
 		box-shadow: var(--shadow);
 	}
 
-	.eyebrow-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		margin: 0 0 4px;
-	}
-
 	.eyebrow {
-		margin: 0;
+		margin: 0 0 4px;
 		font-size: 0.75rem;
 		letter-spacing: 0.16em;
 		text-transform: uppercase;
@@ -310,6 +299,29 @@ function toggleSource(sourceId: number) {
 		background: var(--accent);
 		border-color: var(--accent);
 		color: #fff;
+	}
+
+	.chip-count {
+		font-size: 0.78rem;
+		color: var(--text-muted);
+	}
+
+	.chip.active .chip-count {
+		color: rgba(255, 255, 255, 0.85);
+	}
+
+	.top-controls {
+		position: relative;
+		min-height: 44px;
+		display: flex;
+		align-items: center;
+	}
+
+	.compact-toggle-slot {
+		position: absolute;
+		top: 50%;
+		right: 0;
+		transform: translateY(-50%);
 	}
 
 	.grid {
