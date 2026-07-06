@@ -107,6 +107,16 @@ cp .env.example .env
 - 手動で起動したい場合は、ローカルなら `npm run collect:note`、デプロイ後は `POST /api/import/note` を叩く。Qiita/Zenn と同様に `external_url` の UNIQUE 制約に基づく upsert なので、何度実行しても重複行は増えない（冪等）。
 - 失敗時: `wrangler tail` などで `[cron:note] sync failed` を確認する。記事単位（詳細取得・AI レビュー・DB 書き込みのいずれか）の失敗は `skipped` に吸収されるため、ジョブ全体が落ちるのは note 側の仕様変更やレート制限など致命的なケースのみ。復旧を確認したら、次回 cron を待つか手動実行で再実行すればよい。
 
+## リンク切れ検出ジョブ
+
+- 元記事の削除・非公開化を検出するため、`items.external_url` を定期チェックし判定を `items.link_status`（`ok` / `broken`）・`link_checked_at`・`link_broken_since` に記録する（`migrations/016_add_link_status.sql`、実装は `src/lib/importers/link-check.ts`）。他の収集ジョブと異なり新規アイテムは作らない。
+- 1回の到達不能（404/410、または DNS 解決失敗などの接続不可）だけでは確定させず、`link_broken_since` に「疑い開始時刻」を記録したうえで、次回チェックでも到達不能なら `link_status='broken'` に確定する（一時的な障害を誤検知しないため）。復帰したら即座に `ok` へ戻す。
+- `link_status='broken'` のアイテムは新着・検索・タグ・人気順などの一覧（`src/lib/catalog.ts` の `queryCatalogItems`、RSS・サイトマップも同経由）から除外される。詳細ページやブックマーク一覧は対象外で、直接アクセスすれば引き続き閲覧できる。
+- チェック対象は「未チェック、または `LINK_CHECK_RECHECK_DAYS`（既定7日）より前にチェック済み」のアイテムのうち、`link_checked_at` が古い順に `LINK_CHECK_BATCH_LIMIT`（既定100）件まで（1回のチェックで全件を毎回叩くと対象サイトへの負荷や実行時間が無視できないため）。
+- 本番では Cloudflare Cron Triggers（`wrangler.jsonc` の `triggers.crons` に他ジョブとは別枠で追加、既定は毎日 23:00 UTC = JST 8:00）が `src/worker.ts` の `scheduled` ハンドラを起動する。
+- 手動で起動したい場合は、ローカルなら `npm run collect:check-links`、デプロイ後は `POST /api/import/check-links` を叩く。`id` をキーに更新するだけなので、何度実行しても副作用は増えない（冪等）。
+- 失敗時: `wrangler tail` などで `[cron:link-check] check failed` を確認する。記事単位（fetch失敗・DB更新失敗）の失敗は `skipped` に吸収されるため、ジョブ全体が落ちるのは Supabase 未接続など致命的なケースのみ。復旧を確認したら、次回 cron を待つか手動実行で再実行すればよい。
+
 ## M5: 検索・フィルタ・タグの精度を最適化するフロー
 
 実データに対して「試行→Claude Codeが評価→修正→再実行」のループを回すためのスクリプト群。OpenAI 等の外部AIでの自動採点は使わず、Claude Code 自身が出力を読んで判定する（コストをかけないため）。4つの観点は独立したスクリプトに分かれており、それぞれ単独で反復できる。

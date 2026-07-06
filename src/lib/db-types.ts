@@ -33,6 +33,12 @@ export interface Item {
   bookmarks_count?: number;
   /** 検索対象を広げるための本文テキスト（migrations/015）。妥当な長さに切り詰めて保存する。 */
   body?: string | null;
+  /** リンク切れ検出（migrations/016）の直近判定。'ok' | 'broken'。未チェックの既存行も 'ok' 扱い。 */
+  link_status?: string | null;
+  /** 直近チェック時刻。未チェックなら null。 */
+  link_checked_at?: string | null;
+  /** 初めて到達不能の疑いを検出した時刻。ok に戻ったら null へ戻す。 */
+  link_broken_since?: string | null;
 }
 
 export interface Tag {
