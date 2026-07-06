@@ -29,7 +29,9 @@ items には `scripts/db/detect-duplicate-items.mjs`（URL正規化+タイトル
 
 （2026-07-06 追記: `eval-all.mjs` への組み込みと scripts.md/README への運用明文化を実施済み。`detect-duplicate-items.mjs` を `eval:all` の既定ステップ（既存4本の後、最後）に追加し、docs/reference/scripts.md 第4章に「実行のきっかけ」として収集後／プロンプト変更後のレビュー運用を明記した。）
 
-（2026-07-06 追記: 統合の実行手段として `scripts/db/merge-item.mjs <from-id> <to-id>` を追加した（`merge-tag.mjs`/`merge-source.mjs`と同じ手動実行パターン、`--dry-run`対応）。「検出→確認→削除」の一本化（対話的ヘルパー）は上記#3の確定判断どおり作らず、判断は引き続き人間が行い、削除の実行だけをこのスクリプトで行う運用のまま。本番の実データ7組を精査した結果、1組（#3/#65「ポケモンで学ぶ統計学」）はタイトルが似ているだけで著者・内容が異なる別記事と判明し誤検出と確定、残り6組はQiita/Zenn相互投稿の真の重複と確認して`merge-item.mjs`で統合済み。）
+（2026-07-06 追記: ユーザー判断により「一覧から選んで削除する対話的ヘルパー（resolve-duplicate-items.mjs）」は不要と確定した。対応しない。理由: どちらを残す/削除するかの判断自体は著者・内容を人が確認しないと安全に自動化できず、検出（`detect-duplicate-items.mjs`）と削除実行（既存の手動対応）を分離したままの運用で実害が無いため。docs/reference/scripts.md から該当行を削除し、`detect-duplicate-items.mjs` 行に「統合・削除は手動対応」の運用が確定である旨を明記した。）
+
+（2026-07-06 追記: 統合の実行手段として `scripts/db/merge-item.mjs <from-id> <to-id>` を追加した（`merge-tag.mjs`/`merge-source.mjs`と同じ手動実行パターン、`--dry-run`対応）。「検出→確認→削除」の一本化（対話的ヘルパー）は上記の確定判断どおり作らず、判断は引き続き人間が行い、削除の実行だけをこのスクリプトで行う運用のまま。本番の実データ7組を精査した結果、1組（#3/#65「ポケモンで学ぶ統計学」）はタイトルが似ているだけで著者・内容が異なる別記事と判明し誤検出と確定、残り6組はQiita/Zenn相互投稿の真の重複と確認して`merge-item.mjs`で統合済み。）
 
 ## 4. AIフィルタの偽陰性（誤って棄却された記事）が構造的にレビュー不能（優先度: 低〜中 / 工数: 中〜大）
 
@@ -38,6 +40,8 @@ items には `scripts/db/detect-duplicate-items.mjs`（URL正規化+タイトル
 - 案A: 棄却された記事も `metadata.ai.accepted=false` 付きで一旦 `items` に保存し、一覧・検索からは除外する（`link_status` の除外と同じ仕組みを流用）。ストレージは増えるが偽陰性レビューが可能になる。
 - 案B: 収集ジョブの棄却ログだけを別テーブル（例: `rejected_candidates`）に軽量記録し、`eval-filter.mjs` 同様に「現行プロンプト基準で読み直す」対象に含める。
 - どちらもスキーマ変更を伴うため、着手前にユーザー判断が必要。
+
+（2026-07-06 追記: ユーザー判断により**案Aを採用**し実装済み。`migrations/018_add_items_ai_accepted.sql` で `items.ai_accepted boolean NOT NULL DEFAULT true` を追加し、`src/lib/importers/common.ts` の `processImportItem`/`upsertItemByExternalUrl` を、棄却時（`accepted=false`）も `ai_accepted=false` かつタグ同期スキップの条件で `items` へ保存するよう変更した（Qiita/Zenn/note/blog の4インポーター共通）。ただし**一度採用され公開中の既存記事（`ai_accepted=true`）への棄却レビューは格下げせず、書き込み自体をスキップする**（`shouldPreserveAcceptedItem`）。Qiita/Zenn/note は毎回の収集で既存記事も再レビューするため境界記事では判定が揺れうるが、このガードにより公開記事が収集のたびに一覧から見えたり消えたりすることはなく、`retag-existing-items.mjs` の「不採用判定は警告のみ」方針とも整合する。一覧・検索（`src/lib/catalog.ts` の `queryCatalogItems`）は `link_status='broken'` の除外と同じ仕組みで `ai_accepted=true` のみに絞り、詳細ページ・ブックマーク一覧は対象外のまま。リンクチェック（`link-check.ts`）・既存アイテム再タグ付け（`retag-existing-items.mjs`）も棄却記事を対象外にした。`eval-filter.mjs` に「AIに棄却された記事（偽陰性候補）」セクションを追加し、`items.metadata->'ai'->>'accepted' = 'false'`（`ai_accepted` 列非依存、マイグレーション未適用のDBでも動く）でtitle/external_url/棄却理由/AI要約を新しい順に一覧表示するようにした。案B（棄却ログ専用テーブル）は不採用。）
 
 ## 5. annotationsのレビュー手段が無い（優先度: 低 / 工数: 小）
 

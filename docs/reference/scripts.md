@@ -5,7 +5,7 @@
 共通の前提:
 - ほとんどのスクリプトは `DATABASE_URL`（直接 `pg` 接続）または `SUPABASE_URL`/`SUPABASE_SECRET_KEY`（`@supabase/supabase-js` 経由）のどちらかを要求する。ローカルは `scripts/db/setup-env.ps1` で作った `.env` を `node --env-file=.env scripts/xxx.mjs` で読み込むか、`npm run` 経由（エイリアスがあるもの）で実行する。
 - 本番 DB に対して書き込みを行うスクリプトは、実行前に必ずユーザー確認を取る（CLAUDE.md の運用ルール）。
-- 各表中の **（未実装）** はまだ存在せず、[docs/plan/review-scripts-gaps-20260706.md](../plan/review-scripts-gaps-20260706.md) で提案だけされているスクリプト。実装フェーズ・体系上の位置づけを分かりやすくするため、既存スクリプトと同じ表に並べている。
+- 各表中に **（未実装）** の行が出ることがある。これはまだ存在せず、[docs/plan/review-scripts-gaps-20260706.md](../plan/review-scripts-gaps-20260706.md) で提案だけされているスクリプトで、実装フェーズ・体系上の位置づけを分かりやすくするため既存スクリプトと同じ表に並べる（2026-07-06時点で提案されていた6件はいずれも実装済み、または「不要」とユーザー判断済みのため、現時点で該当する行は無い）。
 - **課金**列は外部有料APIの利用有無を示す。`OpenAI` は従量課金（件数に比例）、`Brave` は無料枠（月1000件）の消費。Supabase/DB 接続や Qiita・Zenn・note の公開APIは課金対象外なので「なし」と表記する。
 
 ## 1. 初期セットアップ・ローカル環境構築
@@ -42,9 +42,8 @@
 | `scripts/eval/eval-collection.mjs` | `npm run eval:collection` | 収集クエリ精度: Qiita/Zenn/noteの生検索結果（AIレビュー前）のタイトル一覧を出す。DB・サーバー不要。 | なし |
 | `scripts/eval/eval-collection-blog.mjs` | `npm run eval:collection:blog` | 収集クエリ精度（ブログ）: Brave Searchの生検索結果を出す。`BRAVE_API_KEY`必須、無料枠を消費するため`eval:all`の既定実行には含めない。 | Brave |
 | `scripts/eval/eval-search.mjs` | `npm run eval:search` | 検索精度: 起動中サーバー（`EVAL_BASE_URL`、既定`http://localhost:4321`）に代表的な検索クエリを投げ、ヒット件数とタイトルを出す。 | なし |
-| `scripts/eval/eval-filter.mjs` | `npm run eval:filter` | フィルタ精度: 現在のAI取り込みプロンプトと、収集済み全記事のtitle/summary/tags/AI採否理由を並べて出す。`DATABASE_URL`必須。 | なし |
+| `scripts/eval/eval-filter.mjs` | `npm run eval:filter` | フィルタ精度: 現在のAI取り込みプロンプトと、収集済み記事（採用分）のtitle/summary/tags/AI採否理由を並べて出す。加えて、AIに棄却された記事（案A、migrations/018で`ai_accepted=false`付きのまま`items`に保存されるようになった記事）も「偽陰性候補」セクションとしてtitle/external_url/棄却理由/AI要約を新しい順に別掲し、誤棄却でないかをレビューできるようにする。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-tags.mjs` | `npm run eval:tags` | タグ精度: タグごとの使用件数とサンプル記事タイトルを出す。使用1件のみのタグ（ノイズ候補）に加え、`tags`と`item_tags`のLEFT JOINで使用0件のタグ（統合後の残骸等）も削除候補として別掲する。`DATABASE_URL`必須。 | なし |
-| **（未実装）** `scripts/eval/eval-filter.mjs` の偽陰性レビュー拡張 | — | フィルタ精度: `eval-filter.mjs`はDBに入った記事（AIに採用された記事）しか見られず、誤って棄却された記事（偽陰性）を原理的に検出できない。案A（棄却記事も非表示フラグ付きで保存）/案B（棄却ログ専用テーブル）を提案中。スキーマ変更を伴うため着手前にユーザー判断が必要。詳細: [gapsプラン#4](../plan/review-scripts-gaps-20260706.md)。 | なし（想定） |
 
 ## 4. レビュー・クリーンアップ（事後メンテナンス）
 
@@ -59,14 +58,13 @@
 
 | スクリプト | コマンド | 用途 | 課金 |
 |---|---|---|---|
-| `scripts/db/detect-duplicate-items.mjs` | `node scripts/db/detect-duplicate-items.mjs` | 同一記事のクロスポスト候補を、URL正規化一致 or タイトル類似度で検出し一覧表示する。読み取り専用（DBに書き込まない）。統合は`merge-item.mjs`で行う。`npm run eval:all` の既定ステップにも含まれる。 | なし |
+| `scripts/db/detect-duplicate-items.mjs` | `node scripts/db/detect-duplicate-items.mjs` | 同一記事のクロスポスト候補を、URL正規化一致 or タイトル類似度で検出し一覧表示する。読み取り専用（DBに書き込まない）。「検出→確認→削除」を自動で一本化する対話的ヘルパーは、判断そのものを人手で行う必要があるためユーザー判断により不要と確定し、実装しない。統合は`merge-item.mjs`で行う。`npm run eval:all` の既定ステップにも含まれる。 | なし |
 | `scripts/db/merge-item.mjs <from-id> <to-id>` | `node scripts/db/merge-item.mjs 34 224` | 重複item統合。`merge-source.mjs`と同様のパターン（`item_tags`/`bookmarks`を付け替え、`annotations`は付け替えたうえで`from`を削除）。冪等。`--dry-run`で付け替え対象件数と削除予定itemの表示のみ行える。本番実行前にユーザー確認必須。 | なし |
 | `scripts/db/merge-tag.mjs <from> <to>` | `node scripts/db/merge-tag.mjs ポケモンカート ポケモンカード` | 誤字・表記ゆれタグを正しいタグへ統合する（`item_tags`付け替え→`from`削除）。冪等。本番実行前にユーザー確認必須。 | なし |
 | `scripts/db/backfill-tag-explanations.mjs` | `node --env-file=.env scripts/db/backfill-tag-explanations.mjs` | `explained_at`未設定のタグへ、AIによる平易な解説をまとめて生成する。冪等（生成済みはスキップ）。OpenAI課金に注意。 | OpenAI（未解説タグの件数分） |
 | `scripts/db/retag-existing-items.mjs` | `node --env-file=.env scripts/db/retag-existing-items.mjs [--dry-run] [--id=] [--limit=] [--service=]` | 既存アイテムへ現行のAI取り込みプロンプトを再適用し、summary/タグを最新基準で更新し直す。不採用判定になった場合は自動削除せず警告のみ。全件実行はOpenAI課金が大きいので事前確認。 | OpenAI（既定は全件、`--limit`等で抑制。`--dry-run`でも呼び出しあり） |
 | `scripts/db/detect-duplicate-sources.mjs` | `node scripts/db/detect-duplicate-sources.mjs` | sources専用の重複検出。`origin_url`の正規化一致・`name`の類似度で候補を出す（`detect-duplicate-items.mjs`の正規化ロジックを流用）。読み取り専用（DBに書き込まない）。統合は`merge-source.mjs`で行う。 | なし |
 | `scripts/db/merge-source.mjs <from-id> <to-id>` | `node scripts/db/merge-source.mjs 56 3` | 重複source統合。`merge-tag.mjs`と同様のパターン（items の`source_id`を付け替えてから重複sourceを削除）。冪等。`--dry-run`で付け替え対象件数と削除予定sourceの表示のみ行える。本番実行前にユーザー確認必須。 | なし |
-| **（未実装）** `scripts/db/resolve-duplicate-items.mjs`（対話的ヘルパー） | 未定（提案） | `detect-duplicate-items.mjs`の検出結果を「検出→確認→削除」まで一本化する運用ヘルパー。`item_relations`テーブルは運用されず`migrations/017`で削除済みのため、保存済みペアを前提にせず実行のたびに検出したペアへ直接作用する設計が必要。詳細: [gapsプラン#3](../plan/review-scripts-gaps-20260706.md)。 | なし（想定） |
 | `scripts/eval/eval-annotations.mjs` | `node scripts/eval/eval-annotations.mjs` | annotations（`GET/POST /api/annotations`）の内容を記事タイトルと紐付けて一覧出力する読み取り専用スクリプト。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-broken-links.mjs` | `node scripts/eval/eval-broken-links.mjs` | `link_status='broken'`のitemを`link_broken_since`の古い順に一覧出力する。`eval:all`とは別に月次程度で目視確認する運用を想定。`DATABASE_URL`必須。 | なし |
 
@@ -89,4 +87,4 @@
 
 ## ドキュメント化されていない/確認が必要な既知の穴
 
-[docs/plan/review-scripts-gaps-20260706.md](../plan/review-scripts-gaps-20260706.md) に、sources重複検出・使用0件タグ検出・items重複の運用ループ化・AIフィルタ偽陰性レビュー・annotationsレビュー・リンク切れ目視レビューの6点を優先度/工数付きで整理してある。このうちsources重複検出・使用0件タグ検出・annotationsレビュー・リンク切れ目視レビューの4点は本表に実装済みとして反映済み。items重複の運用ループ化（対話的な検出→確認→削除の一本化）とAIフィルタ偽陰性レビューは未着手のまま残っている。
+[docs/plan/review-scripts-gaps-20260706.md](../plan/review-scripts-gaps-20260706.md) に、sources重複検出・使用0件タグ検出・items重複の運用ループ化・AIフィルタ偽陰性レビュー・annotationsレビュー・リンク切れ目視レビューの6点を優先度/工数付きで整理してあったが、2026-07-06時点で全項目が解消済み。sources重複検出・使用0件タグ検出・annotationsレビュー・リンク切れ目視レビューの4点は本表に実装済みとして反映済み。items重複の運用ループ化（#3）は、検出→確認→削除を自動で一本化する対話的ヘルパーを不要とユーザーが確定判断し、検出（`detect-duplicate-items`）と削除実行（`merge-item.mjs`による手動対応）を分離したまま運用する方針でクローズした。AIフィルタ偽陰性レビュー（#4）は案A（棄却記事も`items`に保存し一覧・検索から除外、`migrations/018`）を採用して`eval-filter.mjs`に実装済み。残項目は無い。

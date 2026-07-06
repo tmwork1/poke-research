@@ -137,6 +137,10 @@ async function queryCatalogItems(
 	// fetchCatalogItemById）やブックマーク一覧は別クエリのため対象外のまま残す。
 	query = query.neq('link_status', 'broken');
 
+	// AIレビューで棄却された記事（migrations/018）も偽陰性レビューのため items には保存するが、
+	// 一覧・検索からは link_status と同様の考え方で隠す。詳細ページ・ブックマーク一覧は対象外。
+	query = query.eq('ai_accepted', true);
+
 	if (options.orderBy === 'bookmarks_count') {
 		// 人気順: bookmarks_count 降順を主キーに、公開日時降順を同数時のタイブレークにする。
 		query = query

@@ -396,9 +396,11 @@ async function processBlogCandidate(candidate: BlogCandidate, fetchedAt: string,
 						metadata: createItemMetadata(extracted, hostname, candidate, fetchedAt, review),
 						version: bodyHash,
 						body: truncateBodyForStorage(extracted.bodyText),
+						aiAccepted: review.accepted,
 					},
 					review.tags,
 					review.tagLabels,
+					{ syncTags: review.accepted },
 				);
 			},
 		);

@@ -39,6 +39,8 @@ export interface Item {
   link_checked_at?: string | null;
   /** 初めて到達不能の疑いを検出した時刻。ok に戻ったら null へ戻す。 */
   link_broken_since?: string | null;
+  /** AIレビューでの採否（migrations/018）。false は一覧・検索から除外される（偽陰性レビュー用に保存はする）。 */
+  ai_accepted?: boolean;
 }
 
 export interface Tag {
