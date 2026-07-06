@@ -28,8 +28,8 @@
 | `scripts/collect/collect-zenn.mjs` | `npm run collect:zenn` | Zenn収集。`ZENN_TOPIC`/`ZENN_PAGES`。 | OpenAI（新規記事のAIレビュー） |
 | `scripts/collect/collect-note.mjs` | `npm run collect:note` | note収集。`NOTE_QUERY`/`NOTE_PAGES`。 | OpenAI（新規記事のAIレビュー） |
 | `scripts/collect/collect-blog.mjs` | `npm run collect:blog` | Brave Search経由の個人ブログ収集。`BLOG_QUERY`/`BRAVE_COUNT`/`BLOG_PAGES`。Brave無料枠（月1000件）に注意。 | OpenAI + Brave |
-| `scripts/collect/check-links.mjs` | `npm run collect:check-links` | リンク切れ検出ジョブを手動起動。`LINK_CHECK_BATCH_LIMIT`/`LINK_CHECK_CONCURRENCY`/`LINK_CHECK_RECHECK_DAYS`。 | なし |
 | `scripts/collect/backfill.mjs` | `npm run collect:backfill` | qiita/zenn/note/blogをまとめて広めの範囲で一括収集する。対象は`BACKFILL_TARGETS`（既定`qiita,zenn,note,blog`）で絞れる。本番実行はレートリミット・OpenAI課金に注意しユーザー確認の上で行う。 | OpenAI + Brave（一括収集のため件数大） |
+| `scripts/collect/check-links.mjs` | `npm run collect:check-links` | リンク切れ検出ジョブを手動起動。`LINK_CHECK_BATCH_LIMIT`/`LINK_CHECK_CONCURRENCY`/`LINK_CHECK_RECHECK_DAYS`。 | なし |
 
 ## 3. 評価ループ（試行→評価→修正）
 
@@ -40,9 +40,9 @@
 | `scripts/eval/eval-all.mjs` | `npm run eval:all`（`-- --with-blog` で blog も追加） | 下記4本（collection/filter/tags/search）に加え、`scripts/db/detect-duplicate-items.mjs`（重複items検出）も含めた計5本をまとめて1コマンドで実行するオーケストレーター。`eval:search`用の開発サーバーが未起動なら自動起動し、このスクリプト自身が起動した場合に限り終了時に停止する。 | なし（`--with-blog` 時のみ Brave） |
 | `scripts/eval/eval-collection.mjs` | `npm run eval:collection` | 収集クエリ精度: Qiita/Zenn/noteの生検索結果（AIレビュー前）のタイトル一覧を出す。DB・サーバー不要。 | なし |
 | `scripts/eval/eval-collection-blog.mjs` | `npm run eval:collection:blog` | 収集クエリ精度（ブログ）: Brave Searchの生検索結果を出す。`BRAVE_API_KEY`必須、無料枠を消費するため`eval:all`の既定実行には含めない。 | Brave |
-| `scripts/eval/eval-search.mjs` | `npm run eval:search` | 検索精度: 起動中サーバー（`EVAL_BASE_URL`、既定`http://localhost:4321`）に代表的な検索クエリを投げ、ヒット件数とタイトルを出す。 | なし |
 | `scripts/eval/eval-filter.mjs` | `npm run eval:filter` | フィルタ精度: 現在のAI取り込みプロンプトと、収集済み記事（採用分）のtitle/summary/tags/AI採否理由を並べて出す。加えて、AIに棄却された記事（案A、migrations/018で`ai_accepted=false`付きのまま`items`に保存されるようになった記事）も「偽陰性候補」セクションとしてtitle/external_url/棄却理由/AI要約を新しい順に別掲し、誤棄却でないかをレビューできるようにする。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-tags.mjs` | `npm run eval:tags` | タグ精度: タグごとの使用件数とサンプル記事タイトルを出す。使用1件のみのタグ（ノイズ候補）に加え、`tags`と`item_tags`のLEFT JOINで使用0件のタグ（統合後の残骸等）も削除候補として別掲する。`DATABASE_URL`必須。 | なし |
+| `scripts/eval/eval-search.mjs` | `npm run eval:search` | 検索精度: 起動中サーバー（`EVAL_BASE_URL`、既定`http://localhost:4321`）に代表的な検索クエリを投げ、ヒット件数とタイトルを出す。 | なし |
 
 ## 4. レビュー・クリーンアップ（事後メンテナンス）
 
@@ -53,19 +53,19 @@
 - **収集後**（backfill や新ソース追加の後）: 重複・新タグは収集が作るため、`detect-duplicate-items`（`eval:all` に含まれる）の結果確認と `backfill-tag-explanations` を行う。
 - **AI取り込みプロンプト（`src/lib/importers/article-ai.ts`）や要約基準の変更後**: 既存記事が旧基準のまま残るため `retag-existing-items` の要否を検討する。
 
-`merge-tag` は上記とは別に、`eval:all` の `eval:tags` 出力でノイズタグ・表記ゆれが見えたときに使う。同様に `merge-source` は `detect-duplicate-sources` の出力で重複sourceが見えたときに使う。`merge-item` は `detect-duplicate-items` の出力で重複itemが見えたとき、著者・内容を確認して同一記事と判断できたペアにのみ使う（タイトルが似ているだけで内容が別の記事は統合対象外）。`eval-annotations`・`eval-broken-links` は上記2トリガーとは独立に、annotations件数が増えてきたときや月次の目視確認のタイミングで都度実行する。
+`merge-item` は `detect-duplicate-items` の出力で重複itemが見えたとき、著者・内容を確認して同一記事と判断できたペアにのみ使う（タイトルが似ているだけで内容が別の記事は統合対象外）。同様に `merge-source` は `detect-duplicate-sources` の出力で重複sourceが見えたときに使う。`merge-tag` は上記2つとは別に、`eval:all` の `eval:tags` 出力でノイズタグ・表記ゆれが見えたときに使う。`eval-annotations`・`eval-broken-links` は上記2トリガーとは独立に、annotations件数が増えてきたときや月次の目視確認のタイミングで都度実行する。
 
 | スクリプト | コマンド | 用途 | 課金 |
 |---|---|---|---|
-| `scripts/db/detect-duplicate-items.mjs` | `node scripts/db/detect-duplicate-items.mjs` | 同一記事のクロスポスト候補を、URL正規化一致 or タイトル類似度で検出し一覧表示する。読み取り専用（DBに書き込まない）。「検出→確認→削除」を自動で一本化する対話的ヘルパーは、判断そのものを人手で行う必要があるためユーザー判断により不要と確定し、実装しない。統合は`merge-item.mjs`で行う。`npm run eval:all` の既定ステップにも含まれる。 | なし |
+| `scripts/db/detect-duplicate-items.mjs` | `npm run db:detect-duplicate-items` | 同一記事のクロスポスト候補を、URL正規化一致 or タイトル類似度で検出し一覧表示する。読み取り専用（DBに書き込まない）。「検出→確認→削除」を自動で一本化する対話的ヘルパーは、判断そのものを人手で行う必要があるためユーザー判断により不要と確定し、実装しない。統合は`merge-item.mjs`で行う。`npm run eval:all` の既定ステップにも含まれる。 | なし |
 | `scripts/db/merge-item.mjs <from-id> <to-id>` | `node scripts/db/merge-item.mjs 34 224` | 重複item統合。`merge-source.mjs`と同様のパターン（`item_tags`/`bookmarks`を付け替え、`annotations`は付け替えたうえで`from`を削除）。冪等。`--dry-run`で付け替え対象件数と削除予定itemの表示のみ行える。本番実行前にユーザー確認必須。 | なし |
-| `scripts/db/merge-tag.mjs <from> <to>` | `node scripts/db/merge-tag.mjs ポケモンカート ポケモンカード` | 誤字・表記ゆれタグを正しいタグへ統合する（`item_tags`付け替え→`from`削除）。冪等。本番実行前にユーザー確認必須。 | なし |
-| `scripts/db/backfill-tag-explanations.mjs` | `node --env-file=.env scripts/db/backfill-tag-explanations.mjs` | `explained_at`未設定のタグへ、AIによる平易な解説をまとめて生成する。冪等（生成済みはスキップ）。OpenAI課金に注意。 | OpenAI（未解説タグの件数分） |
-| `scripts/db/retag-existing-items.mjs` | `node --env-file=.env scripts/db/retag-existing-items.mjs [--dry-run] [--id=] [--limit=] [--service=]` | 既存アイテムへ現行のAI取り込みプロンプトを再適用し、summary/タグを最新基準で更新し直す。不採用判定になった場合は自動削除せず警告のみ。全件実行はOpenAI課金が大きいので事前確認。 | OpenAI（既定は全件、`--limit`等で抑制。`--dry-run`でも呼び出しあり） |
-| `scripts/db/detect-duplicate-sources.mjs` | `node scripts/db/detect-duplicate-sources.mjs` | sources専用の重複検出。`origin_url`の正規化一致・`name`の類似度で候補を出す（`detect-duplicate-items.mjs`の正規化ロジックを流用）。読み取り専用（DBに書き込まない）。統合は`merge-source.mjs`で行う。 | なし |
+| `scripts/db/detect-duplicate-sources.mjs` | `npm run db:detect-duplicate-sources` | sources専用の重複検出。`origin_url`の正規化一致・`name`の類似度で候補を出す（`detect-duplicate-items.mjs`の正規化ロジックを流用）。読み取り専用（DBに書き込まない）。統合は`merge-source.mjs`で行う。 | なし |
 | `scripts/db/merge-source.mjs <from-id> <to-id>` | `node scripts/db/merge-source.mjs 56 3` | 重複source統合。`merge-tag.mjs`と同様のパターン（items の`source_id`を付け替えてから重複sourceを削除）。冪等。`--dry-run`で付け替え対象件数と削除予定sourceの表示のみ行える。本番実行前にユーザー確認必須。 | なし |
-| `scripts/eval/eval-annotations.mjs` | `node scripts/eval/eval-annotations.mjs` | annotations（`GET/POST /api/annotations`）の内容を記事タイトルと紐付けて一覧出力する読み取り専用スクリプト。`DATABASE_URL`必須。 | なし |
-| `scripts/eval/eval-broken-links.mjs` | `node scripts/eval/eval-broken-links.mjs` | `link_status='broken'`のitemを`link_broken_since`の古い順に一覧出力する。`eval:all`とは別に月次程度で目視確認する運用を想定。`DATABASE_URL`必須。 | なし |
+| `scripts/db/merge-tag.mjs <from> <to>` | `node scripts/db/merge-tag.mjs ポケモンカート ポケモンカード` | 誤字・表記ゆれタグを正しいタグへ統合する（`item_tags`付け替え→`from`削除）。冪等。本番実行前にユーザー確認必須。 | なし |
+| `scripts/db/backfill-tag-explanations.mjs` | `npm run db:backfill-tag-explanations` | `explained_at`未設定のタグへ、AIによる平易な解説をまとめて生成する。冪等（生成済みはスキップ）。OpenAI課金に注意。 | OpenAI（未解説タグの件数分） |
+| `scripts/db/retag-existing-items.mjs` | `npm run db:retag-existing-items -- [--dry-run] [--id=] [--limit=] [--service=]` | 既存アイテムへ現行のAI取り込みプロンプトを再適用し、summary/タグを最新基準で更新し直す。不採用判定になった場合は自動削除せず警告のみ。全件実行はOpenAI課金が大きいので事前確認。 | OpenAI（既定は全件、`--limit`等で抑制。`--dry-run`でも呼び出しあり） |
+| `scripts/eval/eval-annotations.mjs` | `npm run eval:annotations` | annotations（`GET/POST /api/annotations`）の内容を記事タイトルと紐付けて一覧出力する読み取り専用スクリプト。`DATABASE_URL`必須。 | なし |
+| `scripts/eval/eval-broken-links.mjs` | `npm run eval:broken-links` | `link_status='broken'`のitemを`link_broken_since`の古い順に一覧出力する。`eval:all`とは別に月次程度で目視確認する運用を想定。`DATABASE_URL`必須。 | なし |
 
 ## 5. リリース（本番マイグレーション適用）
 
