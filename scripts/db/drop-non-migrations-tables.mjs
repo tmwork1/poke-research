@@ -1,7 +1,12 @@
 import { Client } from 'pg';
+import { requireDropTargetHost } from './require-drop-target-host.mjs';
 
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres';
 const dryRun = process.argv.includes('--dry-run');
+// --dry-run は読み取りのみのためガード対象外。
+if (!dryRun) {
+  requireDropTargetHost(databaseUrl);
+}
 const client = new Client({ connectionString: databaseUrl });
 
 try {

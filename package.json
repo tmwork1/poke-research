@@ -21,6 +21,7 @@
 		"eval:search": "node ./scripts/eval/eval-search.mjs",
 		"eval:filter": "node ./scripts/eval/eval-filter.mjs",
 		"eval:tags": "node ./scripts/eval/eval-tags.mjs",
+		"eval:all": "node ./scripts/eval/eval-all.mjs",
 		"test": "node --test \"tests/**/*.test.ts\"",
 		"build": "astro build",
 		"preview": "astro build && astro preview",
