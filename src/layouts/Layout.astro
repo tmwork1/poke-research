@@ -110,6 +110,7 @@ const websiteJsonLd = JSON.stringify({
 							</svg>
 							<span>マイページ</span>
 						</a>
+						{/* このドロップダウンは hover/focus-within でのみ開くため、タッチ環境ではサイドバーのログアウトが導線となる */}
 						{user ? (
 							<div class="account-dropdown">
 								<p class="dropdown-name">{user.displayName ?? user.email ?? 'ログイン中'}</p>
@@ -127,7 +128,7 @@ const websiteJsonLd = JSON.stringify({
 			</main>
 		</div>
 		<div class="sidebar-overlay" id="sidebar-overlay" hidden></div>
-		<aside class="sidebar" id="sidebar-panel" aria-hidden="true" aria-label="メニュー">
+		<aside class="sidebar" id="sidebar-panel" aria-label="メニュー" inert>
 			<div class="sidebar-header">
 				<button type="button" class="sidebar-close" id="sidebar-close" aria-label="メニューを閉じる">
 					<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -219,18 +220,23 @@ const websiteJsonLd = JSON.stringify({
 
 	function openSidebar() {
 		sidebar?.classList.add('open');
+		sidebar?.removeAttribute('inert');
 		overlay?.removeAttribute('hidden');
 		requestAnimationFrame(() => overlay?.classList.add('open'));
 		toggle?.setAttribute('aria-expanded', 'true');
-		sidebar?.setAttribute('aria-hidden', 'false');
+		closeBtn?.focus();
 	}
 
 	function closeSidebar() {
+		const wasOpen = sidebar?.classList.contains('open');
 		sidebar?.classList.remove('open');
+		sidebar?.setAttribute('inert', '');
 		overlay?.classList.remove('open');
 		toggle?.setAttribute('aria-expanded', 'false');
-		sidebar?.setAttribute('aria-hidden', 'true');
 		setTimeout(() => overlay?.setAttribute('hidden', ''), 200);
+		if (wasOpen) {
+			toggle?.focus();
+		}
 	}
 
 	toggle?.addEventListener('click', () => {
