@@ -9,12 +9,13 @@ interface Props {
 	name: string;
 	ariaLabel: string;
 	options: SortOption[];
+	icon?: 'sort' | 'period';
 }
 
-const { name, ariaLabel, options } = Astro.props;
+const { name, ariaLabel, options, icon = 'sort' } = Astro.props;
 ---
 
-<select name={name} class="sort-select" aria-label={ariaLabel}>
+<select name={name} class:list={['sort-select', `icon-${icon}`]} aria-label={ariaLabel}>
 	{options.map((option) => (
 		<option value={option.value} selected={option.selected}>{option.label}</option>
 	))}
@@ -30,9 +31,16 @@ const { name, ariaLabel, options } = Astro.props;
 		background-repeat: no-repeat;
 		background-position: 8px center;
 		background-size: 14px 14px;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236a737d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h11'/%3E%3Cpath d='M3 12h8'/%3E%3Cpath d='M3 17h5'/%3E%3Cpath d='M17 4v16'/%3E%3Cpath d='M13 16l4 4 4-4'/%3E%3C/svg%3E");
 		color: inherit;
 		font-size: 0.85rem;
+	}
+
+	.sort-select.icon-sort {
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236a737d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h11'/%3E%3Cpath d='M3 12h8'/%3E%3Cpath d='M3 17h5'/%3E%3Cpath d='M17 4v16'/%3E%3Cpath d='M13 16l4 4 4-4'/%3E%3C/svg%3E");
+	}
+
+	.sort-select.icon-period {
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236a737d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
 	}
 </style>
 

@@ -98,7 +98,7 @@ function toggleSource(sourceId: number) {
 			</div>
 
 			<div class="filter-group">
-				<p class="filter-label">タグ（複数選択でAND絞り込み） <a class="tags-index-link" href="/tags">タグ一覧へ</a></p>
+				<p class="filter-label">タグ（AND） <a class="tags-index-link" href="/tags">タグ一覧へ</a></p>
 				<TagCloud topTags={topTags} activeTags={filters.tags} buildTagsUrl={(tags) => buildUrl({ tags, page: undefined })} multiSelect />
 			</div>
 
@@ -117,6 +117,7 @@ function toggleSource(sourceId: number) {
 				<SortSelect
 					name="period"
 					ariaLabel="期間"
+					icon="period"
 					options={[
 						{ value: '', label: '全期間', selected: !filters.period },
 						{ value: '1m', label: '1ヶ月以内', selected: filters.period === '1m' },
