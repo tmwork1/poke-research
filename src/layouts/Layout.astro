@@ -1,7 +1,9 @@
 ---
+import { topic } from '../config/topic.config.mjs';
+
 const {
-	title = 'PokeResearch',
-	description = 'ポケモンプログラミング情報ハブのローカル開発環境',
+	title = topic.site.name,
+	description = `${topic.collection.label}プログラミング情報ハブのローカル開発環境`,
 	loggedIn = false,
 	// SVG を無視するクローラー・SNS があるため、共有用画像は PNG を既定にする。
 	ogImage = '/og-image.png',
@@ -17,15 +19,15 @@ const pathname = Astro.url.pathname;
 const canonicalUrl = new URL(canonicalPath ?? pathname, Astro.site);
 const ogImageUrl = new URL(ogImage, Astro.site);
 
-const shareText = 'ポケモン×プログラミングの記事をまとめた情報ハブです';
+const shareText = topic.site.shareText;
 const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(canonicalUrl.toString())}`;
 
 // サイト全体の構造化データ。検索エンジンにサイト内検索(/items?q=)の存在も伝える。
 const websiteJsonLd = JSON.stringify({
 	'@context': 'https://schema.org',
 	'@type': 'WebSite',
-	name: 'PokeResearch',
-	description: 'ポケモンに関するプログラミング・開発の技術記事を自動収集する情報ハブ',
+	name: topic.site.name,
+	description: topic.site.description,
 	url: Astro.site?.toString(),
 	potentialAction: {
 		'@type': 'SearchAction',
@@ -41,10 +43,10 @@ const websiteJsonLd = JSON.stringify({
 <html lang="ja">
 	<head>
 		<meta charset="utf-8" />
-		<script is:inline>
+		<script is:inline define:vars={{ compactViewKey: `${topic.site.storageKeyPrefix}:compact-view` }}>
 			(function () {
 				try {
-					if (localStorage.getItem('pokeresearch:compact-view') === '1') {
+					if (localStorage.getItem(compactViewKey) === '1') {
 						document.documentElement.classList.add('compact-view');
 					}
 				} catch (error) {
@@ -54,7 +56,7 @@ const websiteJsonLd = JSON.stringify({
 		</script>
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="alternate" type="application/rss+xml" title="PokeResearch 新着" href="/rss.xml" />
+		<link rel="alternate" type="application/rss+xml" title={`${topic.site.name} 新着`} href="/rss.xml" />
 		<meta name="generator" content={Astro.generator} />
 		<meta name="description" content={description} />
 		<link rel="canonical" href={canonicalUrl.toString()} />
@@ -91,7 +93,7 @@ const websiteJsonLd = JSON.stringify({
 							<path d="M4 18h16" />
 						</svg>
 					</button>
-					<a class="brand" href="/">Poke<span class="brand-r">R</span>esearch</a>
+					<a class="brand" href="/">{topic.site.logoAccent.before}<span class="brand-r">{topic.site.logoAccent.accent}</span>{topic.site.logoAccent.after}</a>
 				</div>
 				<nav class="tab-nav" aria-label="Primary">
 					<a class:list={['nav-tab', { current: pathname === '/' }]} href="/" aria-current={pathname === '/' ? 'page' : undefined}>
@@ -167,14 +169,14 @@ const websiteJsonLd = JSON.stringify({
 					</a>
 				</li>
 				<li>
-					<a href="https://x.com/ml7ddw0" target="_blank" rel="noreferrer">
+					<a href={topic.site.contactUrl} target="_blank" rel="noreferrer">
 						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 							<path d="M4 4h16v16H4z" opacity="0" />
 							<path d="M22 5.5c-.8.4-1.6.6-2.5.7a4.3 4.3 0 0 0 1.9-2.4c-.9.5-1.8.9-2.8 1.1a4.2 4.2 0 0 0-7.3 3.8A12 12 0 0 1 2.9 4.3a4.2 4.2 0 0 0 1.3 5.6c-.7 0-1.4-.2-2-.5v.1a4.2 4.2 0 0 0 3.4 4.1c-.6.2-1.3.2-1.9.1a4.2 4.2 0 0 0 3.9 2.9A8.5 8.5 0 0 1 2 18.4a12 12 0 0 0 6.5 1.9c7.8 0 12-6.4 12-12v-.5c.8-.6 1.5-1.3 2-2.2z" fill="currentColor" stroke="none" />
 						</svg>
 						<span class="sidebar-link-text">
 							<span>お問い合わせ</span>
-							<span class="sidebar-link-handle">@ml7ddw0</span>
+							<span class="sidebar-link-handle">{topic.site.contactHandle}</span>
 						</span>
 					</a>
 				</li>

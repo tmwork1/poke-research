@@ -428,6 +428,8 @@ const showUpdatedBadge = Boolean(
 </style>
 
 <script>
+	import { topic } from '../config/topic.config.mjs';
+
 	let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 	function showToast(message: string) {
@@ -513,7 +515,7 @@ const showUpdatedBadge = Boolean(
 	document.querySelectorAll<HTMLAnchorElement>('.share-button').forEach(bindShareButton);
 
 	// 既読状態は localStorage にのみ保持し、サーバー側の状態とは連動させない（軽量な閲覧補助のため）。
-	const READ_ITEMS_STORAGE_KEY = 'pokeresearch:read-items';
+	const READ_ITEMS_STORAGE_KEY = `${topic.site.storageKeyPrefix}:read-items`;
 	const READ_ITEMS_LIMIT = 500;
 
 	function getReadItemIds(): string[] {

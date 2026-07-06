@@ -15,6 +15,7 @@ import {
 } from './common';
 import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
+import { topic } from '../../config/topic.config.mjs';
 
 const NOTE_API_BASE = 'https://note.com/api/v3';
 const NOTE_SOURCE_NAME = 'note';
@@ -106,7 +107,7 @@ async function fetchNoteSearchPage(query: string, start: number, size: number): 
 	url.searchParams.set('start', String(start));
 
 	const response = await fetch(url, {
-		headers: { 'User-Agent': 'poke-research-note-importer' },
+		headers: { 'User-Agent': `${topic.site.slug}-note-importer` },
 	});
 	if (!response.ok) {
 		const detail = await response.text();
@@ -119,7 +120,7 @@ async function fetchNoteSearchPage(query: string, start: number, size: number): 
 
 async function fetchNoteDetail(key: string): Promise<NoteDetail> {
 	const response = await fetch(noteUrl(`/notes/${key}`), {
-		headers: { 'User-Agent': 'poke-research-note-importer' },
+		headers: { 'User-Agent': `${topic.site.slug}-note-importer` },
 	});
 	if (!response.ok) {
 		const detail = await response.text();

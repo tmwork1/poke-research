@@ -2,10 +2,11 @@
 import { defineConfig, envField } from 'astro/config';
 
 import cloudflare from '@astrojs/cloudflare';
+import { topic } from './src/config/topic.config.mjs';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://poke-research.com',
+  site: topic.site.url,
   adapter: cloudflare(),
   env: {
     schema: {

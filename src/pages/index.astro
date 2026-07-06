@@ -9,6 +9,7 @@ import TagCloud from '../components/TagCloud.astro';
 import CompactToggle from '../components/CompactToggle.astro';
 import { fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchTopTags, type CatalogItem, type CatalogSort } from '../lib/catalog';
 import { parseOptionalPositiveInteger } from '../lib/params';
+import { topic } from '../config/topic.config.mjs';
 
 const PAGE_SIZE = 12;
 
@@ -50,8 +51,8 @@ try {
 ---
 
 <Layout
-	title="PokeResearch"
-	description="ポケモンプログラミング情報ハブのトップページ"
+	title={topic.site.name}
+	description={`${topic.collection.label}プログラミング情報ハブのトップページ`}
 	loggedIn={Boolean(user)}
 	canonicalPath="/"
 	noindex={noindex}

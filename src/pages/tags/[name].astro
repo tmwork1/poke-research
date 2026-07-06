@@ -15,6 +15,7 @@ import {
 } from '../../lib/catalog';
 import { parseOptionalPositiveInteger } from '../../lib/params';
 import { formatTagLabel } from '../../lib/tag-display';
+import { topic } from '../../config/topic.config.mjs';
 
 const tagName = decodeURIComponent(Astro.params.name ?? '');
 const tagLabel = formatTagLabel(tagName);
@@ -46,8 +47,8 @@ const relatedItems: CatalogItem[] = representativeItem && relatedTagIds.length >
 ---
 
 <Layout
-	title={`#${tagLabel} の記事一覧 | PokeResearch`}
-	description={`「${tagLabel}」タグが付いたポケモンプログラミング関連記事の一覧です。`}
+	title={`#${tagLabel} の記事一覧 | ${topic.site.name}`}
+	description={`「${tagLabel}」タグが付いた${topic.collection.label}プログラミング関連記事の一覧です。`}
 	loggedIn={Boolean(user)}
 	canonicalPath={canonicalPath}
 	noindex={noindex}

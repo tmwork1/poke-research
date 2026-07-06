@@ -7,6 +7,7 @@ import SortSelect from '../components/SortSelect.astro';
 import TagCloud from '../components/TagCloud.astro';
 import CompactToggle from '../components/CompactToggle.astro';
 import { fetchBookmarkCounts, fetchBookmarkedItemsFiltered, fetchRecommendedItems, type CatalogItem, type CatalogSort, type TagUsage } from '../lib/catalog';
+import { topic } from '../config/topic.config.mjs';
 
 const user = Astro.locals.user;
 const url = new URL(Astro.request.url);
@@ -47,7 +48,7 @@ if (user) {
 }
 ---
 
-<Layout title="マイページ | PokeResearch" description="ログインとお気に入りの管理" loggedIn={Boolean(user)}>
+<Layout title={`マイページ | ${topic.site.name}`} description="ログインとお気に入りの管理" loggedIn={Boolean(user)}>
 	{user ? (
 		<section class="mypage">
 			<div class="eyebrow-row">

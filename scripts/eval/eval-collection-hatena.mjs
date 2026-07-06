@@ -8,20 +8,23 @@
 // 注意（実装上の重複について）: src/lib/importers/{hatena,hatena-feed,keywords}.ts の一部は
 // cloudflare:workers に依存する importers/*.ts からのみ import されるか、実行時に
 // import.meta 経由でしか読めないためプレーンな Node スクリプトから直接 import せず、
-// 同等のロジック（RSSパース・除外ドメイン判定）をここに複製する。唯一の管理場所は
-// 引き続き src/lib/importers/{hatena-feed,keywords}.ts であり、変更したら本スクリプトも同期すること。
+// 同等のロジック（RSSパース・除外ドメイン判定）をここに複製する。ただしトピック固有の
+// キーワード・除外ドメインは cloudflare:workers に依存しない src/config/topic.config.mjs を
+// 直接 import するため、トピック設定を変更してもここを個別に直す必要はない。
 //
 // 実測結果（2026-07-07時点）: 「ポケモン」「ポケモン API」「pokeapi」等いずれのキーワードでも、
 // はてなブックマーク検索は複数語を与えても実質AND検索にならず、Anthropic/Claude/AWS等の
 // 話題性の高い無関係な最近の記事が上位に混入することを確認済み（docs/progress/2026-07-07.md）。
 
-// src/lib/importers/keywords.ts の POKEMON_KEYWORDS と一致させること。
-const POKEMON_KEYWORDS = ['ポケモン', 'ポケカ', 'ポケットモンスター', 'pokemon', 'pokeapi', 'ダメージ計算 実装'];
+import { topic } from '../../src/config/topic.config.mjs';
 
-// 同ファイルの EXCLUDED_BLOG_DOMAINS / FILTERED_BLOG_DOMAINS。
+const POKEMON_KEYWORDS = topic.collection.searchKeywords;
+
+// src/lib/importers/keywords.ts の EXCLUDED_BLOG_DOMAINS / FILTERED_BLOG_DOMAINS。
+// 先頭の共通ドメインはトピックに依らないためここでも直書きし、トピック固有分だけ config から取る。
 const EXCLUDED_BLOG_DOMAINS = [
 	'qiita.com', 'zenn.dev', 'note.com', 'github.com', 'youtube.com', 'x.com', 'twitter.com',
-	'yakkun.com', 'gamewith.jp', 'appmedia.jp', 'game8.jp', 'altema.jp', 'gamerch.com',
+	...topic.collection.extraExcludedBlogDomains,
 ];
 const FILTERED_BLOG_DOMAINS = ['b.hatena.ne.jp', 'pinterest.com', 'sourceforge.net', 'play.google.com', 'apps.apple.com'];
 

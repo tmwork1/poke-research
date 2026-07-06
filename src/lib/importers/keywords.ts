@@ -1,31 +1,35 @@
+import { topic } from '../../config/topic.config.mjs';
+
 // Qiita/note などキーワード検索型のインポーターが共通で使う検索語彙。
 // 新しい略称・愛称（例: 「ポケカ」）を追加・削除したい場合は、各インポーター本体ではなく
-// ここを編集する（Zenn はトピックタグでの絞り込みのため対象外）。
+// src/config/topic.config.mjs の collection.searchKeywords を編集する
+// （Zenn はトピックタグでの絞り込みのため対象外）。
 // 「ポケモン」は部分一致で「ポケモンGO」「ポケモンカード」等も拾うため、それらは重ねて持たない。
 // 「pokemon」「pokeapi」は英語タイトル・API名のみの記事を、「ダメージ計算 実装」はポケモン名を
 // タイトルに含まない対戦ツール系の実装記事を拾う。単に「ダメージ計算」だけだと、記事ではなく
 // ダメージ計算ツールそのもの（yakkun.com/gamewith.jp のツールページ等）が大量にヒットし、
 // AI レビューがツールページを記事として誤って accepted=true にしてしまう事例が本番で発生した
 // ため、「実装」を足してツールの解説記事に絞り込む。
-export const POKEMON_KEYWORDS = ['ポケモン', 'ポケカ', 'ポケットモンスター', 'pokemon', 'pokeapi', 'ダメージ計算 実装'] as const;
+export const POKEMON_KEYWORDS = topic.collection.searchKeywords;
 
 // Zenn はキーワード全文検索ではなくトピックタグでの絞り込みのため、別リストで管理する
 // （Zenn のトピックスラッグは英数字のみ、日本語不可）。複数指定するとマージ・重複排除して取得する。
 // 候補: 'pokemongo'（48件のprogramming/AIコンペ系とは傾向が異なり、チートツール改造史エッセイが
-// 中心。10件確認済みだが今回は対象外としている。追加する場合はここに足すだけでよい）。
-export const ZENN_TOPICS = ['pokemon'] as const;
+// 中心。10件確認済みだが今回は対象外としている。追加する場合は topic.config.mjs の
+// collection.zennTopics に足すだけでよい）。
+export const ZENN_TOPICS = topic.collection.zennTopics;
 
 // Brave Search が対象外サービスや GitHub/YouTube、および検索結果の枠を占有しがちな企業攻略
 // サイトを返さないよう、クエリの -site: と結果フィルタの両方で使う共有リスト。
 // Brave のクエリは400文字・50語が上限のため、ここに載せるのは「検索結果を占有して他の
 // 個人ブログ記事を押し出してしまう」もの（キーワード数×このリストの件数だけ -site: が
 // クエリに追加されるが、実測で1クエリあたり230文字前後に収まる）に限る。
+// トピック固有の追加分（本番調査でダメージ計算ツール等のWikiが検索結果を占有していた）は
+// topic.config.mjs の collection.extraExcludedBlogDomains で管理する。
 export const EXCLUDED_BLOG_DOMAINS = [
-	// 既存: 他インポーターが専用で扱う／対象外と決定済みのサービス
+	// 他インポーターが専用で扱う／対象外と決定済みのサービス（トピックに依らず共通）
 	'qiita.com', 'zenn.dev', 'note.com', 'github.com', 'youtube.com', 'x.com', 'twitter.com',
-	// 追加: 個人ブログではなく企業が運営する攻略Wiki・まとめサイト。本番調査で
-	// 「ダメージ計算」の検索結果を対戦ツールの提供ページ（記事ではない）が占有していた。
-	'yakkun.com', 'gamewith.jp', 'appmedia.jp', 'game8.jp', 'altema.jp', 'gamerch.com',
+	...topic.collection.extraExcludedBlogDomains,
 ] as const;
 
 // 結果フィルタでのみ弾くドメイン。検索結果を占有するわけではないが記事として不適切な
@@ -72,5 +76,5 @@ export const KNOWN_BLOG_PLATFORMS = [
 // 個人ブログに限らず Stack Overflow・企業テックブログ等も混ざるため、名称は「その他」とする。
 export const OTHER_BLOG_SOURCE = {
 	name: 'その他',
-	originUrl: 'https://other-blogs.poke-research.invalid/',
+	originUrl: `https://other-blogs.${topic.site.slug}.invalid/`,
 } as const;

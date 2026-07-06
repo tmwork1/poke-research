@@ -4,6 +4,15 @@
 
 公開URL: https://poke-research.com/
 
+## 他のトピックへ再配布する
+
+サイト名・収集キーワード・AIレビューの判定基準は `src/config/topic.config.mjs` に一元化されている。別トピック（別ゲーム・別技術分野など）向けに再配布する場合は、次の手順で行う。
+
+1. `src/config/topic.config.mjs` を編集する（サイト名・説明文・収集キーワード・AIレビューの語彙など）。プレーンなJSファイルのため、TypeScript側からもNode単体スクリプトからも同じ値を参照する。
+2. `package.json` の `name`/`homepage`、`wrangler.jsonc` の `name` を新しいトピックのものに変更する（npm/wrangler CLIが読むため、コードからは変更できない）。
+3. `public/favicon.svg`・`og-image.png`/`og-image.svg` を差し替え、必要なら `src/layouts/Layout.astro` の配色（`--accent`・`.brand-r` 等）も調整する。
+4. `npm run build` でエラーが無いことを確認する。
+
 ## Project Structure
 
 ```text

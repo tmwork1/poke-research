@@ -13,6 +13,7 @@ import {
 } from './common';
 import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
+import { topic } from '../../config/topic.config.mjs';
 
 const QIITA_API_URL = 'https://qiita.com/api/v2/items';
 const QIITA_SOURCE_NAME = 'Qiita';
@@ -175,7 +176,7 @@ async function fetchQiitaPage(query: string, page: number, perPage: number, toke
 	url.searchParams.set('per_page', String(perPage));
 
 	const headers: HeadersInit = {
-		'User-Agent': 'poke-research-qiita-importer',
+		'User-Agent': `${topic.site.slug}-qiita-importer`,
 	};
 
 	if (token) {

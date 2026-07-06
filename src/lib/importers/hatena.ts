@@ -23,13 +23,14 @@ import {
 } from './common';
 import { parseHatenaSearchRss } from './hatena-feed';
 import { isExcludedBlogDomain, POKEMON_KEYWORDS } from './keywords';
+import { topic } from '../../config/topic.config.mjs';
 
 const DEFAULT_KIND = 'article';
 const MIN_BODY_CHARS = 200;
 const MAX_AI_BODY_CHARS = 4000;
 const IMPORT_CONCURRENCY = 2;
 const HATENA_FETCH_TIMEOUT_MS = 10_000;
-const HATENA_USER_AGENT = 'poke-research-hatena-importer (+https://poke-research.com)';
+const HATENA_USER_AGENT = `${topic.site.slug}-hatena-importer (+${topic.site.url})`;
 const HATENA_SEARCH_RSS_URL = 'https://b.hatena.ne.jp/search/text';
 
 // b.hatena.ne.jp/robots.txt の `Crawl-delay: 5` に従い、キーワードごとのリクエスト間隔を空ける。

@@ -2,26 +2,27 @@
 export const prerender = false;
 
 import Layout from '../layouts/Layout.astro';
+import { topic } from '../config/topic.config.mjs';
 
 const user = Astro.locals.user;
 ---
 
 <Layout
-	title="このサイトについて | PokeResearch"
-	description="PokeResearch の収集の仕組み、AI要約・タグ付けの方針、削除依頼の窓口について"
+	title={`このサイトについて | ${topic.site.name}`}
+	description={`${topic.site.name} の収集の仕組み、AI要約・タグ付けの方針、削除依頼の窓口について`}
 	loggedIn={Boolean(user)}
 >
 	<section class="about">
 		<h1>このサイトについて</h1>
 		<p class="lead">
-			PokeResearch は、ポケモンに関するプログラミング・開発の技術記事を自動で収集・整理する情報ハブです。
-			ツールや API、データ解析、対戦・育成支援、ファンゲーム開発など「ポケモン × 技術」の記事を横断して探せます。
+			{topic.site.name} は、{topic.collection.label}に関するプログラミング・開発の技術記事を自動で収集・整理する情報ハブです。
+			ツールや API、データ解析、対戦・育成支援、ファンゲーム開発など「{topic.collection.label} × 技術」の記事を横断して探せます。
 		</p>
 
 		<h2>収集の仕組み</h2>
 		<p>
 			Qiita・Zenn・note・個人ブログ（Brave Search 経由）を毎日自動巡回し、収集した記事を
-			AI がレビューしています。AI レビューでは「主題がポケモンに直接関係しているか」
+			AI がレビューしています。AI レビューでは「主題が{topic.collection.label}に直接関係しているか」
 			「技術的な実装・手法を扱っているか」の2点を確認し、両方を満たす記事だけを掲載します。
 		</p>
 		<p>
@@ -39,7 +40,7 @@ const user = Astro.locals.user;
 		<h2>削除依頼・お問い合わせ</h2>
 		<p>
 			ご自身の記事の掲載を望まない場合や、誤った情報・不適切なタグを見つけた場合は、
-			<a href="https://x.com/ml7ddw0" target="_blank" rel="noreferrer">X: @ml7ddw0</a>
+			<a href={topic.site.contactUrl} target="_blank" rel="noreferrer">X: {topic.site.contactHandle}</a>
 			までご連絡ください。確認のうえ速やかに対応します。
 		</p>
 	</section>

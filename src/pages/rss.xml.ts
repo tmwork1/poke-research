@@ -1,10 +1,11 @@
 // 新着アイテムのRSS 2.0フィードを配信する。購読者が巡回せずに新着を追える導線として設置する。
 import { methodNotAllowed } from './api/_shared';
 import { fetchCatalogItems } from '../lib/catalog';
+import { topic } from '../config/topic.config.mjs';
 
 export const prerender = false;
 
-const SITE_URL = 'https://poke-research.com';
+const SITE_URL = topic.site.url;
 const FEED_ITEM_LIMIT = 30;
 
 function escapeXml(value: string): string {
@@ -39,9 +40,9 @@ export async function GET({ request }: { request: Request }) {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>PokeResearch 新着アイテム${tag ? `（#${escapeXml(tag)}）` : ''}</title>
+    <title>${escapeXml(topic.site.name)} 新着アイテム${tag ? `（#${escapeXml(tag)}）` : ''}</title>
     <link>${SITE_URL}</link>
-    <description>ポケモンプログラミング情報ハブの新着アイテム${tag ? `（タグ: ${escapeXml(tag)}）` : ''}</description>
+    <description>${escapeXml(topic.collection.label)}プログラミング情報ハブの新着アイテム${tag ? `（タグ: ${escapeXml(tag)}）` : ''}</description>
     <language>ja</language>${entries}
   </channel>
 </rss>`;
