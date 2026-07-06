@@ -3,7 +3,7 @@ export const prerender = false;
 
 import Layout from '../../layouts/Layout.astro';
 import CatalogPage from '../../components/CatalogPage.astro';
-import { fetchBookmarkCounts, fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchCatalogSources, fetchTopTags } from '../../lib/catalog';
+import { fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchCatalogSources, fetchTopTags } from '../../lib/catalog';
 import { parseOptionalPositiveInteger } from '../../lib/params';
 
 const url = new URL(Astro.request.url);
@@ -49,7 +49,6 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 	fetchCatalogSources(),
 	user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
 ]);
-const bookmarkCounts = await fetchBookmarkCounts(itemsPage.items.map((item) => item.id));
 ---
 
 <Layout title="Items | PokeResearch" description="アイテム一覧・検索画面" loggedIn={Boolean(user)}>
@@ -63,7 +62,6 @@ const bookmarkCounts = await fetchBookmarkCounts(itemsPage.items.map((item) => i
 		filters={filters}
 		pagination={{ page: itemsPage.page, totalPages: itemsPage.totalPages, total: itemsPage.total }}
 		bookmarkedItemIds={bookmarkedItemIds}
-		bookmarkCounts={bookmarkCounts}
 		loggedIn={Boolean(user)}
 	/>
 </Layout>

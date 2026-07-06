@@ -3,7 +3,7 @@ export const prerender = false;
 
 import Layout from '../../layouts/Layout.astro';
 import CatalogPage from '../../components/CatalogPage.astro';
-import { fetchBookmarkCounts, fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchCatalogSources, fetchTopTags } from '../../lib/catalog';
+import { fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchCatalogSources, fetchTopTags } from '../../lib/catalog';
 import { parseOptionalPositiveInteger } from '../../lib/params';
 import { formatTagLabel } from '../../lib/tag-display';
 
@@ -20,7 +20,6 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 	fetchCatalogSources(),
 	user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
 ]);
-const bookmarkCounts = await fetchBookmarkCounts(itemsPage.items.map((item) => item.id));
 ---
 
 <Layout
@@ -38,7 +37,6 @@ const bookmarkCounts = await fetchBookmarkCounts(itemsPage.items.map((item) => i
 		filters={{ q: '', tags: [tagName], sourceIds: [], sort: 'new' }}
 		pagination={{ page: itemsPage.page, totalPages: itemsPage.totalPages, total: itemsPage.total }}
 		bookmarkedItemIds={bookmarkedItemIds}
-		bookmarkCounts={bookmarkCounts}
 		loggedIn={Boolean(user)}
 	/>
 </Layout>

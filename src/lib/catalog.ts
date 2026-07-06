@@ -30,7 +30,6 @@ export interface ItemFilters {
 }
 
 export type CatalogSort = 'new' | 'oldest' | 'popular' | 'relevance';
-const POPULAR_SORT_CANDIDATE_POOL = 300;
 const RELEVANCE_SORT_CANDIDATE_POOL = 300;
 // タイトル一致は要約一致より強いシグナルとして重み付けする。
 const RELEVANCE_TITLE_WEIGHT = 3;
@@ -66,6 +65,7 @@ const ITEM_SELECT = `
 	metadata,
 	version,
 	created_at,
+	bookmarks_count,
 	source:sources (
 		id,
 		name,
@@ -163,16 +163,26 @@ export async function fetchCatalogAnnotations(itemId?: number): Promise<Annotati
 
 async function queryCatalogItems(
 	filters: ItemFilters,
-	options: { withCount?: boolean; offset?: number } = {},
+	options: { withCount?: boolean; offset?: number; orderBy?: 'published_at' | 'bookmarks_count' } = {},
 ): Promise<{ data: ItemRow[]; count: number | null }> {
 	const searchTerm = filters.q?.trim();
 	const ascending = filters.order === 'asc';
 	const supabase = await getSupabaseClient();
 	let query = supabase
 		.from('items')
-		.select(ITEM_SELECT, options.withCount ? { count: 'exact' } : undefined)
-		.order('published_at', { ascending, nullsFirst: false })
-		.order('created_at', { ascending });
+		.select(ITEM_SELECT, options.withCount ? { count: 'exact' } : undefined);
+
+	if (options.orderBy === 'bookmarks_count') {
+		// 人気順: bookmarks_count 降順を主キーに、公開日時降順を同数時のタイブレークにする。
+		query = query
+			.order('bookmarks_count', { ascending: false })
+			.order('published_at', { ascending: false, nullsFirst: false })
+			.order('created_at', { ascending: false });
+	} else {
+		query = query
+			.order('published_at', { ascending, nullsFirst: false })
+			.order('created_at', { ascending });
+	}
 
 	if (filters.sourceIds && filters.sourceIds.length > 0) {
 		query = query.in('source_id', filters.sourceIds);
@@ -267,19 +277,17 @@ export async function fetchCatalogItemsPage(
 	}
 
 	if (filters.sort === 'popular') {
-		// 人気順は集計用のビュー等を持たないため、直近の候補プール(最大 POPULAR_SORT_CANDIDATE_POOL 件)を
-		// 取得してからJS側でブックマーク数によりソート・ページングする。プール外の古いアイテムは対象外になる。
-		const { data } = await queryCatalogItems({ ...filters, limit: POPULAR_SORT_CANDIDATE_POOL });
-		const candidates = data.map(normalizeItem);
-		const bookmarkCounts = await fetchBookmarkCounts(candidates.map((item) => item.id));
-		const sorted = [...candidates].sort(
-			(a, b) => (bookmarkCounts.get(b.id) ?? 0) - (bookmarkCounts.get(a.id) ?? 0),
+		// 人気順は items.bookmarks_count（migrations/013 のトリガーで維持されるキャッシュ列）を
+		// DB側で降順ソートし、通常のページングと同様に range で取得する。全件が対象になる。
+		const offset = (page - 1) * pageSize;
+		const { data, count } = await queryCatalogItems(
+			{ ...filters, limit: pageSize },
+			{ withCount: true, offset, orderBy: 'bookmarks_count' },
 		);
 
-		const total = sorted.length;
-		const offset = (page - 1) * pageSize;
+		const total = count ?? data.length;
 		return {
-			items: sorted.slice(offset, offset + pageSize),
+			items: data.map(normalizeItem),
 			total,
 			page,
 			pageSize,

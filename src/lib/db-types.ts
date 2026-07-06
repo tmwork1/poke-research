@@ -29,6 +29,8 @@ export interface Item {
   metadata?: Record<string, any>;
   version?: string | null;
   created_at?: string;
+  /** bookmarks の INSERT/DELETE トリガー（migrations/013）で維持されるキャッシュ列。 */
+  bookmarks_count?: number;
 }
 
 export interface Tag {
