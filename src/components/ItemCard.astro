@@ -145,6 +145,8 @@ const showUpdatedBadge = Boolean(
 		display: grid;
 		gap: 14px;
 		padding: 22px;
+		min-width: 0;
+		overflow-wrap: break-word;
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--border);
 		background: var(--card-bg);
@@ -305,8 +307,8 @@ const showUpdatedBadge = Boolean(
 		flex: none;
 		display: flex;
 		align-items: baseline;
+		flex-wrap: wrap;
 		gap: 8px;
-		white-space: nowrap;
 	}
 
 	.card-date {
