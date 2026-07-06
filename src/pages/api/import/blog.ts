@@ -3,6 +3,7 @@
 import { env } from 'cloudflare:workers';
 
 import { getBraveConfig } from '../../../lib/brave';
+import { runAndRecord } from '../../../lib/import-runs';
 import { resolveBlogSyncOptions, syncBlogCollection } from '../../../lib/importers/blog';
 import { badRequest, jsonResponse, methodNotAllowed, readJsonBody } from '../_shared';
 
@@ -38,7 +39,7 @@ export async function POST({ request }: { request: Request }) {
 		return badRequest('query must be a string');
 	}
 
-	const result = await syncBlogCollection(resolveBlogSyncOptions(env, requestData));
+	const result = await runAndRecord('blog', 'api', () => syncBlogCollection(resolveBlogSyncOptions(env, requestData)));
 
 	return jsonResponse({ data: result }, 201);
 }

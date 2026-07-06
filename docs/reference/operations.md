@@ -45,8 +45,16 @@
 5. `GET /api/audit` で復元直前の操作履歴を確認し、復元後に再実行が必要な書き込み（収集ジョブなど）がないか判断する。
 6. 復元先が新規 Supabase プロジェクトの場合、`wrangler secret put` で本番の Cloudflare Workers 環境変数を新しい接続情報に更新する（シークレット更新は再デプロイなしで反映される）。
 
+## 監視・アラート
+
+- **収集失敗の通知**: `src/lib/notify.ts`（`sendOperationalAlert`）が cron ジョブ失敗時に `ALERT_WEBHOOK_URL`（Discord/Slack の Incoming Webhook）へ通知する。実装済みだがシークレット未設定のため、現状は通知が飛ばない。運用を始めるなら `wrangler secret put ALERT_WEBHOOK_URL` で設定する。
+- **実行履歴**: 収集ジョブ（cron・手動 API とも）は `import_runs` テーブル（`migrations/014_add_import_runs.sql`、`src/lib/import-runs.ts`）に1行ずつ記録される（provider/trigger/status/fetched/inserted/updated/skipped/error/started_at/finished_at）。直近50件は `GET /api/import/runs`（Basic 認証必須、`/api/audit` と同じ扱い）で確認できる。記録自体の失敗はジョブを止めず `console.error` に留める。
+- **エラー監視**: Cloudflare Workers Logs（`observability` 有効済み）を一次の手段とする。Sentry 等の外部 APM 導入は当面保留（コストと運用負荷に見合う障害頻度が確認できてから検討する）。
+- **死活監視**: 外形監視（UptimeRobot 等）は未設定。要アカウント作成のため、導入する場合は本番 URL（`https://poke-research.com/`）への定期 GET 監視から始めることを推奨する。
+- **アクセス解析**: Cloudflare Web Analytics を候補としている。トークン取得後、`Layout.astro` にビーコンスクリプトを追加する想定（未着手）。
+
 ## 障害対応の初動
 
-- 収集ジョブ（Qiita/Zenn/note）の失敗は `wrangler tail` または Cloudflare ダッシュボードのログで `[cron:qiita|zenn|note] sync failed` を確認する。記事単位の失敗は自動で `skipped` に吸収されるため、ここに出るのは外部 API 全断や Supabase 未接続などの致命的なケースのみ（詳細は README の各収集ジョブの節を参照）。
+- 収集ジョブ（Qiita/Zenn/note/blog）の失敗は `wrangler tail` または Cloudflare ダッシュボードのログで `[cron:qiita|zenn|note|blog] sync failed` を確認するほか、`GET /api/import/runs` で `status='failed'` の行と `error` 列を確認する。記事単位の失敗は自動で `skipped` に吸収されるため、ここに出るのは外部 API 全断や Supabase 未接続などの致命的なケースのみ（詳細は README の各収集ジョブの節を参照）。
 - API 全体が 500 を返す場合は、まず `SUPABASE_URL` / `SUPABASE_SECRET_KEY` などのシークレットが Cloudflare Workers 側で失効・変更されていないかを確認する。
 - 管理者操作（書き込み系 API）が 401 になる場合は `ADMIN_USERNAME` / `ADMIN_PASSWORD` の設定を確認する。

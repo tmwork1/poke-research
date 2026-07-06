@@ -4,6 +4,7 @@ import { handle } from '@astrojs/cloudflare/handler';
 import { env } from 'cloudflare:workers';
 
 import { sendOperationalAlert } from './lib/notify';
+import { runAndRecord } from './lib/import-runs';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
 import { resolveNoteSyncOptions, syncNoteCollection } from './lib/importers/note';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
@@ -36,7 +37,7 @@ async function runScheduledQiitaImport(): Promise<void> {
 	// ここで catch するのはジョブ全体を止める障害（Qiita API 全断、Supabase 未接続など）のみ。
 	// 失敗時は次回 cron 実行を待つか、POST /api/import/qiita を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
 	try {
-		const result = await syncQiitaCollection(resolveQiitaSyncOptions(env));
+		const result = await runAndRecord('qiita', 'cron', () => syncQiitaCollection(resolveQiitaSyncOptions(env)));
 		console.log('[cron:qiita] sync completed', {
 			query: result.query,
 			fetched: result.fetched,
@@ -55,7 +56,7 @@ async function runScheduledZennImport(): Promise<void> {
 	// Qiita 同様、記事単位の失敗は syncZennCollection 内で skipped として吸収される。
 	// 失敗時は次回 cron 実行を待つか、POST /api/import/zenn を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
 	try {
-		const result = await syncZennCollection(resolveZennSyncOptions(env));
+		const result = await runAndRecord('zenn', 'cron', () => syncZennCollection(resolveZennSyncOptions(env)));
 		console.log('[cron:zenn] sync completed', {
 			topic: result.topic,
 			fetched: result.fetched,
@@ -73,7 +74,7 @@ async function runScheduledNoteImport(): Promise<void> {
 	// Qiita/Zenn 同様、記事単位の失敗は syncNoteCollection 内で skipped として吸収される。
 	// 失敗時は次回 cron 実行を待つか、POST /api/import/note を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
 	try {
-		const result = await syncNoteCollection(resolveNoteSyncOptions(env));
+		const result = await runAndRecord('note', 'cron', () => syncNoteCollection(resolveNoteSyncOptions(env)));
 		console.log('[cron:note] sync completed', {
 			query: result.query,
 			fetched: result.fetched,
@@ -91,7 +92,7 @@ async function runScheduledBlogImport(): Promise<void> {
 	// 他インポーター同様、記事単位の失敗は syncBlogCollection 内で skipped として吸収される。
 	// 失敗時は次回 cron 実行を待つか、POST /api/import/blog を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
 	try {
-		const result = await syncBlogCollection(resolveBlogSyncOptions(env));
+		const result = await runAndRecord('blog', 'cron', () => syncBlogCollection(resolveBlogSyncOptions(env)));
 		console.log('[cron:blog] sync completed', {
 			queries: result.queries,
 			pages: result.pages,
