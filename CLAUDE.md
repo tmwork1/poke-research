@@ -38,7 +38,7 @@ Manage the background server with `astro dev stop`, `astro dev status`, and `ast
 
 ドキュメント変更だけなら `git diff --check` で十分だが、コード変更を伴う場合は必ず実行可能な検証を 1 つ以上通す。
 
-`scripts/` 配下のスクリプトを追加・削除・改名したら、[docs/reference/scripts.md](docs/reference/scripts.md) も同時に更新する。scripts.md の **（未実装）** 行に対応するスクリプトを実装したら、該当行を実スクリプトの行に置き換え、[docs/plan/review-scripts-gaps-20260706.md](docs/plan/review-scripts-gaps-20260706.md) の該当項目も解決済みにする。
+`scripts/` 配下のスクリプトを追加・削除・改名したら、[docs/reference/scripts.md](docs/reference/scripts.md) も同時に更新する。
 
 `src/lib/importers/article-ai.ts` のプロンプトや要約基準を変更したら、既存記事への `scripts/db/retag-existing-items.mjs` 再適用の要否を検討する（OpenAI 課金が発生するため実行前にユーザー確認）。
 

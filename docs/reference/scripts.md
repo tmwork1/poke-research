@@ -1,11 +1,10 @@
 # scripts/ 一覧
 
-`scripts/` 配下の各スクリプトを、開発・運用のどのフェーズで使うかで整理する。収集ジョブの詳しい仕様やAPIの認証は [README](../../README.md) を、デプロイ・バックアップ手順は [operations.md](operations.md) を参照する。レビュー・クリーンアップ系の不足点は [docs/plan/review-scripts-gaps-20260706.md](../plan/review-scripts-gaps-20260706.md) にまとめてある。
+`scripts/` 配下の各スクリプトを、開発・運用のどのフェーズで使うかで整理する。収集ジョブの詳しい仕様やAPIの認証は [README](../../README.md) を、デプロイ・バックアップ手順は [operations.md](operations.md) を参照する。
 
 共通の前提:
 - ほとんどのスクリプトは `DATABASE_URL`（直接 `pg` 接続）または `SUPABASE_URL`/`SUPABASE_SECRET_KEY`（`@supabase/supabase-js` 経由）のどちらかを要求する。ローカルは `scripts/db/setup-env.ps1` で作った `.env` を `node --env-file=.env scripts/xxx.mjs` で読み込むか、`npm run` 経由（エイリアスがあるもの）で実行する。
 - 本番 DB に対して書き込みを行うスクリプトは、実行前に必ずユーザー確認を取る（CLAUDE.md の運用ルール）。
-- 各表中に **（未実装）** の行が出ることがある。これはまだ存在せず、[docs/plan/review-scripts-gaps-20260706.md](../plan/review-scripts-gaps-20260706.md) で提案だけされているスクリプトで、実装フェーズ・体系上の位置づけを分かりやすくするため既存スクリプトと同じ表に並べる（2026-07-06時点で提案されていた6件はいずれも実装済み、または「不要」とユーザー判断済みのため、現時点で該当する行は無い）。
 - **課金**列は外部有料APIの利用有無を示す。`OpenAI` は従量課金（件数に比例）、`Brave` は無料枠（月1000件）の消費。Supabase/DB 接続や Qiita・Zenn・note の公開APIは課金対象外なので「なし」と表記する。
 
 ## 1. 初期セットアップ・ローカル環境構築
@@ -84,7 +83,3 @@
 | `scripts/db/check-items-columns.mjs` | `node scripts/db/check-items-columns.mjs` | `items`テーブルのカラム名・型一覧を表示する。 | なし | 読み取り専用。 |
 | `scripts/db/drop-app-tables.mjs` | `node scripts/db/drop-app-tables.mjs` | 主要アプリテーブル（annotations/item_tags/items/research_note_items/research_notes/sources/tags/users）を固定リストで`DROP TABLE CASCADE`。 | なし | 破壊的操作。ローカル再構築専用、本番では使わない。誤実行防止ガードあり: 接続先ホストと一致する`DROP_TARGET_HOST`環境変数を設定しないと実行できない。 |
 | `scripts/db/drop-non-migrations-tables.mjs` | `node scripts/db/drop-non-migrations-tables.mjs [--dry-run]` | `public`スキーマの`migrations`以外の全テーブルを`DROP TABLE CASCADE`。 | なし | 破壊的操作。ローカル再構築専用、本番では使わない。誤実行防止ガードあり（`--dry-run`は対象外）: 接続先ホストと一致する`DROP_TARGET_HOST`環境変数を設定しないと実行できない。 |
-
-## ドキュメント化されていない/確認が必要な既知の穴
-
-[docs/plan/review-scripts-gaps-20260706.md](../plan/review-scripts-gaps-20260706.md) に、sources重複検出・使用0件タグ検出・items重複の運用ループ化・AIフィルタ偽陰性レビュー・annotationsレビュー・リンク切れ目視レビューの6点を優先度/工数付きで整理してあったが、2026-07-06時点で全項目が解消済み。sources重複検出・使用0件タグ検出・annotationsレビュー・リンク切れ目視レビューの4点は本表に実装済みとして反映済み。items重複の運用ループ化（#3）は、検出→確認→削除を自動で一本化する対話的ヘルパーを不要とユーザーが確定判断し、検出（`detect-duplicate-items`）と削除実行（`merge-item.mjs`による手動対応）を分離したまま運用する方針でクローズした。AIフィルタ偽陰性レビュー（#4）は案A（棄却記事も`items`に保存し一覧・検索から除外、`migrations/018`）を採用して`eval-filter.mjs`に実装済み。残項目は無い。

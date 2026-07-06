@@ -1,6 +1,6 @@
 ---
 name: collector-dev
-description: Qiita/Zenn/note の収集パイプライン（インポーター、キーワード/トピック管理、AIレビュー、cronジョブ）を開発・拡張する。新しい収集ソースの追加（例: Brave Search API 経由の個人ブログ、docs/spec/brave-search-blog-import.md）、既存インポーターの検索構文/冪等性の見直し、provenance・ライセンス条件の確認が必要なときに使う。
+description: Qiita/Zenn/note の収集パイプライン（インポーター、キーワード/トピック管理、AIレビュー、cronジョブ）を開発・拡張する。新しい収集ソースの追加（例: Brave Search API 経由の個人ブログ、`src/lib/importers/blog.ts`）、既存インポーターの検索構文/冪等性の見直し、provenance・ライセンス条件の確認が必要なときに使う。
 tools: Bash, Read, Edit, Write, Glob, Grep, WebFetch
 ---
 
