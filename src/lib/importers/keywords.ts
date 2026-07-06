@@ -17,3 +17,30 @@ export const ZENN_TOPICS = ['pokemon'] as const;
 export const EXCLUDED_BLOG_DOMAINS = [
 	'qiita.com', 'zenn.dev', 'note.com', 'github.com', 'youtube.com', 'x.com', 'twitter.com',
 ] as const;
+
+// Brave Search 経由のブログ収集で、ドメインごとに source が無限に増えるのを防ぐための
+// 「有名どころ」許可リスト。ここに載っているサービスは Qiita/Zenn/note と同様、
+// サービス単位（= 個々のユーザーのサブドメインをまとめて1レコード）で source を作る。
+// 載っていないドメインは共通の「その他」source（OTHER_BLOG_SOURCE）にまとめる。
+export const KNOWN_BLOG_PLATFORMS = [
+	{ domain: 'hatenablog.com', name: 'はてなブログ' },
+	{ domain: 'hatenablog.jp', name: 'はてなブログ' },
+	{ domain: 'hatenadiary.jp', name: 'はてなダイアリー' },
+	{ domain: 'hatenadiary.com', name: 'はてなダイアリー' },
+	{ domain: 'speakerdeck.com', name: 'Speaker Deck' },
+	{ domain: 'github.io', name: 'GitHub Pages' },
+	{ domain: 'livedoor.jp', name: 'livedoor Blog' },
+	{ domain: 'fc2.com', name: 'FC2ブログ' },
+	{ domain: 'seesaa.net', name: 'Seesaa Blog' },
+	{ domain: 'exblog.jp', name: 'Exblog' },
+	{ domain: 'ameblo.jp', name: 'アメーバブログ' },
+	{ domain: 'wordpress.com', name: 'WordPress.com' },
+	{ domain: 'blogspot.com', name: 'Blogger' },
+	{ domain: 'medium.com', name: 'Medium' },
+] as const;
+
+// 上記に無いドメインの個人ブログをまとめて受け止める共通 source。
+export const OTHER_BLOG_SOURCE = {
+	name: 'その他の個人ブログ',
+	originUrl: 'https://other-blogs.poke-research.invalid/',
+} as const;
