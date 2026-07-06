@@ -68,6 +68,9 @@ export async function checkLinks(options: LinkCheckOptions = {}): Promise<LinkCh
 		.from('items')
 		.select('id, external_url, link_status, link_broken_since')
 		.not('external_url', 'is', null)
+		// AIレビューで棄却され一覧から隠れている記事（migrations/018）はリンクチェック対象外にする
+		// （非表示記事のチェックは無駄なため）。
+		.eq('ai_accepted', true)
 		.or(`link_checked_at.is.null,link_checked_at.lt.${cutoff}`)
 		.order('link_checked_at', { ascending: true, nullsFirst: true })
 		.limit(resolved.batchLimit);

@@ -1,6 +1,6 @@
 // 複数の収集元（Qiita/Zenn/...）で共通する DB 書き込み・並列実行処理をまとめる。
 // ソース固有のフィールドマッピングは各インポーター側に残し、ここでは汎用部分だけを扱う。
-import { normalizeTagName, type ImportArticleReview } from './article-ai';
+import { normalizeTagName } from './article-ai';
 import { getSupabaseClient } from '../supabase';
 
 // 本文は検索対象を広げるために保存するが、行が肥大化しないよう妥当な長さで切り詰める。
@@ -221,12 +221,24 @@ export interface ItemUpsertPayload {
 	version: string;
 	/** 検索対象を広げるための本文テキスト（migrations/015）。未取得なら省略可。 */
 	body?: string | null;
+	/**
+	 * AIレビューでの採否（migrations/018）。false を渡すと一覧・検索からは除外されるが items
+	 * には保存され、偽陰性（誤棄却）レビューの対象になる（同一 external_url を後日再収集して
+	 * accepted になれば true に戻る）。
+	 */
+	aiAccepted: boolean;
+}
+
+export interface UpsertItemOptions {
+	/** 棄却記事はタグ同期をスキップし、tags テーブルをノイズで汚さないようにする（既定 true）。 */
+	syncTags?: boolean;
 }
 
 export async function upsertItemByExternalUrl(
 	payload: ItemUpsertPayload,
 	tags: string[],
 	tagLabels: Record<string, string> = {},
+	options: UpsertItemOptions = {},
 ): Promise<{ id: number; action: 'inserted' | 'updated' }> {
 	// action の判定は結果表示用の分類に過ぎず、書き込み自体は external_url の
 	// UNIQUE 制約(migrations/002)を前提にした upsert で原子的に行う。
@@ -254,6 +266,7 @@ export async function upsertItemByExternalUrl(
 				metadata: payload.metadata,
 				version: payload.version,
 				body: payload.body ?? null,
+				ai_accepted: payload.aiAccepted,
 			},
 			{ onConflict: 'external_url' },
 		)
@@ -262,7 +275,9 @@ export async function upsertItemByExternalUrl(
 	if (upsertError) throw upsertError;
 
 	const itemId = (upserted as { id: number }).id;
-	await syncItemTags(itemId, tags, tagLabels);
+	if (options.syncTags ?? true) {
+		await syncItemTags(itemId, tags, tagLabels);
+	}
 	return { id: itemId, action };
 }
 
@@ -275,36 +290,9 @@ export async function findItemVersionByExternalUrl(externalUrl: string): Promise
 	return data?.[0]?.version ?? null;
 }
 
-export interface ImportItemOutcome {
-	id: number | null;
-	action: 'inserted' | 'updated' | 'skipped';
-	externalUrl: string;
-	title: string;
-	reason?: string;
-}
-
-export async function processImportItem(
-	externalUrl: string,
-	title: string,
-	review: () => Promise<ImportArticleReview>,
-	upsert: (review: ImportArticleReview) => Promise<{ id: number; action: 'inserted' | 'updated' }>,
-): Promise<ImportItemOutcome> {
-	// 1件の失敗がバッチ全体を止めないよう、記事単位で例外を吸収して skipped として積む。
-	try {
-		const result = await review();
-		if (!result.accepted) {
-			return { id: null, action: 'skipped', externalUrl, title, reason: result.reason };
-		}
-
-		const upserted = await upsert(result);
-		return { id: upserted.id, action: upserted.action, externalUrl, title };
-	} catch (error) {
-		return {
-			id: null,
-			action: 'skipped',
-			externalUrl,
-			title,
-			reason: error instanceof Error ? error.message : 'unknown error',
-		};
-	}
-}
+// processImportItem 自体は getSupabaseClient/OpenAI 呼び出しに依存しないコールバック注入型の
+// 純粋な関数のため、node --test から直接テストできるよう process-import-item.ts に切り出して
+// ある（cloudflare:workers 依存が無いファイルに分離することで import 時点で落ちないようにする
+// 目的。catalog-normalize.ts と同じ方針）。ここでは既存の import 元（qiita/zenn/note/blog.ts）を
+// 変えずに済むよう re-export するだけにする。
+export { processImportItem, type ImportItemOutcome } from './process-import-item';

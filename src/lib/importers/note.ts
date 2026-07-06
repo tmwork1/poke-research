@@ -257,8 +257,11 @@ async function processNoteKey(key: string, sourceId: number, query: string, fetc
 						metadata: createItemMetadata(detail, query, fetchedAt, review),
 						version: detail.publish_at,
 						body: truncateBodyForStorage(extractBodyText(detail)),
+						aiAccepted: review.accepted,
 					},
 					review.tags.length > 0 ? review.tags : extractTags(detail),
+					undefined,
+					{ syncTags: review.accepted },
 				),
 		);
 	} catch (error) {

@@ -268,8 +268,11 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 						metadata: createItemMetadata(item, query, fetchedAt, review),
 						version: item.updated_at,
 						body: truncateBodyForStorage(extractBodyText(item)),
+						aiAccepted: review.accepted,
 					},
 					review.tags.length > 0 ? review.tags : extractTags(item),
+					undefined,
+					{ syncTags: review.accepted },
 				),
 		),
 	);
