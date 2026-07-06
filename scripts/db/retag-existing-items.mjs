@@ -327,6 +327,9 @@ async function fetchTargetItems() {
 			item_tags ( tag:tags ( name ) )
 		`,
     )
+    // AIレビューで棄却され一覧から隠れている記事（migrations/018）は再タグ付け対象外にする
+    // （棄却記事のタグ付け直しは不要なため）。
+    .eq('ai_accepted', true)
     .order('id', { ascending: true });
   if (targetId !== null) query = query.eq('id', targetId);
   if (targetService !== null) query = query.eq('metadata->>service', targetService);

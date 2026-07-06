@@ -250,8 +250,11 @@ async function processZennSlug(slug: string, sourceId: number, topic: string, fe
 						metadata: createItemMetadata(detail, topic, fetchedAt, review),
 						version: detail.body_updated_at ?? detail.published_at,
 						body: truncateBodyForStorage(extractBodyText(detail)),
+						aiAccepted: review.accepted,
 					},
 					review.tags.length > 0 ? review.tags : extractTags(detail),
+					undefined,
+					{ syncTags: review.accepted },
 				),
 		);
 	} catch (error) {
