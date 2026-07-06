@@ -25,6 +25,10 @@ const BLOG_USER_AGENT = 'poke-research-blog-importer (+https://poke-research.com
 
 const EXCLUDED_TEXT_TAGS = 'nav, header, footer, aside, script, style';
 
+// FETCH_TIMEOUT_MS・BLOG_USER_AGENT を含め、本文抽出・取得まわりは hatena.ts（はてなブックマーク
+// 検索経由の発見）とも共有する。両者とも「発見したURLからHTMLを取得し本文を抽出する」処理は
+// 同一であり、発見方法（Brave Search / はてなブックマーク検索RSS）だけが異なるため。
+
 export interface BlogSyncOptions {
 	query?: string;
 	count?: number;
@@ -88,7 +92,7 @@ function isExcludedDomain(url: string): boolean {
 
 // 有名どころのブログサービスはユーザーごとのサブドメインをまとめてサービス単位の source にし、
 // それ以外は共通の「その他」source にまとめる（ドメインごとに source が無限に増えるのを防ぐ）。
-function resolveBlogSource(hostname: string): { name: string; originUrl: string } {
+export function resolveBlogSource(hostname: string): { name: string; originUrl: string } {
 	const platform = KNOWN_BLOG_PLATFORMS.find((p) => hostname === p.domain || hostname.endsWith(`.${p.domain}`));
 	if (platform) return { name: platform.name, originUrl: `https://${platform.domain}/` };
 	return { name: OTHER_BLOG_SOURCE.name, originUrl: OTHER_BLOG_SOURCE.originUrl };
@@ -145,7 +149,7 @@ async function discoverCandidates(queries: string[], count: number, offset: numb
 	return { candidates, requestsUsed };
 }
 
-interface ExtractedPage {
+export interface ExtractedPage {
 	title: string | null;
 	ogSiteName: string | null;
 	canonicalUrl: string | null;
@@ -160,7 +164,7 @@ function normalizeExtractedText(text: string): string {
 	return text.replace(/\s+/g, ' ').trim();
 }
 
-async function extractPage(response: Response): Promise<ExtractedPage> {
+export async function extractPage(response: Response): Promise<ExtractedPage> {
 	let ogTitle = '';
 	let titleTagText = '';
 	let ogSiteName = '';
@@ -268,18 +272,18 @@ async function extractPage(response: Response): Promise<ExtractedPage> {
 	};
 }
 
-async function hashBody(text: string): Promise<string> {
+export async function hashBody(text: string): Promise<string> {
 	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
 	return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, 16);
 }
 
-async function fetchCandidatePage(url: string): Promise<Response> {
+export async function fetchCandidatePage(url: string, userAgent: string = BLOG_USER_AGENT): Promise<Response> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 	try {
 		return await fetch(url, {
 			signal: controller.signal,
-			headers: { 'User-Agent': BLOG_USER_AGENT },
+			headers: { 'User-Agent': userAgent },
 		});
 	} finally {
 		clearTimeout(timeout);

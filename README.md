@@ -107,6 +107,15 @@ cp .env.example .env
 - 手動で起動したい場合は、ローカルなら `npm run collect:note`、デプロイ後は `POST /api/import/note` を叩く。Qiita/Zenn と同様に `external_url` の UNIQUE 制約に基づく upsert なので、何度実行しても重複行は増えない（冪等）。
 - 失敗時: `wrangler tail` などで `[cron:note] sync failed` を確認する。記事単位（詳細取得・AI レビュー・DB 書き込みのいずれか）の失敗は `skipped` に吸収されるため、ジョブ全体が落ちるのは note 側の仕様変更やレート制限など致命的なケースのみ。復旧を確認したら、次回 cron を待つか手動実行で再実行すればよい。
 
+## はてなブックマーク収集ジョブ
+
+- はてなブックマークにも公式のキーワード検索APIは無いため、検索RSS（`b.hatena.ne.jp/search/text?q=...&mode=rss`）を利用する。ブックマークされた全ウェブページを横断する検索のため、Qiita/Zenn/noteのような単一プラットフォーム向けインポーターとは性質が異なり、発見した記事は `src/lib/importers/blog.ts` と同じ汎用HTML抽出で本文を取得する。
+- **収集精度について**: 実測の結果、複数キーワードを与えても実質AND検索にならず、話題性の高い無関係な最近の記事（例: 生成AI関連ニュース）が上位に混入することを確認している（詳細は [docs/progress/2026-07-07.md](docs/progress/2026-07-07.md)）。これは note 収集ジョブで過去に確認した「母集団の性質上の問題」と同種と判断し、既存のAIレビュー（`article-ai.ts`）を安全網として運用しつつ、新規ソースのため候補数はキーワードあたり既定15件（`HATENA_MAX_CANDIDATES`）に絞ってOpenAIコストを抑えている。
+- `b.hatena.ne.jp/robots.txt` の `Crawl-delay: 5` に従い、キーワードごとのリクエスト間隔を5秒空けている。
+- 本番では Cloudflare Cron Triggers（`wrangler.jsonc` の `triggers.crons` に他ジョブとは別枠で追加、既定は毎日 23:30 UTC = JST 8:30）が `src/worker.ts` の `scheduled` ハンドラを起動する。
+- 手動で起動したい場合は、ローカルなら `npm run collect:hatena`、デプロイ後は `POST /api/import/hatena` を叩く。他インポーターと同様に `external_url` の UNIQUE 制約に基づく upsert なので、何度実行しても重複行は増えない（冪等）。`scripts/collect/backfill.mjs` の既定対象（`BACKFILL_TARGETS`）には含まれないため、使う場合は明示的に指定する。
+- 失敗時: `wrangler tail` などで `[cron:hatena] sync failed` を確認する。記事単位の失敗は `skipped` に吸収されるため、ジョブ全体が落ちるのははてなブックマーク側の仕様変更など致命的なケースのみ。復旧を確認したら、次回 cron を待つか手動実行で再実行すればよい。
+
 ## リンク切れ検出ジョブ
 
 - 元記事の削除・非公開化を検出するため、`items.external_url` を定期チェックし判定を `items.link_status`（`ok` / `broken`）・`link_checked_at`・`link_broken_since` に記録する（`migrations/016_add_link_status.sql`、実装は `src/lib/importers/link-check.ts`）。他の収集ジョブと異なり新規アイテムは作らない。

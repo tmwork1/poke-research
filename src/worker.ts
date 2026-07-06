@@ -6,6 +6,7 @@ import { env } from 'cloudflare:workers';
 import { sendOperationalAlert } from './lib/notify';
 import { runAndRecord } from './lib/import-runs';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
+import { resolveHatenaSyncOptions, syncHatenaCollection } from './lib/importers/hatena';
 import { checkLinks, resolveLinkCheckOptions } from './lib/importers/link-check';
 import { resolveNoteSyncOptions, syncNoteCollection } from './lib/importers/note';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
@@ -16,6 +17,7 @@ const ZENN_CRON = '30 21 * * *';
 const NOTE_CRON = '0 22 * * *';
 const BLOG_CRON = '30 22 * * *';
 const LINK_CHECK_CRON = '0 23 * * *';
+const HATENA_CRON = '30 23 * * *';
 
 export default {
 	async fetch(request, ctxEnv, ctx) {
@@ -30,6 +32,8 @@ export default {
 			ctx.waitUntil(runScheduledBlogImport());
 		} else if (controller.cron === LINK_CHECK_CRON) {
 			ctx.waitUntil(runScheduledLinkCheck());
+		} else if (controller.cron === HATENA_CRON) {
+			ctx.waitUntil(runScheduledHatenaImport());
 		} else {
 			ctx.waitUntil(runScheduledQiitaImport());
 		}
@@ -109,6 +113,27 @@ async function runScheduledBlogImport(): Promise<void> {
 	} catch (error) {
 		console.error('[cron:blog] sync failed', error);
 		await sendOperationalAlert(env, 'ブログ（Brave Search）収集ジョブが失敗しました', error);
+	}
+}
+
+async function runScheduledHatenaImport(): Promise<void> {
+	// 他インポーター同様、記事単位の失敗は syncHatenaCollection 内で skipped として吸収される。
+	// はてなブックマーク検索は全ウェブ横断のため精度が低いことが判明しているが、AIレビューを
+	// 安全網として運用する方針（docs/progress/2026-07-07.md 参照）。
+	// 失敗時は次回 cron 実行を待つか、POST /api/import/hatena を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
+	try {
+		const result = await runAndRecord('hatena', 'cron', () => syncHatenaCollection(resolveHatenaSyncOptions(env)));
+		console.log('[cron:hatena] sync completed', {
+			keywords: result.keywords,
+			requestsUsed: result.requestsUsed,
+			fetched: result.fetched,
+			inserted: result.inserted,
+			updated: result.updated,
+			skipped: result.skipped,
+		});
+	} catch (error) {
+		console.error('[cron:hatena] sync failed', error);
+		await sendOperationalAlert(env, 'はてなブックマーク収集ジョブが失敗しました', error);
 	}
 }
 
