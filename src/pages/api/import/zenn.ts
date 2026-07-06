@@ -3,6 +3,7 @@
 import { env } from 'cloudflare:workers';
 
 import { badRequest, jsonResponse, methodNotAllowed, readJsonBody } from '../_shared';
+import { runAndRecord } from '../../../lib/import-runs';
 import { resolveZennSyncOptions, syncZennCollection } from '../../../lib/importers/zenn';
 
 export const prerender = false;
@@ -32,7 +33,7 @@ export async function POST({ request }: { request: Request }) {
 		return badRequest('topic must be a string');
 	}
 
-	const result = await syncZennCollection(resolveZennSyncOptions(env, requestData));
+	const result = await runAndRecord('zenn', 'api', () => syncZennCollection(resolveZennSyncOptions(env, requestData)));
 
 	return jsonResponse({ data: result }, 201);
 }

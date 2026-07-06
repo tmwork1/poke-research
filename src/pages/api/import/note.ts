@@ -3,6 +3,7 @@
 import { env } from 'cloudflare:workers';
 
 import { badRequest, jsonResponse, methodNotAllowed, readJsonBody } from '../_shared';
+import { runAndRecord } from '../../../lib/import-runs';
 import { resolveNoteSyncOptions, syncNoteCollection } from '../../../lib/importers/note';
 
 export const prerender = false;
@@ -34,7 +35,7 @@ export async function POST({ request }: { request: Request }) {
 		return badRequest('query must be a string');
 	}
 
-	const result = await syncNoteCollection(resolveNoteSyncOptions(env, requestData));
+	const result = await runAndRecord('note', 'api', () => syncNoteCollection(resolveNoteSyncOptions(env, requestData)));
 
 	return jsonResponse({ data: result }, 201);
 }
