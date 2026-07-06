@@ -116,7 +116,11 @@ const showUpdatedBadge = Boolean(
 	<div class="tag-row">
 		{item.tags.length > 0 ? (
 			<div class="tag-list">
-				{item.tags.map((tag) => <span class="tag" data-tag-id={tag.id}>#{formatTagLabel(tag.name)}</span>)}
+				{item.tags.map((tag) => (
+					<span class="tag" data-tag-id={tag.id} tabindex="0" role="button" aria-expanded="false">
+						#{formatTagLabel(tag.name)}
+					</span>
+				))}
 			</div>
 		) : (
 			<p class="empty-tags">タグ未設定</p>
@@ -384,6 +388,36 @@ const showUpdatedBadge = Boolean(
 		color: var(--text-muted);
 	}
 
+	.tag {
+		position: relative;
+	}
+
+	/* 解説が登録済みのタグは、クリックで説明が読めることが分かるよう下線+ヘルプカーソルで示す。 */
+	.tag.has-explanation {
+		cursor: help;
+		text-decoration: underline dotted;
+		text-underline-offset: 3px;
+	}
+
+	.tag-popover {
+		position: absolute;
+		z-index: 100;
+		top: calc(100% + 6px);
+		left: 0;
+		width: max-content;
+		max-width: 260px;
+		padding: 10px 12px;
+		border-radius: var(--radius-md);
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		color: var(--text);
+		font-size: 0.82rem;
+		line-height: 1.6;
+		font-weight: 400;
+		white-space: normal;
+		box-shadow: var(--shadow);
+	}
+
 	/* トーストは JS で body 直下に生成するため、スコープ外の :global で当てる。 */
 	:global(.app-toast) {
 		position: fixed;
@@ -565,53 +599,173 @@ const showUpdatedBadge = Boolean(
 	document.querySelectorAll<HTMLElement>('.card[data-item-id]').forEach(applyReadState);
 	document.querySelectorAll<HTMLAnchorElement>('a.item-title').forEach(bindTitleReadTracking);
 
-	const tagExplanationCache = new Map<string, Promise<{ isDifficult: boolean; explanation: string | null } | null>>();
+	// タグ解説: 画面上のタグを一括でバッチAPIに問い合わせ、キャッシュ済みの解説だけを先読みする。
+	// 未生成のタグはクリック時にオンデマンドで /api/tags/{id}/explain を叩く（AI生成を含むため遅い）。
+	type TagExplanation = { isDifficult: boolean; explanation: string | null };
 
-	function fetchTagExplanation(tagId: string) {
-		if (!tagExplanationCache.has(tagId)) {
-			const promise = fetch(`/api/tags/${tagId}/explain`)
-				.then((response) => (response.ok ? response.json() : null))
-				.then((json) => json?.data ?? null)
-				.catch(() => null);
-			tagExplanationCache.set(tagId, promise);
-		}
-		return tagExplanationCache.get(tagId)!;
+	const tagExplanationCache = new Map<string, TagExplanation>();
+	const batchCheckedTagIds = new Set<string>();
+	const onDemandRequests = new Map<string, Promise<TagExplanation | null>>();
+	const TAG_EXPLANATION_BATCH_SIZE = 50;
+
+	function applyExplanationHint(el: HTMLElement, result: TagExplanation | undefined) {
+		el.classList.toggle('has-explanation', Boolean(result?.isDifficult && result.explanation));
 	}
 
-	function bindTagTooltip(el: HTMLElement) {
-		if (el.dataset.tooltipBound === 'true') return;
-		el.dataset.tooltipBound = 'true';
-
-		el.addEventListener('mouseenter', async () => {
+	function applyHintsForKnownTags() {
+		document.querySelectorAll<HTMLElement>('.tag[data-tag-id]').forEach((el) => {
 			const tagId = el.dataset.tagId;
 			if (!tagId) return;
-			const result = await fetchTagExplanation(tagId);
-			if (result?.isDifficult && result.explanation) {
-				el.title = result.explanation;
+			const result = tagExplanationCache.get(tagId);
+			if (result) applyExplanationHint(el, result);
+		});
+	}
+
+	async function batchFetchTagExplanations(tagIds: string[]) {
+		const idsToFetch = [...new Set(tagIds)].filter((id) => !batchCheckedTagIds.has(id));
+		if (idsToFetch.length === 0) return;
+		idsToFetch.forEach((id) => batchCheckedTagIds.add(id));
+
+		for (let i = 0; i < idsToFetch.length; i += TAG_EXPLANATION_BATCH_SIZE) {
+			const chunk = idsToFetch.slice(i, i + TAG_EXPLANATION_BATCH_SIZE);
+			try {
+				const response = await fetch(`/api/tags/explanations?ids=${chunk.join(',')}`);
+				if (!response.ok) continue;
+				const json = await response.json();
+				const data = (json?.data ?? {}) as Record<string, TagExplanation>;
+				for (const [tagId, result] of Object.entries(data)) {
+					tagExplanationCache.set(tagId, result);
+				}
+			} catch (error) {
+				console.error('Failed to batch-fetch tag explanations:', error);
+			}
+		}
+		applyHintsForKnownTags();
+	}
+
+	function scanForTagExplanations(root: ParentNode) {
+		const ids = new Set<string>();
+		root.querySelectorAll<HTMLElement>('.tag[data-tag-id]').forEach((el) => {
+			const tagId = el.dataset.tagId;
+			if (tagId) ids.add(tagId);
+		});
+		if (ids.size > 0) void batchFetchTagExplanations([...ids]);
+	}
+
+	let activeTagPopover: { el: HTMLDivElement; tag: HTMLElement } | null = null;
+
+	function closeTagPopover() {
+		if (!activeTagPopover) return;
+		activeTagPopover.el.remove();
+		activeTagPopover.tag.setAttribute('aria-expanded', 'false');
+		activeTagPopover = null;
+	}
+
+	function openTagPopover(tag: HTMLElement, explanation: string) {
+		closeTagPopover();
+		const popover = document.createElement('div');
+		popover.className = 'tag-popover';
+		popover.setAttribute('role', 'tooltip');
+		popover.textContent = explanation;
+		tag.appendChild(popover);
+		tag.setAttribute('aria-expanded', 'true');
+		activeTagPopover = { el: popover, tag };
+	}
+
+	document.addEventListener('click', (event) => {
+		if (!activeTagPopover) return;
+		if (activeTagPopover.tag.contains(event.target as Node)) return;
+		closeTagPopover();
+	});
+
+	document.addEventListener('keydown', (event) => {
+		if (event.key === 'Escape' && activeTagPopover) closeTagPopover();
+	});
+
+	async function handleTagActivate(tag: HTMLElement) {
+		const tagId = tag.dataset.tagId;
+		if (!tagId) return;
+
+		if (activeTagPopover?.tag === tag) {
+			closeTagPopover();
+			return;
+		}
+
+		const cached = tagExplanationCache.get(tagId);
+		if (cached) {
+			if (cached.isDifficult && cached.explanation) openTagPopover(tag, cached.explanation);
+			return;
+		}
+
+		if (!onDemandRequests.has(tagId)) {
+			const promise = fetch(`/api/tags/${tagId}/explain`)
+				.then((response) => (response.ok ? response.json() : null))
+				.then((json) => (json?.data ?? null) as TagExplanation | null)
+				.catch(() => null);
+			onDemandRequests.set(tagId, promise);
+		}
+		const result = await onDemandRequests.get(tagId)!;
+		onDemandRequests.delete(tagId);
+		if (!result) return;
+
+		tagExplanationCache.set(tagId, result);
+		batchCheckedTagIds.add(tagId);
+		applyExplanationHint(tag, result);
+		if (result.isDifficult && result.explanation) openTagPopover(tag, result.explanation);
+	}
+
+	function bindTagPopover(el: HTMLElement) {
+		if (el.dataset.popoverBound === 'true') return;
+		el.dataset.popoverBound = 'true';
+
+		el.addEventListener('click', () => {
+			void handleTagActivate(el);
+		});
+		el.addEventListener('keydown', (event) => {
+			if (event.key === 'Enter' || event.key === ' ') {
+				event.preventDefault();
+				void handleTagActivate(el);
 			}
 		});
 	}
 
-	document.querySelectorAll<HTMLElement>('.tag[data-tag-id]').forEach(bindTagTooltip);
+	document.querySelectorAll<HTMLElement>('.tag[data-tag-id]').forEach(bindTagPopover);
+	scanForTagExplanations(document);
 
 	// 無限スクロールなどでカードが動的に追加される画面向けに、新規ノードのボタン/タグにも同じバインドを行う。
 	const dynamicBindObserver = new MutationObserver((mutations) => {
+		const newTagRoots: ParentNode[] = [];
 		for (const mutation of mutations) {
 			for (const node of mutation.addedNodes) {
 				if (!(node instanceof HTMLElement)) continue;
 				if (node.matches('.bookmark-toggle')) bindBookmarkToggle(node as HTMLButtonElement);
-				if (node.matches('.tag[data-tag-id]')) bindTagTooltip(node);
+				if (node.matches('.tag[data-tag-id]')) bindTagPopover(node);
 				if (node.matches('.share-button')) bindShareButton(node as HTMLAnchorElement);
 				if (node.matches('.copy-link-button')) bindCopyLinkButton(node as HTMLButtonElement);
 				if (node.matches('.card[data-item-id]')) applyReadState(node);
 				if (node.matches('a.item-title')) bindTitleReadTracking(node as HTMLAnchorElement);
 				node.querySelectorAll<HTMLButtonElement>('.bookmark-toggle').forEach(bindBookmarkToggle);
-				node.querySelectorAll<HTMLElement>('.tag[data-tag-id]').forEach(bindTagTooltip);
+				node.querySelectorAll<HTMLElement>('.tag[data-tag-id]').forEach(bindTagPopover);
 				node.querySelectorAll<HTMLAnchorElement>('.share-button').forEach(bindShareButton);
 				node.querySelectorAll<HTMLButtonElement>('.copy-link-button').forEach(bindCopyLinkButton);
 				node.querySelectorAll<HTMLElement>('.card[data-item-id]').forEach(applyReadState);
 				node.querySelectorAll<HTMLAnchorElement>('a.item-title').forEach(bindTitleReadTracking);
+				newTagRoots.push(node);
 			}
+		}
+		if (newTagRoots.length > 0) {
+			const ids = new Set<string>();
+			for (const root of newTagRoots) {
+				if (root instanceof HTMLElement && root.matches('.tag[data-tag-id]')) {
+					const tagId = root.dataset.tagId;
+					if (tagId) ids.add(tagId);
+				}
+				root.querySelectorAll<HTMLElement>('.tag[data-tag-id]').forEach((el) => {
+					const tagId = el.dataset.tagId;
+					if (tagId) ids.add(tagId);
+				});
+			}
+			if (ids.size > 0) void batchFetchTagExplanations([...ids]);
 		}
 	});
 	dynamicBindObserver.observe(document.body, { childList: true, subtree: true });
