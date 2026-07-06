@@ -3,6 +3,7 @@ export const prerender = false;
 
 import Layout from '../layouts/Layout.astro';
 import ItemCard from '../components/ItemCard.astro';
+import SortSelect from '../components/SortSelect.astro';
 import TagCloud from '../components/TagCloud.astro';
 import CompactToggle from '../components/CompactToggle.astro';
 import { fetchBookmarkCounts, fetchBookmarkedItemsFiltered, fetchRecommendedItems, type CatalogItem, type CatalogSort, type TagUsage } from '../lib/catalog';
@@ -63,11 +64,15 @@ if (user) {
 						</div>
 						<form class="sort-row" method="get" action="/mypage">
 							<input type="hidden" name="bookmarkTag" value={bookmarkTag} />
-							<select name="bookmarkSort" class="sort-select" aria-label="並び替え">
-								<option value="new" selected={bookmarkSort === 'new'}>新着順</option>
-								<option value="popular" selected={bookmarkSort === 'popular'}>人気順</option>
-								<option value="oldest" selected={bookmarkSort === 'oldest'}>古い順</option>
-							</select>
+							<SortSelect
+								name="bookmarkSort"
+								ariaLabel="並び替え"
+								options={[
+									{ value: 'new', label: '新着順', selected: bookmarkSort === 'new' },
+									{ value: 'popular', label: '人気順', selected: bookmarkSort === 'popular' },
+									{ value: 'oldest', label: '古い順', selected: bookmarkSort === 'oldest' },
+								]}
+							/>
 						</form>
 						{bookmarkedItems.length > 0 ? (
 							<div class="cards">
@@ -154,19 +159,6 @@ if (user) {
 		justify-content: flex-start;
 	}
 
-	.sort-select {
-		padding: 8px 10px 8px 30px;
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		background-color: var(--card-bg);
-		background-repeat: no-repeat;
-		background-position: 8px center;
-		background-size: 14px 14px;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236a737d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h11'/%3E%3Cpath d='M3 12h8'/%3E%3Cpath d='M3 17h5'/%3E%3Cpath d='M17 4v16'/%3E%3Cpath d='M13 16l4 4 4-4'/%3E%3C/svg%3E");
-		color: inherit;
-		font-size: 0.85rem;
-	}
-
 	.cards {
 		display: grid;
 		grid-template-columns: 1fr;
@@ -216,10 +208,3 @@ if (user) {
 
 </style>
 
-<script>
-	document.querySelectorAll<HTMLSelectElement>('.sort-select').forEach((select) => {
-		select.addEventListener('change', () => {
-			select.form?.requestSubmit();
-		});
-	});
-</script>

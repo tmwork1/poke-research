@@ -263,6 +263,34 @@ const websiteJsonLd = JSON.stringify({
 			closeSidebar();
 		}
 	});
+
+	// タッチ環境では account-dropdown が hover/focus-within で開けないため、タップでも開閉できるようにする。
+	const mypageTabWrap = document.querySelector('.mypage-tab-wrap');
+
+	function closeMypageDropdown() {
+		mypageTabWrap?.classList.remove('open');
+	}
+
+	mypageTabWrap?.addEventListener('click', (event) => {
+		if (!mypageTabWrap.querySelector('.account-dropdown')) return;
+		if (!(event.target instanceof Element) || !event.target.closest('.mypage-tab')) return;
+		if (!mypageTabWrap.classList.contains('open')) {
+			event.preventDefault();
+			mypageTabWrap.classList.add('open');
+		} else {
+			mypageTabWrap.classList.remove('open');
+		}
+	});
+
+	document.addEventListener('click', (event) => {
+		if (mypageTabWrap && event.target instanceof Node && !mypageTabWrap.contains(event.target)) {
+			closeMypageDropdown();
+		}
+	});
+
+	document.addEventListener('keydown', (event) => {
+		if (event.key === 'Escape') closeMypageDropdown();
+	});
 </script>
 
 <style>
@@ -591,7 +619,8 @@ const websiteJsonLd = JSON.stringify({
 	}
 
 	.mypage-tab-wrap:hover .account-dropdown,
-	.mypage-tab-wrap:focus-within .account-dropdown {
+	.mypage-tab-wrap:focus-within .account-dropdown,
+	.mypage-tab-wrap.open .account-dropdown {
 		opacity: 1;
 		pointer-events: auto;
 		transform: translateY(0);
