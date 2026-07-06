@@ -1,0 +1,116 @@
+---
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import { fetchTopTags } from '../../lib/catalog';
+import { formatTagLabel } from '../../lib/tag-display';
+
+// 全タグを見渡せるインデックス。内部リンク（SEO）とタグ探索の起点を兼ねる。
+// top_tags RPC は limit 指定式のため、実質全件が返る大きめの上限を渡す。
+const ALL_TAGS_LIMIT = 1000;
+const tags = await fetchTopTags(ALL_TAGS_LIMIT);
+const user = Astro.locals.user;
+---
+
+<Layout
+	title="タグ一覧 | PokeResearch"
+	description="PokeResearch に収録された記事のタグ一覧です。使用回数の多い順に表示しています。"
+	loggedIn={Boolean(user)}
+>
+	<section class="tags-index">
+		<div class="eyebrow-row">
+			<p class="eyebrow">Tags</p>
+		</div>
+		<section class="panel">
+			<h1>タグ一覧 <span class="count">全{tags.length}件</span></h1>
+			{tags.length > 0 ? (
+				<div class="tag-grid">
+					{tags.map((tag) => (
+						<a class="tag-chip" href={`/tags/${encodeURIComponent(tag.name)}`}>
+							#{formatTagLabel(tag.name)} <span class="chip-count">{tag.count}</span>
+						</a>
+					))}
+				</div>
+			) : (
+				<p class="empty">まだタグがありません。</p>
+			)}
+		</section>
+	</section>
+</Layout>
+
+<style>
+	.tags-index {
+		display: grid;
+		gap: 24px;
+	}
+
+	.eyebrow-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin: 0 0 4px;
+	}
+
+	.eyebrow {
+		margin: 0;
+		font-size: 0.75rem;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.panel {
+		display: grid;
+		gap: 20px;
+		padding: 24px;
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		box-shadow: var(--shadow);
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 1.3rem;
+	}
+
+	.count {
+		font-size: 0.85rem;
+		font-weight: 400;
+		color: var(--text-muted);
+	}
+
+	.tag-grid {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+
+	.tag-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 14px;
+		border-radius: 999px;
+		background: var(--card-bg);
+		border: 1px solid var(--border);
+		color: var(--text);
+		font-size: 0.9rem;
+		text-decoration: none;
+	}
+
+	.tag-chip:hover {
+		border-color: var(--accent);
+	}
+
+	.chip-count {
+		font-size: 0.78rem;
+		color: var(--text-muted);
+	}
+
+	.empty {
+		margin: 0;
+		color: var(--text-muted);
+	}
+</style>

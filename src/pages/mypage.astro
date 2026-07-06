@@ -59,7 +59,7 @@ if (user) {
 				) : hasBookmarks ? (
 					<>
 						<div class="tag-filter">
-							<TagCloud topTags={bookmarkTagOptions} activeTag={bookmarkTag} buildUrl={buildBookmarkUrl} />
+							<TagCloud topTags={bookmarkTagOptions} activeTags={bookmarkTag ? [bookmarkTag] : []} buildTagsUrl={(tags) => buildBookmarkUrl({ tag: tags[tags.length - 1] ?? '' })} />
 						</div>
 						<form class="sort-row" method="get" action="/mypage">
 							<input type="hidden" name="bookmarkTag" value={bookmarkTag} />

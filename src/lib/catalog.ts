@@ -20,6 +20,8 @@ export interface ItemFilters {
 	q?: string;
 	kind?: string;
 	tag?: string;
+	/** 複数タグの AND 絞り込み。tag と併用された場合は両方を条件に含める。 */
+	tags?: string[];
 	sourceIds?: number[];
 	/** 公開日の下限（ISO 8601）。期間フィルタ用。 */
 	since?: string;
@@ -194,11 +196,17 @@ async function queryCatalogItems(
 		}
 	}
 
-	if (filters.tag?.trim()) {
+	const tagNames = [...new Set([...(filters.tags ?? []), ...(filters.tag ? [filters.tag] : [])].map((tag) => tag.trim()).filter((tag) => tag.length > 0))];
+	if (tagNames.length > 0) {
 		// タグ条件は join の曖昧さを避けるため、先に item_id の集合へ落とす。
-		const itemIds = await resolveItemIdsByTag(filters.tag.trim());
-		if (itemIds.length === 0) return { data: [], count: 0 };
-		query = query.in('id', itemIds);
+		// 複数タグは AND（全タグが付いたアイテムのみ）として積集合を取る。
+		let itemIds: Set<number> | null = null;
+		for (const tagName of tagNames) {
+			const ids = new Set(await resolveItemIdsByTag(tagName));
+			itemIds = itemIds === null ? ids : new Set([...itemIds].filter((id) => ids.has(id)));
+			if (itemIds.size === 0) return { data: [], count: 0 };
+		}
+		query = query.in('id', [...(itemIds ?? [])]);
 	}
 
 	if (filters.limit && filters.limit > 0) {

@@ -61,7 +61,7 @@ try {
 		</div>
 		<section class="panel">
 			<div class="tag-filter">
-				<TagCloud topTags={topTags} activeTag={activeTag} buildUrl={buildUrl} />
+				<TagCloud topTags={topTags} activeTags={activeTag ? [activeTag] : []} buildTagsUrl={(tags) => buildUrl({ tag: tags[tags.length - 1] ?? '' })} />
 			</div>
 			<form class="sort-row" method="get" action="/">
 				<input type="hidden" name="tag" value={activeTag} />
