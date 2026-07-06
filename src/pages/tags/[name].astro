@@ -3,7 +3,16 @@ export const prerender = false;
 
 import Layout from '../../layouts/Layout.astro';
 import CatalogPage from '../../components/CatalogPage.astro';
-import { fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchCatalogSources, fetchTopTags } from '../../lib/catalog';
+import ItemCard from '../../components/ItemCard.astro';
+import {
+	fetchBookmarkedItemIds,
+	fetchCatalogItemsPage,
+	fetchCatalogSources,
+	fetchRelatedItems,
+	fetchTopTags,
+	resolveItemIdsByTag,
+	type CatalogItem,
+} from '../../lib/catalog';
 import { parseOptionalPositiveInteger } from '../../lib/params';
 import { formatTagLabel } from '../../lib/tag-display';
 
@@ -23,6 +32,17 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 	fetchCatalogSources(),
 	user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
 ]);
+
+// このタグの代表記事（一覧先頭）が持つ「他のタグ」を手がかりに、タグ横断の関連記事を提案する。
+// このタグ自体での重なりは（ページを問わず）このタグの一覧で既に見られるため除外し、
+// 別の関心軸からの発見を狙う。
+const representativeItem = itemsPage.items[0] ?? null;
+const relatedTagIds = representativeItem
+	? representativeItem.tags.filter((tag) => tag.name !== tagName).map((tag) => tag.id)
+	: [];
+const relatedItems: CatalogItem[] = representativeItem && relatedTagIds.length > 0
+	? await fetchRelatedItems(await resolveItemIdsByTag(tagName), relatedTagIds, { limit: 4 })
+	: [];
 ---
 
 <Layout
@@ -44,4 +64,42 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 		bookmarkedItemIds={bookmarkedItemIds}
 		loggedIn={Boolean(user)}
 	/>
+
+	{relatedItems.length > 0 ? (
+		<section class="related">
+			<p class="eyebrow">Related articles</p>
+			<div class="related-cards">
+				{relatedItems.map((item) => (
+					<ItemCard
+						item={item}
+						bookmarked={bookmarkedItemIds.has(item.id)}
+						bookmarkCount={item.bookmarks_count ?? 0}
+						loggedIn={Boolean(user)}
+					/>
+				))}
+			</div>
+		</section>
+	) : null}
 </Layout>
+
+<style>
+	.related {
+		display: grid;
+		gap: 14px;
+		margin-top: 24px;
+	}
+
+	.eyebrow {
+		margin: 0;
+		font-size: 0.75rem;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.related-cards {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 18px;
+	}
+</style>

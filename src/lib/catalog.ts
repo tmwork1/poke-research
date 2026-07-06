@@ -126,7 +126,7 @@ function escapeIlikeToken(token: string): string {
 	return `"%${escapedWildcards}%"`;
 }
 
-async function resolveItemIdsByTag(tagName: string): Promise<number[]> {
+export async function resolveItemIdsByTag(tagName: string): Promise<number[]> {
 	const supabase = await getSupabaseClient();
 	// タグ名から item_id を引くために、まず tag_id をまとめて解決する。
 	const { data: tags, error } = await supabase.from('tags').select('id').eq('name', tagName);
@@ -466,6 +466,56 @@ export async function fetchRecommendedItems(userId: string, limit = 6): Promise<
 	scored.sort((a, b) => b.score - a.score);
 
 	return scored.slice(0, limit).map((entry) => entry.item);
+}
+
+const DEFAULT_RELATED_LIMIT = 4;
+
+/**
+ * あるアイテムのタグ集合（呼び出し側が渡す tagIds）を基準に、item_tags の重なりが多い順・
+ * 同数なら新しい順で他のアイテムを返す。item_relations テーブルは未運用（重複記事検出等の
+ * 別タスク待ち）のため、タグ重複ベースのヒューリスティックのみで完結させる。
+ * excludeItemIds には呼び出し元がすでに表示中のアイテム（例: 起点タグの一覧に載る全アイテム）
+ * を渡し、同じ記事が二重に出るのを防ぐ。
+ */
+export async function fetchRelatedItems(
+	excludeItemIds: number[],
+	tagIds: number[],
+	options: { limit?: number } = {},
+): Promise<CatalogItem[]> {
+	const limit = options.limit && options.limit > 0 ? options.limit : DEFAULT_RELATED_LIMIT;
+	if (tagIds.length === 0) return [];
+
+	const supabase = await getSupabaseClient();
+	let itemTagQuery = supabase.from('item_tags').select('item_id, tag_id').in('tag_id', tagIds);
+	if (excludeItemIds.length > 0) {
+		itemTagQuery = itemTagQuery.not('item_id', 'in', `(${excludeItemIds.join(',')})`);
+	}
+	const { data: itemTagRows, error: itemTagError } = await itemTagQuery;
+	if (itemTagError) throw itemTagError;
+
+	// 一致タグ数はアイテムごとに JS 側で集計する（PostgREST では集約 + 上位N件抽出が難しいため）。
+	const overlapCounts = new Map<number, number>();
+	for (const row of itemTagRows ?? []) {
+		overlapCounts.set(row.item_id, (overlapCounts.get(row.item_id) ?? 0) + 1);
+	}
+	if (overlapCounts.size === 0) return [];
+
+	const { data: itemRows, error: itemsError } = await supabase
+		.from('items')
+		.select(ITEM_SELECT)
+		.in('id', [...overlapCounts.keys()]);
+	if (itemsError) throw itemsError;
+
+	const items = (itemRows ?? []).map((row) => normalizeItem(row as ItemRow));
+	items.sort((a, b) => {
+		const overlapDiff = (overlapCounts.get(b.id) ?? 0) - (overlapCounts.get(a.id) ?? 0);
+		if (overlapDiff !== 0) return overlapDiff;
+		const aTime = new Date(a.published_at ?? a.created_at).getTime();
+		const bTime = new Date(b.published_at ?? b.created_at).getTime();
+		return bTime - aTime;
+	});
+
+	return items.slice(0, limit);
 }
 
 export async function fetchCatalogOverview() {
