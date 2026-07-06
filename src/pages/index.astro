@@ -6,7 +6,7 @@ import ItemCard from '../components/ItemCard.astro';
 import ItemListJsonLd from '../components/ItemListJsonLd.astro';
 import TagCloud from '../components/TagCloud.astro';
 import CompactToggle from '../components/CompactToggle.astro';
-import { fetchBookmarkCounts, fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchTopTags, type CatalogItem, type CatalogSort } from '../lib/catalog';
+import { fetchBookmarkedItemIds, fetchCatalogItemsPage, fetchTopTags, type CatalogItem, type CatalogSort } from '../lib/catalog';
 import { parseOptionalPositiveInteger } from '../lib/params';
 
 const PAGE_SIZE = 12;
@@ -27,7 +27,6 @@ function buildUrl(overrides: { tag: string }) {
 
 let recentItems: CatalogItem[];
 let bookmarkedItemIds = new Set<number>();
-let bookmarkCounts = new Map<number, number>();
 let loadError = false;
 let hasMore = false;
 const topTags = await fetchTopTags(5);
@@ -39,7 +38,6 @@ try {
 	recentItems = itemsPage.items;
 	hasMore = itemsPage.page < itemsPage.totalPages;
 	bookmarkedItemIds = bookmarks;
-	bookmarkCounts = await fetchBookmarkCounts(recentItems.map((item) => item.id));
 } catch (error) {
 	console.error('Failed to load recent items:', error);
 	loadError = true;
@@ -78,7 +76,7 @@ try {
 			)}
 			<div class="cards" data-page={page} data-has-more={hasMore ? 'true' : 'false'} data-tag={activeTag} data-sort={activeSort}>
 				{recentItems.length > 0 ? recentItems.map((item) => (
-					<ItemCard item={item} bookmarked={bookmarkedItemIds.has(item.id)} bookmarkCount={bookmarkCounts.get(item.id) ?? 0} loggedIn={Boolean(user)} />
+					<ItemCard item={item} bookmarked={bookmarkedItemIds.has(item.id)} bookmarkCount={item.bookmarks_count ?? 0} loggedIn={Boolean(user)} />
 				)) : activeTag ? (
 					<div class="empty">
 						このタグの記事はまだありません。<br />

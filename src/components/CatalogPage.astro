@@ -28,7 +28,6 @@ interface Props {
 		total: number;
 	};
 	bookmarkedItemIds?: Set<number>;
-	bookmarkCounts?: Map<number, number>;
 	loggedIn?: boolean;
 }
 
@@ -42,7 +41,6 @@ const {
 	filters,
 	pagination,
 	bookmarkedItemIds = new Set<number>(),
-	bookmarkCounts = new Map<number, number>(),
 	loggedIn = false,
 } = Astro.props as Props;
 
@@ -140,7 +138,7 @@ function toggleSource(sourceId: number) {
 					<ItemCard
 						item={item}
 						bookmarked={bookmarkedItemIds.has(item.id)}
-						bookmarkCount={bookmarkCounts.get(item.id) ?? 0}
+						bookmarkCount={item.bookmarks_count ?? 0}
 						loggedIn={loggedIn}
 						highlightTokens={highlightTokens}
 					/>
