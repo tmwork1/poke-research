@@ -1,7 +1,16 @@
 // Qiita API から記事を収集し、AI レビューとタグ同期を通して DB に反映する。
 // 収集条件や provenance も metadata に残して、再現できる形で保存する。
 import { buildTagLabels, reviewImportArticle } from './article-ai';
-import { fetchTopTagNames, mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
+import {
+	fetchTopTagNames,
+	mapWithConcurrency,
+	processImportItem,
+	stripHtml,
+	truncateBodyForStorage,
+	upsertItemByExternalUrl,
+	upsertSourceByOriginUrl,
+	type ImportItemOutcome,
+} from './common';
 import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
 
@@ -83,10 +92,14 @@ export function resolveQiitaSyncOptions(env: QiitaEnvDefaults, overrides: QiitaS
 	};
 }
 
+function extractBodyText(item: QiitaItem): string {
+	const body = item.rendered_body ?? item.body ?? '';
+	return stripHtml(body);
+}
+
 function createSummary(item: QiitaItem): string {
 	// 本文が取れない場合はタイトルだけでも最低限の説明になるようにする。
-	const body = item.rendered_body ?? item.body ?? '';
-	const text = stripHtml(body);
+	const text = extractBodyText(item);
 	if (!text) {
 		return item.title;
 	}
@@ -151,8 +164,7 @@ function createItemMetadata(item: QiitaItem, query: string, fetchedAt: string, a
 
 function createAiBodyExcerpt(item: QiitaItem): string {
 	// 長すぎる本文は OpenAI 送信用に切り詰めて、コストと応答の安定性を守る。
-	const body = item.rendered_body ?? item.body ?? '';
-	const text = stripHtml(body);
+	const text = extractBodyText(item);
 	return text.length > MAX_AI_BODY_CHARS ? text.slice(0, MAX_AI_BODY_CHARS) : text;
 }
 
@@ -255,6 +267,7 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 						updatedAt: item.updated_at,
 						metadata: createItemMetadata(item, query, fetchedAt, review),
 						version: item.updated_at,
+						body: truncateBodyForStorage(extractBodyText(item)),
 					},
 					review.tags.length > 0 ? review.tags : extractTags(item),
 				),

@@ -3,7 +3,16 @@
 // User-Agent を明示し、Zenn 同様に控えめな同時実行数で呼び出す。
 // 有料・メンバーシップ限定（プレビューのみ）の記事は本文を取得できないため収集対象外とする。
 import { reviewImportArticle } from './article-ai';
-import { fetchTopTagNames, mapWithConcurrency, processImportItem, stripHtml, upsertItemByExternalUrl, upsertSourceByOriginUrl, type ImportItemOutcome } from './common';
+import {
+	fetchTopTagNames,
+	mapWithConcurrency,
+	processImportItem,
+	stripHtml,
+	truncateBodyForStorage,
+	upsertItemByExternalUrl,
+	upsertSourceByOriginUrl,
+	type ImportItemOutcome,
+} from './common';
 import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
 
@@ -158,9 +167,13 @@ function extractTags(detail: NoteDetail): string[] {
 	];
 }
 
+function extractBodyText(detail: NoteDetail): string {
+	return stripHtml(detail.body ?? '');
+}
+
 function createAiBodyExcerpt(detail: NoteDetail): string {
 	// 長すぎる本文は OpenAI 送信用に切り詰めて、コストと応答の安定性を守る。
-	const text = stripHtml(detail.body ?? '');
+	const text = extractBodyText(detail);
 	return text.length > MAX_AI_BODY_CHARS ? text.slice(0, MAX_AI_BODY_CHARS) : text;
 }
 
@@ -243,6 +256,7 @@ async function processNoteKey(key: string, sourceId: number, query: string, fetc
 						updatedAt: null,
 						metadata: createItemMetadata(detail, query, fetchedAt, review),
 						version: detail.publish_at,
+						body: truncateBodyForStorage(extractBodyText(detail)),
 					},
 					review.tags.length > 0 ? review.tags : extractTags(detail),
 				),
