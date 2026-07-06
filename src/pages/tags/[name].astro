@@ -11,6 +11,9 @@ const tagName = decodeURIComponent(Astro.params.name ?? '');
 const tagLabel = formatTagLabel(tagName);
 const url = new URL(Astro.request.url);
 const page = parseOptionalPositiveInteger(url.searchParams.get('page')) ?? 1;
+const canonicalPath = `/tags/${encodeURIComponent(tagName)}`;
+// 2ページ目以降は一覧の内容が薄く、正規URLと重複しやすいためインデックス対象から外す。
+const noindex = page > 1;
 
 const user = Astro.locals.user;
 
@@ -26,6 +29,8 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 	title={`#${tagLabel} の記事一覧 | PokeResearch`}
 	description={`「${tagLabel}」タグが付いたポケモンプログラミング関連記事の一覧です。`}
 	loggedIn={Boolean(user)}
+	canonicalPath={canonicalPath}
+	noindex={noindex}
 >
 	<CatalogPage
 		title={`#${tagLabel} の記事一覧`}
