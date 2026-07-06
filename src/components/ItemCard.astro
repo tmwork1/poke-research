@@ -372,7 +372,6 @@ const showUpdatedBadge = Boolean(
 	}
 
 	.tag {
-		position: relative;
 		text-decoration: none;
 	}
 
@@ -382,11 +381,13 @@ const showUpdatedBadge = Boolean(
 		text-underline-offset: 3px;
 	}
 
-	.tag-popover {
-		position: absolute;
+	/* タグの子要素として重ねると、flexレイアウトやページのスクロール可能領域に影響し、
+	   ホバー中にタグ自体の位置がわずかにずれてホバーが解除されることがあった。
+	   トーストと同様に body 直下へ生成し、position: fixed で独立させることで、
+	   タグ側の位置に一切影響しないようにする（座標は JS で top/left に設定）。 */
+	:global(.tag-popover) {
+		position: fixed;
 		z-index: 100;
-		top: calc(100% + 6px);
-		left: 0;
 		width: max-content;
 		max-width: 260px;
 		padding: 10px 12px;
@@ -618,28 +619,48 @@ const showUpdatedBadge = Boolean(
 	}
 
 	let activeTagPopover: { el: HTMLDivElement; tag: HTMLElement } | null = null;
+	let closePopoverTimer: ReturnType<typeof setTimeout> | undefined;
 
 	function closeTagPopover() {
+		clearTimeout(closePopoverTimer);
 		if (!activeTagPopover) return;
 		activeTagPopover.el.remove();
 		activeTagPopover.tag.setAttribute('aria-expanded', 'false');
 		activeTagPopover = null;
 	}
 
+	// マウスがタグからポップオーバーへ移動する一瞬は「タグの外」に出るため、即座に閉じると
+	// ポップオーバーへ手が届く前に消えてしまう。閉じるまでに少し猶予を持たせ、その間に
+	// ポップオーバー自身へカーソルが入れば閉じる予約をキャンセルする。
+	function scheduleClosePopover() {
+		clearTimeout(closePopoverTimer);
+		closePopoverTimer = setTimeout(() => closeTagPopover(), 200);
+	}
+
+	function cancelClosePopover() {
+		clearTimeout(closePopoverTimer);
+	}
+
 	function openTagPopover(tag: HTMLElement, explanation: string) {
 		closeTagPopover();
+		const rect = tag.getBoundingClientRect();
 		const popover = document.createElement('div');
 		popover.className = 'tag-popover';
 		popover.setAttribute('role', 'tooltip');
 		popover.textContent = explanation;
-		tag.appendChild(popover);
+		popover.addEventListener('mouseenter', cancelClosePopover);
+		popover.addEventListener('mouseleave', scheduleClosePopover);
+		document.body.appendChild(popover);
+		popover.style.top = `${rect.bottom + 6}px`;
+		popover.style.left = `${rect.left}px`;
 		tag.setAttribute('aria-expanded', 'true');
 		activeTagPopover = { el: popover, tag };
 	}
 
 	document.addEventListener('click', (event) => {
 		if (!activeTagPopover) return;
-		if (activeTagPopover.tag.contains(event.target as Node)) return;
+		const target = event.target as Node;
+		if (activeTagPopover.tag.contains(target) || activeTagPopover.el.contains(target)) return;
 		closeTagPopover();
 	});
 
@@ -689,11 +710,12 @@ const showUpdatedBadge = Boolean(
 		let longPressFired = false;
 
 		el.addEventListener('mouseenter', () => {
+			if (activeTagPopover?.tag === el) cancelClosePopover();
 			hoverTimer = setTimeout(() => void showExplanationFor(el), HOVER_SHOW_DELAY_MS);
 		});
 		el.addEventListener('mouseleave', () => {
 			clearTimeout(hoverTimer);
-			if (activeTagPopover?.tag === el) closeTagPopover();
+			if (activeTagPopover?.tag === el) scheduleClosePopover();
 		});
 		el.addEventListener('focus', () => {
 			void showExplanationFor(el);
