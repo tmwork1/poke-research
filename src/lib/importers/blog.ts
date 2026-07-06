@@ -14,7 +14,7 @@ import {
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
 } from './common';
-import { EXCLUDED_BLOG_DOMAINS, POKEMON_KEYWORDS } from './keywords';
+import { EXCLUDED_BLOG_DOMAINS, KNOWN_BLOG_PLATFORMS, OTHER_BLOG_SOURCE, POKEMON_KEYWORDS } from './keywords';
 
 const DEFAULT_KIND = 'article';
 const MIN_BODY_CHARS = 200;
@@ -81,6 +81,14 @@ function isExcludedDomain(url: string): boolean {
 		return true;
 	}
 	return EXCLUDED_BLOG_DOMAINS.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+}
+
+// 有名どころのブログサービスはユーザーごとのサブドメインをまとめてサービス単位の source にし、
+// それ以外は共通の「その他」source にまとめる（ドメインごとに source が無限に増えるのを防ぐ）。
+function resolveBlogSource(hostname: string): { name: string; originUrl: string } {
+	const platform = KNOWN_BLOG_PLATFORMS.find((p) => hostname === p.domain || hostname.endsWith(`.${p.domain}`));
+	if (platform) return { name: platform.name, originUrl: `https://${platform.domain}/` };
+	return { name: OTHER_BLOG_SOURCE.name, originUrl: OTHER_BLOG_SOURCE.originUrl };
 }
 
 interface BlogCandidate {
@@ -275,11 +283,10 @@ async function fetchCandidatePage(url: string): Promise<Response> {
 	}
 }
 
-function createSourceMetadata(hostname: string, query: string, fetchedAt: string) {
+function createSourceMetadata(query: string, fetchedAt: string) {
 	return {
 		service: 'blog',
 		discovery: 'brave-search',
-		hostname,
 		collection: { query, fetched_at: fetchedAt },
 	};
 }
@@ -365,11 +372,12 @@ async function processBlogCandidate(candidate: BlogCandidate, fetchedAt: string,
 					bodyExcerpt: aiBodyExcerpt,
 				}),
 			async (review) => {
+				const blogSource = resolveBlogSource(hostname);
 				const source = await upsertSourceByOriginUrl({
-					name: extracted.ogSiteName || hostname,
+					name: blogSource.name,
 					type: 'blog',
-					originUrl: `https://${hostname}/`,
-					metadata: createSourceMetadata(hostname, candidate.query, fetchedAt),
+					originUrl: blogSource.originUrl,
+					metadata: createSourceMetadata(candidate.query, fetchedAt),
 				});
 
 				return upsertItemByExternalUrl(
