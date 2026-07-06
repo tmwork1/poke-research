@@ -17,6 +17,7 @@
 		"collect:check-links": "node ./scripts/collect/check-links.mjs",
 		"collect:backfill": "node ./scripts/collect/backfill.mjs",
 		"eval:collection": "node ./scripts/eval/eval-collection.mjs",
+		"eval:collection:blog": "node ./scripts/eval/eval-collection-blog.mjs",
 		"eval:search": "node ./scripts/eval/eval-search.mjs",
 		"eval:filter": "node ./scripts/eval/eval-filter.mjs",
 		"eval:tags": "node ./scripts/eval/eval-tags.mjs",
