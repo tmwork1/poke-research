@@ -1,18 +1,19 @@
 // 一覧・詳細表示向けに、items / sources / tags / annotations を組み合わせて読む。
-// 結合結果の形を UI 側で扱いやすい形へ正規化する責務もここに置く。
+// 結合結果の形を UI 側で扱いやすい形へ正規化する責務もここに置く（正規化の純粋関数自体は
+// node --test から読み込めるよう catalog-normalize.ts に分離している）。
 import { getSupabaseClient } from './supabase';
-import type { Annotation, Item, Source, Tag } from './db-types';
+import type { Annotation, Tag } from './db-types';
+import {
+	escapeIlikeToken,
+	normalizeItem,
+	tagUsageFromItems,
+	type CatalogItem,
+	type ItemDetail,
+	type ItemRow,
+	type TagUsage,
+} from './catalog-normalize';
 
-type CatalogSource = Pick<Source, 'id' | 'name' | 'type' | 'origin_url'>;
-
-export interface CatalogItem extends Item {
-	source?: CatalogSource | null;
-	tags: Tag[];
-}
-
-export interface ItemDetail extends CatalogItem {
-	annotations: Annotation[];
-}
+export type { CatalogItem, ItemDetail, TagUsage };
 
 export type SortOrder = 'asc' | 'desc';
 
@@ -38,21 +39,12 @@ const RELEVANCE_SUMMARY_WEIGHT = 1;
 // （本文は新規収集分にしか無く null のことも多いため、タイトル・要約より強くはしない）。
 const RELEVANCE_BODY_WEIGHT = 1;
 
-export interface TagUsage extends Tag {
-	count: number;
-}
-
 export interface CatalogItemsPage {
 	items: CatalogItem[];
 	total: number;
 	page: number;
 	pageSize: number;
 	totalPages: number;
-}
-
-interface ItemRow extends Item {
-	source?: CatalogSource | CatalogSource[] | null;
-	item_tags?: Array<{ tag?: Tag | Tag[] | null }>;
 }
 
 const ITEM_SELECT = `
@@ -86,45 +78,6 @@ const ITEM_SELECT = `
 // 関連度順ソートの本文スコアリングにのみ使う select。body は最大2万字と大きいため、
 // 通常の一覧表示（ITEM_SELECT）には含めず必要な時だけ追加取得する。
 const ITEM_SELECT_WITH_BODY = `${ITEM_SELECT},\n\tbody\n`;
-
-function normalizeSource(source: ItemRow['source']): CatalogSource | null {
-	if (!source) return null;
-	// Supabase の結合結果は単一オブジェクトか配列で返ることがあるため、
-	// 画面側が扱いやすい単一値に正規化する。
-	if (Array.isArray(source)) {
-		return (source[0] as CatalogSource | undefined) ?? null;
-	}
-	return source;
-}
-
-function normalizeTags(itemTags: ItemRow['item_tags']): Tag[] {
-	if (!Array.isArray(itemTags)) return [];
-	// 結合先の欠損や重複を吸収して、タグ一覧だけを安全に取り出す。
-	return itemTags.flatMap((entry) => {
-		const rawTag = entry?.tag;
-		if (!rawTag) return [];
-		if (Array.isArray(rawTag)) {
-			return rawTag.filter((tag): tag is Tag => Boolean(tag?.id && tag?.name));
-		}
-		return rawTag.id && rawTag.name ? [rawTag] : [];
-	});
-}
-
-function normalizeItem(row: ItemRow): CatalogItem {
-	const { source, item_tags, ...item } = row;
-	return {
-		...item,
-		source: normalizeSource(source),
-		tags: normalizeTags(item_tags),
-	};
-}
-
-function escapeIlikeToken(token: string): string {
-	// ILIKE のワイルドカード文字をエスケープしたうえで前後に % を付け、
-	// PostgREST のフィルタ構文で特別扱いされる , . ( ) を避けるため二重引用符で囲む。
-	const escapedWildcards = token.replace(/[\\%_]/g, (ch) => `\\${ch}`).replace(/"/g, '\\"');
-	return `"%${escapedWildcards}%"`;
-}
 
 export async function resolveItemIdsByTag(tagName: string): Promise<number[]> {
 	const supabase = await getSupabaseClient();
@@ -405,21 +358,6 @@ export async function fetchBookmarkedItems(userId: string): Promise<CatalogItem[
 
 const RECOMMENDATION_CANDIDATE_POOL = 100;
 const RECOMMENDATION_TAG_WEIGHT = 3;
-
-function tagUsageFromItems(items: CatalogItem[]): TagUsage[] {
-	const counts = new Map<number, TagUsage>();
-	for (const item of items) {
-		for (const tag of item.tags) {
-			const existing = counts.get(tag.id);
-			if (existing) {
-				existing.count += 1;
-			} else {
-				counts.set(tag.id, { id: tag.id, name: tag.name, count: 1 });
-			}
-		}
-	}
-	return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-}
 
 export interface BookmarkedItemsResult {
 	items: CatalogItem[];
