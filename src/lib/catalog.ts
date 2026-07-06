@@ -10,10 +10,11 @@ import {
 	type CatalogItem,
 	type ItemDetail,
 	type ItemRow,
+	type SourceUsage,
 	type TagUsage,
 } from './catalog-normalize';
 
-export type { CatalogItem, ItemDetail, TagUsage };
+export type { CatalogItem, ItemDetail, SourceUsage, TagUsage };
 
 export type SortOrder = 'asc' | 'desc';
 
@@ -103,11 +104,23 @@ export async function fetchCatalogTags(): Promise<Tag[]> {
 	return data ?? [];
 }
 
-export async function fetchCatalogSources(): Promise<Source[]> {
+export async function fetchCatalogSources(): Promise<SourceUsage[]> {
 	const supabase = await getSupabaseClient();
-	const { data, error } = await supabase.from('sources').select('*').order('created_at', { ascending: false });
+	const [{ data, error }, { data: counts, error: countsError }] = await Promise.all([
+		supabase.from('sources').select('*').order('created_at', { ascending: false }),
+		supabase.rpc('source_item_counts'),
+	]);
 	if (error) throw error;
-	return data ?? [];
+	if (countsError) throw countsError;
+
+	const countBySourceId = new Map<number, number>(
+		((counts ?? []) as Array<{ source_id: number; count: number | string }>).map((row) => [row.source_id, Number(row.count)]),
+	);
+
+	// ソースボタンは件数の多い順に並べる（同数はソース一覧の既定順=作成日時降順を維持）。
+	return (data ?? [])
+		.map((source) => ({ ...source, count: countBySourceId.get(source.id) ?? 0 }))
+		.sort((a, b) => b.count - a.count);
 }
 
 export async function fetchCatalogAnnotations(itemId?: number): Promise<Annotation[]> {

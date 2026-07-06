@@ -58,11 +58,7 @@ const showUpdatedBadge = Boolean(
 
 <article class="card" data-item-id={item.id}>
 	<div class="card-head">
-		{item.external_url ? (
-			<a class="item-title" href={item.external_url} target="_blank" rel="noreferrer">{titleSegments.map((seg) => (seg.hit ? <mark>{seg.text}</mark> : seg.text))}</a>
-		) : (
-			<p class="item-title">{titleSegments.map((seg) => (seg.hit ? <mark>{seg.text}</mark> : seg.text))}</p>
-		)}
+		<p class="item-title">{titleSegments.map((seg) => (seg.hit ? <mark>{seg.text}</mark> : seg.text))}</p>
 		<div class="card-actions">
 			{shareUrl ? (
 				<a
@@ -109,9 +105,9 @@ const showUpdatedBadge = Boolean(
 		{item.tags.length > 0 ? (
 			<div class="tag-list">
 				{item.tags.map((tag) => (
-					<span class="tag" data-tag-id={tag.id} tabindex="0" role="button" aria-expanded="false">
+					<a class="tag" data-tag-id={tag.id} href={`/tags/${encodeURIComponent(tag.name)}`} aria-expanded="false">
 						#{formatTagLabel(tag.name)}
-					</span>
+					</a>
 				))}
 			</div>
 		) : (
@@ -130,10 +126,14 @@ const showUpdatedBadge = Boolean(
 			) : null}
 		</div>
 	</div>
+	{item.external_url ? (
+		<a class="card-link" href={item.external_url} target="_blank" rel="noreferrer" aria-label={title}></a>
+	) : null}
 </article>
 
 <style>
 	.card {
+		position: relative;
 		display: grid;
 		gap: 14px;
 		padding: 22px;
@@ -143,6 +143,14 @@ const showUpdatedBadge = Boolean(
 		border: 1px solid var(--border);
 		background: var(--card-bg);
 		box-shadow: var(--shadow);
+	}
+
+	/* カード全体をクリック領域にする「stretched link」パターン。タグ・共有・ブックマークなど
+	   独自の操作を持つ要素は z-index を上げてこのリンクより手前に出し、クリックを奪われないようにする。 */
+	.card-link {
+		position: absolute;
+		inset: 0;
+		z-index: 1;
 	}
 
 	.card-head {
@@ -160,11 +168,9 @@ const showUpdatedBadge = Boolean(
 		color: var(--text);
 	}
 
-	a.item-title:hover {
-		color: var(--accent-dark);
-	}
-
 	.card-actions {
+		position: relative;
+		z-index: 2;
 		flex: none;
 		display: flex;
 		align-items: flex-start;
@@ -262,6 +268,8 @@ const showUpdatedBadge = Boolean(
 	}
 
 	.tag-list {
+		position: relative;
+		z-index: 2;
 		display: flex;
 		flex-wrap: wrap;
 		gap: 10px;
@@ -365,11 +373,11 @@ const showUpdatedBadge = Boolean(
 
 	.tag {
 		position: relative;
+		text-decoration: none;
 	}
 
-	/* 解説が登録済みのタグは、クリックで説明が読めることが分かるよう下線+ヘルプカーソルで示す。 */
+	/* 解説が登録済みのタグは、ホバー/長押しで説明が読めることを下線で示す（クリックはタグ検索へ遷移）。 */
 	.tag.has-explanation {
-		cursor: help;
 		text-decoration: underline dotted;
 		text-underline-offset: 3px;
 	}
@@ -539,7 +547,7 @@ const showUpdatedBadge = Boolean(
 		}
 	}
 
-	function bindTitleReadTracking(link: HTMLAnchorElement) {
+	function bindCardLinkReadTracking(link: HTMLAnchorElement) {
 		if (link.dataset.readBound === 'true') return;
 		link.dataset.readBound = 'true';
 
@@ -553,10 +561,11 @@ const showUpdatedBadge = Boolean(
 	}
 
 	document.querySelectorAll<HTMLElement>('.card[data-item-id]').forEach(applyReadState);
-	document.querySelectorAll<HTMLAnchorElement>('a.item-title').forEach(bindTitleReadTracking);
+	document.querySelectorAll<HTMLAnchorElement>('.card-link').forEach(bindCardLinkReadTracking);
 
 	// タグ解説: 画面上のタグを一括でバッチAPIに問い合わせ、キャッシュ済みの解説だけを先読みする。
-	// 未生成のタグはクリック時にオンデマンドで /api/tags/{id}/explain を叩く（AI生成を含むため遅い）。
+	// 未生成のタグはホバー/長押し時にオンデマンドで /api/tags/{id}/explain を叩く（AI生成を含むため遅い）。
+	// タグのクリック自体はタグ検索ページへの遷移（通常のリンク）に使うため、解説の表示はホバー/長押しに限定する。
 	type TagExplanation = { isDifficult: boolean; explanation: string | null };
 
 	const tagExplanationCache = new Map<string, TagExplanation>();
@@ -638,20 +647,12 @@ const showUpdatedBadge = Boolean(
 		if (event.key === 'Escape' && activeTagPopover) closeTagPopover();
 	});
 
-	async function handleTagActivate(tag: HTMLElement) {
-		const tagId = tag.dataset.tagId;
-		if (!tagId) return;
+	const HOVER_SHOW_DELAY_MS = 250;
+	const LONG_PRESS_MS = 500;
 
-		if (activeTagPopover?.tag === tag) {
-			closeTagPopover();
-			return;
-		}
-
+	async function loadTagExplanation(tagId: string): Promise<TagExplanation | null> {
 		const cached = tagExplanationCache.get(tagId);
-		if (cached) {
-			if (cached.isDifficult && cached.explanation) openTagPopover(tag, cached.explanation);
-			return;
-		}
+		if (cached) return cached;
 
 		if (!onDemandRequests.has(tagId)) {
 			const promise = fetch(`/api/tags/${tagId}/explain`)
@@ -662,25 +663,63 @@ const showUpdatedBadge = Boolean(
 		}
 		const result = await onDemandRequests.get(tagId)!;
 		onDemandRequests.delete(tagId);
-		if (!result) return;
-
-		tagExplanationCache.set(tagId, result);
-		batchCheckedTagIds.add(tagId);
-		applyExplanationHint(tag, result);
-		if (result.isDifficult && result.explanation) openTagPopover(tag, result.explanation);
+		if (result) {
+			tagExplanationCache.set(tagId, result);
+			batchCheckedTagIds.add(tagId);
+		}
+		return result;
 	}
 
+	async function showExplanationFor(tag: HTMLElement) {
+		const tagId = tag.dataset.tagId;
+		if (!tagId) return;
+		const result = await loadTagExplanation(tagId);
+		applyExplanationHint(tag, result ?? undefined);
+		if (result?.isDifficult && result.explanation) openTagPopover(tag, result.explanation);
+	}
+
+	// タグは通常のリンク（クリック=タグ検索へ遷移）。解説はホバー（デスクトップ）/長押し（タッチ）でのみ表示し、
+	// 長押しの直後に発火するクリックだけは遷移を止める（解説を見た直後に意図せず飛ばないように）。
 	function bindTagPopover(el: HTMLElement) {
 		if (el.dataset.popoverBound === 'true') return;
 		el.dataset.popoverBound = 'true';
 
-		el.addEventListener('click', () => {
-			void handleTagActivate(el);
+		let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+		let pressTimer: ReturnType<typeof setTimeout> | undefined;
+		let longPressFired = false;
+
+		el.addEventListener('mouseenter', () => {
+			hoverTimer = setTimeout(() => void showExplanationFor(el), HOVER_SHOW_DELAY_MS);
 		});
-		el.addEventListener('keydown', (event) => {
-			if (event.key === 'Enter' || event.key === ' ') {
+		el.addEventListener('mouseleave', () => {
+			clearTimeout(hoverTimer);
+			if (activeTagPopover?.tag === el) closeTagPopover();
+		});
+		el.addEventListener('focus', () => {
+			void showExplanationFor(el);
+		});
+		el.addEventListener('blur', () => {
+			if (activeTagPopover?.tag === el) closeTagPopover();
+		});
+
+		el.addEventListener(
+			'touchstart',
+			() => {
+				longPressFired = false;
+				pressTimer = setTimeout(() => {
+					longPressFired = true;
+					void showExplanationFor(el);
+				}, LONG_PRESS_MS);
+			},
+			{ passive: true },
+		);
+		el.addEventListener('touchend', () => clearTimeout(pressTimer));
+		el.addEventListener('touchmove', () => clearTimeout(pressTimer));
+
+		el.addEventListener('click', (event) => {
+			if (longPressFired) {
 				event.preventDefault();
-				void handleTagActivate(el);
+				longPressFired = false;
 			}
 		});
 	}
@@ -698,12 +737,12 @@ const showUpdatedBadge = Boolean(
 				if (node.matches('.tag[data-tag-id]')) bindTagPopover(node);
 				if (node.matches('.share-button')) bindShareButton(node as HTMLAnchorElement);
 				if (node.matches('.card[data-item-id]')) applyReadState(node);
-				if (node.matches('a.item-title')) bindTitleReadTracking(node as HTMLAnchorElement);
+				if (node.matches('.card-link')) bindCardLinkReadTracking(node as HTMLAnchorElement);
 				node.querySelectorAll<HTMLButtonElement>('.bookmark-toggle').forEach(bindBookmarkToggle);
 				node.querySelectorAll<HTMLElement>('.tag[data-tag-id]').forEach(bindTagPopover);
 				node.querySelectorAll<HTMLAnchorElement>('.share-button').forEach(bindShareButton);
 				node.querySelectorAll<HTMLElement>('.card[data-item-id]').forEach(applyReadState);
-				node.querySelectorAll<HTMLAnchorElement>('a.item-title').forEach(bindTitleReadTracking);
+				node.querySelectorAll<HTMLAnchorElement>('.card-link').forEach(bindCardLinkReadTracking);
 				newTagRoots.push(node);
 			}
 		}
