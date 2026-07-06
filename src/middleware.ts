@@ -4,9 +4,13 @@
 // これとは別レーンとして、Google ログイン（Supabase Auth）のセッションを
 // 全リクエストで locals.user に読み込み、/api/auth/** はこの保護の対象外、
 // /api/bookmarks はユーザーセッションの存在のみを要求する。
+// さらに、未ログインの GET ページには Cloudflare エッジ/共有キャッシュ向けの
+// Cache-Control を付与し、Supabase 読み負荷と TTFB を下げる（/api/** は対象外）。
 import { defineMiddleware } from 'astro:middleware';
+import type { APIContext } from 'astro';
 import { checkAdminAuth } from './lib/auth';
 import { getSessionUser } from './lib/user-session';
+import { mergeVaryHeader, resolveCacheDecision } from './lib/cache-policy';
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -23,6 +27,27 @@ function requiresAdminAuth(pathname: string, method: string): boolean {
   if (isAuthRoute(pathname) || requiresUserAuth(pathname)) return false;
   if (pathname.startsWith('/api/audit')) return true;
   return !READ_METHODS.has(method);
+}
+
+// /api/** は触らない。それ以外のページは、未ログイン（locals.user が null かつ
+// sb- プレフィックスの Supabase Auth Cookie を一切持たない）GET リクエストのみ
+// 共有キャッシュ用ヘッダを付与し、それ以外は private, no-store を明示する。
+function applyCacheControl(response: Response, context: APIContext): Response {
+  const { request, url, locals } = context;
+  if (url.pathname.startsWith('/api/')) return response;
+
+  const decision = resolveCacheDecision({
+    method: request.method,
+    pathname: url.pathname,
+    isLoggedIn: Boolean(locals.user),
+    cookieHeader: request.headers.get('cookie'),
+  });
+
+  response.headers.set('Cache-Control', decision.cacheControl);
+  if (decision.shared) {
+    response.headers.set('Vary', mergeVaryHeader(response.headers.get('Vary')));
+  }
+  return response;
 }
 
 export const onRequest = defineMiddleware(async (context, next) => {
@@ -45,7 +70,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   if (!requiresAdminAuth(url.pathname, request.method)) {
-    return next();
+    const response = await next();
+    return applyCacheControl(response, context);
   }
 
   const result = checkAdminAuth(request);
