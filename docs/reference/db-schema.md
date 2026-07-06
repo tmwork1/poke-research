@@ -17,7 +17,6 @@
 - `items`: 記事、ライブラリ、GitHub リポジトリ、論文、動画を横断管理する中核テーブル
 - `tags`: 分類用タグのマスターテーブル
 - `item_tags`: `items` と `tags` を結びつける中間テーブル
-- `item_relations`: アイテム同士の関係を表す知識グラフ用テーブル
 - `annotations`: AI 要約や補足メタデータなどの注釈
 
 ## 設計方針
@@ -25,7 +24,6 @@
 - `items` は種類ごとに分けすぎず、共通項目を持つ汎用テーブルとして扱う
 - 種別の差分は `kind` と `metadata` で表現する
 - タグ名そのものは `tags` に集約し、各アイテムへの付与は `item_tags` で表現する
-- 関連性は `item_relations` で表し、後から知識グラフを拡張しやすくする
 - AI 要約や分類結果は `annotations` に寄せ、元データと分離する
 
 ## 補足
@@ -54,4 +52,3 @@ supabase db query < db/schema/001_initial.sql
 ## 次の作業候補
 
 - `.env.example` と Supabase 接続設定の整備
-- `item_relations` を使う関連表示の実装

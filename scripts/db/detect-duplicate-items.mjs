@@ -1,14 +1,13 @@
-// 同一記事のクロスポスト（Qiita / Zenn / 個人ブログ等）を検出し、item_relations に
-// 「same-content」として記録する。既定はドライラン（候補表示のみ）で、--apply で書き込む。
+// 同一記事のクロスポスト（Qiita / Zenn / 個人ブログ等）の候補を検出して一覧表示する。
+// 判定結果はDBに保存しない（都度 items から再計算する使い捨てのレビュー用ツール）。
 //
 // 検出条件:
 //   1) 正規化 URL（プロトコル・www・クエリ・末尾スラッシュを除去）が一致
 //   2) 正規化タイトル（空白・記号除去・小文字化）が一致、または編集距離が長さの1割以下
 //
-// 使い方: node --env-file=.env scripts/db/detect-duplicate-items.mjs [--apply]
+// 使い方: node --env-file=.env scripts/db/detect-duplicate-items.mjs
 import { createClient } from '@supabase/supabase-js';
 
-const apply = process.argv.includes('--apply');
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SECRET_KEY;
 if (!url || !key) {
@@ -96,24 +95,7 @@ async function main() {
   for (const pair of pairs) {
     console.log(`[${pair.reason}] #${pair.from.id} "${pair.from.title}" <-> #${pair.to.id} "${pair.to.title}"`);
   }
-
-  if (!apply) {
-    console.log(`\n${pairs.length} 組の候補。書き込むには --apply を付けて再実行してください。`);
-    return;
-  }
-
-  let inserted = 0;
-  for (const pair of pairs) {
-    const { error: insertError } = await supabase.from('item_relations').insert({
-      from_item_id: Math.min(pair.from.id, pair.to.id),
-      to_item_id: Math.max(pair.from.id, pair.to.id),
-      relation_type: 'same-content',
-      provenance: { source: 'scripts/db/detect-duplicate-items.mjs', reason: pair.reason, detected_at: new Date().toISOString() },
-    });
-    if (insertError && insertError.code !== '23505') throw insertError; // 既存関係は冪等にスキップ
-    if (!insertError) inserted += 1;
-  }
-  console.log(`item_relations へ ${inserted} 件登録しました（既存はスキップ）。`);
+  console.log(`\n${pairs.length} 組の候補。`);
 }
 
 main().catch((e) => { console.error(e); process.exit(9); });

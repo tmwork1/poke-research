@@ -19,7 +19,6 @@
 ## データモデルの方針
 - `items` は汎用テーブルとして扱う。
 - 種別の差分は `kind` と `metadata` で表現する。
-- 関連性は `item_relations` で表す。
 - AI 要約や分類結果は `annotations` に寄せる。
 
 ## マイルストーン
