@@ -103,8 +103,7 @@
   どのページ・タグ・検索語が使われているか計測手段が無い。プライバシー配慮型（Cloudflare Web Analytics 等）を入れ、改善の優先度判断に使う。
 - [保留] **E2Eテストの整備**（優先度: 中 / 工数: 大）
   検索 → 絞り込み → カードから外部遷移、ログイン → ブックマーク追加/削除 の主要フローを Playwright で自動化し、CI に組み込む（CI修復が前提）。
-- [ ] **catalog.ts のユニットテスト**（優先度: 低 / 工数: 中）
-  正規化（normalizeItem 等）・URL構築・ソート分岐はDBなしでテスト可能。回帰防止として最低限を書く。
+- [x] **catalog.ts のユニットテスト**（優先度: 低 / 工数: 中）— 2026-07-06 実装。`normalizeItem`/`escapeIlikeToken`/`tagUsageFromItems` 等のDB非依存な正規化処理を `catalog-normalize.ts` に分離し（`cloudflare:workers` を静的importする `supabase.ts` に依存しないため node --test から読み込める）、`tests/catalog-normalize.test.ts` を追加。
 - [ ] **死活監視**（優先度: 低 / 工数: 小）
   外形監視（UptimeRobot 等）でトップと `/api/items` を監視し、Cloudflare / Supabase 障害に気づけるようにする。
 
