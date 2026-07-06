@@ -517,19 +517,3 @@ export async function fetchRelatedItems(
 
 	return items.slice(0, limit);
 }
-
-export async function fetchCatalogOverview() {
-	const [items, tags, sources, annotations] = await Promise.all([
-		fetchCatalogItems({ limit: 6 }),
-		fetchCatalogTags(),
-		fetchCatalogSources(),
-		fetchCatalogAnnotations(),
-	]);
-
-	return {
-		items,
-		tags,
-		sources,
-		annotations,
-	};
-}
