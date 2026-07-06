@@ -11,6 +11,11 @@
 // 対象を絞る場合は BACKFILL_TARGETS=qiita,zenn のようにカンマ区切りで指定する。
 // OpenAI 課金と各 API のレートリミットに注意し、本番実行はユーザー確認を得てから行う。
 
+// 1リクエストで数百件のAIレビューを待つため、undici 既定の5分ヘッダタイムアウトを無効化する
+//（undici は vite 経由で node_modules に存在する transitive 依存）。
+import { Agent, setGlobalDispatcher } from 'undici';
+setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
+
 const baseUrl = (process.env.IMPORT_BASE_URL || 'http://localhost:4321').replace(/\/$/, '');
 const targets = (process.env.BACKFILL_TARGETS || 'qiita,zenn,note,blog').split(',').map((t) => t.trim());
 
