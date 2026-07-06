@@ -6,12 +6,9 @@ export interface AlertEnv {
 	ALERT_WEBHOOK_URL?: string;
 }
 
-export async function sendOperationalAlert(env: AlertEnv, title: string, error: unknown): Promise<void> {
+async function postToWebhook(env: AlertEnv, message: string): Promise<void> {
 	const webhookUrl = env.ALERT_WEBHOOK_URL?.trim();
 	if (!webhookUrl) return;
-
-	const detail = error instanceof Error ? `${error.message}` : String(error);
-	const message = `⚠️ [poke-research] ${title}\n${detail.slice(0, 1500)}`;
 
 	const isDiscord = webhookUrl.includes('discord.com/api/webhooks');
 	const payload = isDiscord ? { content: message } : { text: message };
@@ -29,4 +26,14 @@ export async function sendOperationalAlert(env: AlertEnv, title: string, error: 
 		// 通知自体の失敗でジョブの後始末を壊さない。ログにだけ残す。
 		console.error('[notify] failed to send alert', notifyError);
 	}
+}
+
+export async function sendOperationalAlert(env: AlertEnv, title: string, error: unknown): Promise<void> {
+	const detail = error instanceof Error ? `${error.message}` : String(error);
+	await postToWebhook(env, `⚠️ [poke-research] ${title}\n${detail.slice(0, 1500)}`);
+}
+
+// エラーではない定期レポート（週次DBレビューなど）用。⚠️ではなく📋を付け、アラートと区別する。
+export async function sendMaintenanceReport(env: AlertEnv, title: string, body: string): Promise<void> {
+	await postToWebhook(env, `📋 [poke-research] ${title}\n${body.slice(0, 1500)}`);
 }

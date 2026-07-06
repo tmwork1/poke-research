@@ -3,7 +3,7 @@
 import { handle } from '@astrojs/cloudflare/handler';
 import { env } from 'cloudflare:workers';
 
-import { sendOperationalAlert } from './lib/notify';
+import { sendMaintenanceReport, sendOperationalAlert } from './lib/notify';
 import { runAndRecord } from './lib/import-runs';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
 import { resolveHatenaSyncOptions, syncHatenaCollection } from './lib/importers/hatena';
@@ -11,8 +11,10 @@ import { checkLinks, resolveLinkCheckOptions } from './lib/importers/link-check'
 import { resolveNoteSyncOptions, syncNoteCollection } from './lib/importers/note';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
 import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
+import { formatWeeklyReviewMessage, runWeeklyReview } from './lib/maintenance-review';
 
 // wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
+const WEEKLY_REVIEW_CRON = '30 20 * * 1';
 const ZENN_CRON = '30 21 * * *';
 const NOTE_CRON = '0 22 * * *';
 const BLOG_CRON = '30 22 * * *';
@@ -24,7 +26,9 @@ export default {
 		return handle(request, ctxEnv, ctx);
 	},
 	async scheduled(controller, _ctxEnv, ctx) {
-		if (controller.cron === ZENN_CRON) {
+		if (controller.cron === WEEKLY_REVIEW_CRON) {
+			ctx.waitUntil(runScheduledWeeklyReview());
+		} else if (controller.cron === ZENN_CRON) {
 			ctx.waitUntil(runScheduledZennImport());
 		} else if (controller.cron === NOTE_CRON) {
 			ctx.waitUntil(runScheduledNoteImport());
@@ -39,6 +43,23 @@ export default {
 		}
 	},
 } satisfies ExportedHandler<Env>;
+
+async function runScheduledWeeklyReview(): Promise<void> {
+	// items/sources の重複候補を検出するだけの読み取り専用ジョブ（DBは書き換えない）。
+	// 統合が必要な候補は merge-item.mjs / merge-source.mjs を人手で確認して実行する。
+	try {
+		const result = await runWeeklyReview();
+		const message = formatWeeklyReviewMessage(result);
+		console.log('[cron:weekly-review] review completed', {
+			itemCandidates: result.itemCandidates.length,
+			sourceCandidates: result.sourceCandidates.length,
+		});
+		await sendMaintenanceReport(env, '週次DBレビュー', message);
+	} catch (error) {
+		console.error('[cron:weekly-review] review failed', error);
+		await sendOperationalAlert(env, '週次DBレビューが失敗しました', error);
+	}
+}
 
 async function runScheduledQiitaImport(): Promise<void> {
 	// 記事単位の失敗は syncQiitaCollection 内で skipped として吸収されるため、
