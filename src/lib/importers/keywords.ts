@@ -68,8 +68,9 @@ export const KNOWN_BLOG_PLATFORMS = [
 	{ domain: 'medium.com', name: 'Medium' },
 ] as const;
 
-// 上記に無いドメインの個人ブログをまとめて受け止める共通 source。
+// 上記に無いドメインをまとめて受け止める共通 source。
+// 個人ブログに限らず Stack Overflow・企業テックブログ等も混ざるため、名称は「その他」とする。
 export const OTHER_BLOG_SOURCE = {
-	name: 'その他の個人ブログ',
+	name: 'その他',
 	originUrl: 'https://other-blogs.poke-research.invalid/',
 } as const;
