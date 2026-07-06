@@ -46,6 +46,19 @@ async function main() {
 		const singleUse = rows.filter((row) => Number(row.usage_count) === 1);
 		console.log(`\n=== 使用1件のみのタグ (${singleUse.length}/${rows.length}件、ノイズ候補) ===`);
 		console.log(singleUse.map((row) => row.name).join(', '));
+
+		// 上記クエリは tags と item_tags の INNER JOIN のため、使用件数0件のタグ
+		// （merge-tag.mjs 統合後の残骸や、作成されたが一度も付与されなかったタグ）が
+		// 一覧に出てこない。LEFT JOIN で全タグを対象に取り直し、削除候補として別掲する。
+		const { rows: unusedRows } = await client.query(`
+			SELECT t.id, t.name
+			FROM tags t
+			LEFT JOIN item_tags it ON it.tag_id = t.id
+			WHERE it.tag_id IS NULL
+			ORDER BY t.name ASC
+		`);
+		console.log(`\n=== 使用0件のタグ (${unusedRows.length}件、削除候補) ===`);
+		console.log(unusedRows.map((row) => row.name).join(', '));
 	} finally {
 		await client.end();
 	}

@@ -9,11 +9,15 @@ items には `scripts/db/detect-duplicate-items.mjs`（URL正規化+タイトル
 - `scripts/db/detect-duplicate-sources.mjs` を新設し、`origin_url` の正規化一致・`name` の類似度で候補を出す（`detect-duplicate-items.mjs` の正規化ロジックを流用可能）。
 - 統合は `merge-tag.mjs` と同様のパターン（items の `source_id` を付け替えてから重複 source を削除）で `scripts/db/merge-source.mjs` を用意する。
 
+（2026-07-06 追記: `scripts/db/detect-duplicate-sources.mjs`（読み取り専用）と `scripts/db/merge-source.mjs <from-id> <to-id>`（`--dry-run` 対応、`merge-tag.mjs` と同じ付け替え→削除パターンで冪等）を実装済み。本番 sources に対して `detect-duplicate-sources.mjs` を実行し重複候補0件を確認、`merge-source.mjs` は既存の source ペアで `--dry-run` のみ実行し書き込みパスは未実行のまま動作を確認した。）
+
 ## 2. `eval-tags.mjs` が使用0件のタグを検出しない（優先度: 中 / 工数: 小）
 
 現行クエリは `tags` と `item_tags` の INNER JOIN のため、**使用件数0件のタグ（`merge-tag.mjs` 統合後の残骸や、作成されたが一度も付与されなかったタグ）が一覧に出てこない**。ノイズタグの後始末がここで漏れる。
 
 - `eval-tags.mjs` に LEFT JOIN + `usage_count = 0` の別セクションを追加し、削除候補として一覧表示する（削除自体は既存の手動SQL運用のままでよい）。
+
+（2026-07-06 追記: `eval-tags.mjs` に LEFT JOIN による「使用0件のタグ」セクションを追加済み。本番実行で確認したところ本番には使用0件のタグは0件だった（既存セクションの出力は変化なし）。）
 
 ## 3. 重複items検出が「検出止まり」で運用ループに乗っていない（優先度: 中 / 工数: 小〜中）
 
@@ -37,8 +41,12 @@ items には `scripts/db/detect-duplicate-items.mjs`（URL正規化+タイトル
 
 items/sources/tags と異なり、annotations（`GET/POST /api/annotations`）には内容を一覧して精査するスクリプトが無い。件数が増えてきたら `scripts/eval/eval-annotations.mjs`（記事タイトルと紐付けて一覧出力するだけの読み取り専用スクリプト）を追加する。
 
+（2026-07-06 追記: `scripts/eval/eval-annotations.mjs` を実装済み。本番実行では annotations 0件のため一覧は空だった（機能自体は正常に動作を確認）。）
+
 ## 6. リンク切れ確定後の目視レビュー導線が無い（優先度: 低 / 工数: 小）
 
 `link-check.ts` は2回連続到達不能で `link_status='broken'` を確定させ誤検知を抑制しているが、**確定後に「本当に切れているか」を人が見返す定期導線が無い**。一時的なサイト側障害やUser-Agentブロックを恒久的なリンク切れと誤認したままになる可能性がある。
 
 - `scripts/eval/eval-broken-links.mjs`（`link_status='broken'` のitemを `link_broken_since` の古い順に一覧出力するだけ）を追加し、`eval:all` とは別に月次程度で目視確認する運用にする。
+
+（2026-07-06 追記: `scripts/eval/eval-broken-links.mjs` を実装済み。本番実行では broken 判定の item 0件のため一覧は空だった（機能自体は正常に動作を確認）。）
