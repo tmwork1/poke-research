@@ -28,7 +28,8 @@
 | `scripts/collect/collect-zenn.mjs` | `npm run collect:zenn` | Zenn収集。`ZENN_TOPIC`/`ZENN_PAGES`。 | OpenAI（新規記事のAIレビュー） |
 | `scripts/collect/collect-note.mjs` | `npm run collect:note` | note収集。`NOTE_QUERY`/`NOTE_PAGES`。 | OpenAI（新規記事のAIレビュー） |
 | `scripts/collect/collect-blog.mjs` | `npm run collect:blog` | Brave Search経由の個人ブログ収集。`BLOG_QUERY`/`BRAVE_COUNT`/`BLOG_PAGES`。Brave無料枠（月1000件）に注意。 | OpenAI + Brave |
-| `scripts/collect/backfill.mjs` | `npm run collect:backfill` | qiita/zenn/note/blogをまとめて広めの範囲で一括収集する。対象は`BACKFILL_TARGETS`（既定`qiita,zenn,note,blog`）で絞れる。本番実行はレートリミット・OpenAI課金に注意しユーザー確認の上で行う。 | OpenAI + Brave（一括収集のため件数大） |
+| `scripts/collect/collect-hatena.mjs` | `npm run collect:hatena` | はてなブックマーク検索RSS経由の記事収集。`HATENA_KEYWORD`/`HATENA_MAX_CANDIDATES`。全ウェブ横断検索のため収集精度が低いことが判明済み（[docs/progress/2026-07-07.md](../progress/2026-07-07.md)）、AIレビューを安全網として運用する方針。既定の`BACKFILL_TARGETS`には含まれない。 | OpenAI |
+| `scripts/collect/backfill.mjs` | `npm run collect:backfill` | qiita/zenn/note/blogをまとめて広めの範囲で一括収集する。対象は`BACKFILL_TARGETS`（既定`qiita,zenn,note,blog`、`hatena`は明示指定時のみ対象）で絞れる。本番実行はレートリミット・OpenAI課金に注意しユーザー確認の上で行う。 | OpenAI + Brave（一括収集のため件数大） |
 | `scripts/collect/check-links.mjs` | `npm run collect:check-links` | リンク切れ検出ジョブを手動起動。`LINK_CHECK_BATCH_LIMIT`/`LINK_CHECK_CONCURRENCY`/`LINK_CHECK_RECHECK_DAYS`。 | なし |
 
 ## 3. 評価ループ（試行→評価→修正）
@@ -40,6 +41,7 @@
 | `scripts/eval/eval-all.mjs` | `npm run eval:all`（`-- --with-blog` で blog も追加） | 下記4本（collection/filter/tags/search）に加え、`scripts/db/detect-duplicate-items.mjs`（重複items検出）も含めた計5本をまとめて1コマンドで実行するオーケストレーター。`eval:search`用の開発サーバーが未起動なら自動起動し、このスクリプト自身が起動した場合に限り終了時に停止する。 | なし（`--with-blog` 時のみ Brave） |
 | `scripts/eval/eval-collection.mjs` | `npm run eval:collection` | 収集クエリ精度: Qiita/Zenn/noteの生検索結果（AIレビュー前）のタイトル一覧を出す。DB・サーバー不要。 | なし |
 | `scripts/eval/eval-collection-blog.mjs` | `npm run eval:collection:blog` | 収集クエリ精度（ブログ）: Brave Searchの生検索結果を出す。`BRAVE_API_KEY`必須、無料枠を消費するため`eval:all`の既定実行には含めない。 | Brave |
+| `scripts/eval/eval-collection-hatena.mjs` | `npm run eval:collection:hatena` | 収集クエリ精度（はてなブックマーク）: 検索RSSの生結果を出す。DB・APIキー不要。robots.txtのCrawl-delay(5秒)に従いキーワード間で待機する。 | なし |
 | `scripts/eval/eval-filter.mjs` | `npm run eval:filter` | フィルタ精度: 現在のAI取り込みプロンプトと、収集済み記事（採用分）のtitle/summary/tags/AI採否理由を並べて出す。加えて、AIに棄却された記事（案A、migrations/018で`ai_accepted=false`付きのまま`items`に保存されるようになった記事）も「偽陰性候補」セクションとしてtitle/external_url/棄却理由/AI要約を新しい順に別掲し、誤棄却でないかをレビューできるようにする。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-tags.mjs` | `npm run eval:tags` | タグ精度: タグごとの使用件数とサンプル記事タイトルを出す。使用1件のみのタグ（ノイズ候補）に加え、`tags`と`item_tags`のLEFT JOINで使用0件のタグ（統合後の残骸等）も削除候補として別掲する。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-search.mjs` | `npm run eval:search` | 検索精度: 起動中サーバー（`EVAL_BASE_URL`、既定`http://localhost:4321`）に代表的な検索クエリを投げ、ヒット件数とタイトルを出す。 | なし |

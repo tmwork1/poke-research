@@ -3,7 +3,7 @@
 // Claude Codeが各セクションの出力を読んで行う（このスクリプトは呼び出しをまとめるだけ）。
 //
 // 使い方:
-//   npm run eval:all              # collection(qiita/zenn/note) / filter / tags / search / 重複items検出
+//   npm run eval:all              # collection(qiita/zenn/note/はてなブックマーク) / filter / tags / search / 重複items検出
 //   npm run eval:all -- --with-blog   # 上記に加えて Brave収集(ブログ)も評価する
 //
 // 注意: --with-blog は Brave Search の無料枠（月1000件≒1日30件）を消費するため既定では実行しない。
@@ -71,6 +71,7 @@ async function ensureServer() {
 
 async function main() {
   run('収集クエリ精度 (Qiita/Zenn/note)', './scripts/eval/eval-collection.mjs');
+  run('収集クエリ精度 (はてなブックマーク)', './scripts/eval/eval-collection-hatena.mjs');
 
   if (withBlog) {
     if (process.env.BRAVE_API_KEY) {
