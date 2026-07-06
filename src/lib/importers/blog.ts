@@ -53,8 +53,10 @@ export interface BlogEnvDefaults {
 }
 
 // Brave Search の無料枠は月1000件（≒1日30件）が上限。cron は1日1回のため、
-// 既定は「クエリ数(POKEMON_KEYWORDS=2) × pages ≒ 30件/日」に収まるよう pages=15 とする。
-const DEFAULT_PAGES = 15;
+// 既定は「クエリ数(POKEMON_KEYWORDS=6) × pages ≒ 30件/日」に収まるよう pages=5 とする。
+// また Brave の offset は「ページ番号」で最大9（=10ページ目まで）という API 制約がある。
+const DEFAULT_PAGES = 5;
+const BRAVE_MAX_PAGE_OFFSET = 9;
 
 export function resolveBlogSyncOptions(env: BlogEnvDefaults, overrides: BlogSyncOptions = {}): Required<BlogSyncOptions> {
 	return {
@@ -105,7 +107,11 @@ async function discoverCandidates(queries: string[], count: number, offset: numb
 
 	for (const keyword of queries) {
 		for (let page = 0; page < pages; page += 1) {
-			const results: BraveWebResult[] = await braveWebSearch(buildSearchQuery(keyword), { count, offset: offset + page * count });
+			// Brave の offset は「結果件数」ではなく「ページ番号」（0〜9）。範囲外を要求すると
+			// 422 が返りジョブ全体が落ちるため、上限に達したらそのキーワードは打ち切る。
+			const pageOffset = offset + page;
+			if (pageOffset > BRAVE_MAX_PAGE_OFFSET) break;
+			const results: BraveWebResult[] = await braveWebSearch(buildSearchQuery(keyword), { count, offset: pageOffset });
 			requestsUsed += 1;
 
 			for (const result of results) {
