@@ -4,18 +4,31 @@ import { formatTagLabel } from '../lib/tag-display';
 
 interface Props {
 	topTags: TagUsage[];
-	activeTag: string;
-	buildUrl: (overrides: { tag: string }) => string;
+	/** 現在アクティブなタグ名の一覧（単一選択の画面は0〜1件で渡す）。 */
+	activeTags: string[];
+	/** 選択後のタグ集合から遷移先URLを組み立てる。 */
+	buildTagsUrl: (tags: string[]) => string;
+	/** true なら複数タグの AND 選択（クリックでトグル）。false なら単一選択。 */
+	multiSelect?: boolean;
 }
 
-const { topTags, activeTag, buildUrl } = Astro.props as Props;
+const { topTags, activeTags, buildTagsUrl, multiSelect = false } = Astro.props as Props;
+
+function toggledTags(tagName: string): string[] {
+	if (!multiSelect) {
+		return activeTags.includes(tagName) ? [] : [tagName];
+	}
+	return activeTags.includes(tagName)
+		? activeTags.filter((name) => name !== tagName)
+		: [...activeTags, tagName];
+}
 ---
 
 {topTags.length > 0 ? (
 	<div class="tag-cloud" aria-label="よく使われるタグ">
-		<a class={`chip ${!activeTag ? 'active' : ''}`} href={buildUrl({ tag: '' })}>すべて</a>
+		<a class={`chip ${activeTags.length === 0 ? 'active' : ''}`} href={buildTagsUrl([])}>すべて</a>
 		{topTags.map((tag) => (
-			<a class={`chip ${activeTag === tag.name ? 'active' : ''}`} href={buildUrl({ tag: tag.name })}>
+			<a class={`chip ${activeTags.includes(tag.name) ? 'active' : ''}`} href={buildTagsUrl(toggledTags(tag.name))}>
 				{formatTagLabel(tag.name)} <span class="chip-count">{tag.count}</span>
 			</a>
 		))}

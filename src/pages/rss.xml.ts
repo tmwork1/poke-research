@@ -16,8 +16,10 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
-export async function GET() {
-  const items = await fetchCatalogItems({ limit: FEED_ITEM_LIMIT });
+export async function GET({ request }: { request: Request }) {
+  // ?tag=xxx で特定タグの新着だけを購読できるようにする。
+  const tag = new URL(request.url).searchParams.get('tag')?.trim() || undefined;
+  const items = await fetchCatalogItems({ tag, limit: FEED_ITEM_LIMIT });
 
   const entries = items
     .map((item) => {
@@ -37,9 +39,9 @@ export async function GET() {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>PokeResearch 新着アイテム</title>
+    <title>PokeResearch 新着アイテム${tag ? `（#${escapeXml(tag)}）` : ''}</title>
     <link>${SITE_URL}</link>
-    <description>ポケモンプログラミング情報ハブの新着アイテム</description>
+    <description>ポケモンプログラミング情報ハブの新着アイテム${tag ? `（タグ: ${escapeXml(tag)}）` : ''}</description>
     <language>ja</language>${entries}
   </channel>
 </rss>`;

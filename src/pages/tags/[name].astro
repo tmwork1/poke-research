@@ -35,7 +35,7 @@ const bookmarkCounts = await fetchBookmarkCounts(itemsPage.items.map((item) => i
 		items={itemsPage.items}
 		topTags={topTags}
 		sources={sources}
-		filters={{ q: '', tag: tagName, sourceIds: [], sort: 'new' }}
+		filters={{ q: '', tags: [tagName], sourceIds: [], sort: 'new' }}
 		pagination={{ page: itemsPage.page, totalPages: itemsPage.totalPages, total: itemsPage.total }}
 		bookmarkedItemIds={bookmarkedItemIds}
 		bookmarkCounts={bookmarkCounts}

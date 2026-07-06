@@ -26,7 +26,8 @@ const since = period ? new Date(Date.now() - PERIOD_DAYS[period] * 24 * 60 * 60 
 
 const filters = {
 	q: url.searchParams.get('q') ?? '',
-	tag: url.searchParams.get('tag') ?? '',
+	// ?tag=a&tag=b の複数指定を AND 条件として受ける。
+	tags: url.searchParams.getAll('tag').map((tag) => tag.trim()).filter((tag) => tag.length > 0),
 	sourceIds,
 	sort,
 	period,
@@ -38,7 +39,7 @@ const user = Astro.locals.user;
 const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 	fetchCatalogItemsPage({
 		q: filters.q || undefined,
-		tag: filters.tag || undefined,
+		tags: filters.tags.length > 0 ? filters.tags : undefined,
 		sourceIds: filters.sourceIds.length > 0 ? filters.sourceIds : undefined,
 		since,
 		sort: filters.sort,
