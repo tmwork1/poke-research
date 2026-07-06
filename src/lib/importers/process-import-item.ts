@@ -17,11 +17,26 @@ export interface ImportItemOutcome {
 	reason?: string;
 }
 
+/**
+ * 一度採用され公開中の記事（既存行 ai_accepted=true）を、収集ジョブの再レビューが棄却に
+ * 反転しても ai_accepted=false へ格下げすべきでないか判定する（true なら書き込みを行わない）。
+ * Qiita/Zenn/note は毎回の収集で既存記事も再レビューするため、境界記事では判定が揺れうる。
+ * ここで格下げを許すと公開記事が収集のたびに一覧から見えたり消えたりするので、
+ * retag-existing-items.mjs の「不採用判定になった場合は自動削除せず警告のみ」方針と揃えて
+ * 保存自体をスキップする（metadata.ai.accepted=false だけ書くと eval-filter の
+ * 採用分/偽陰性セクションの判定と ai_accepted 列が食い違うため、部分的な書き込みも不可）。
+ * existingAiAccepted が undefined の場合は DEFAULT true（migrations/018）として扱い格下げしない。
+ */
+export function shouldPreserveAcceptedItem(existingAiAccepted: boolean | undefined, incomingAiAccepted: boolean): boolean {
+	if (incomingAiAccepted) return false;
+	return existingAiAccepted !== false;
+}
+
 export async function processImportItem<TReview extends ImportReviewOutcome>(
 	externalUrl: string,
 	title: string,
 	review: () => Promise<TReview>,
-	upsert: (review: TReview) => Promise<{ id: number; action: 'inserted' | 'updated' }>,
+	upsert: (review: TReview) => Promise<{ id: number; action: 'inserted' | 'updated' | 'skipped' }>,
 ): Promise<ImportItemOutcome> {
 	// 1件の失敗がバッチ全体を止めないよう、記事単位で例外を吸収して skipped として積む。
 	// review() が例外を投げた場合（AI呼び出し失敗など）は結果が無く保存しようがないため、
@@ -32,6 +47,9 @@ export async function processImportItem<TReview extends ImportReviewOutcome>(
 		// 従来どおり 'skipped' のままにして、消費側（collectスクリプトの出力・/api/import/*の
 		// レスポンス・import_runsのサマリー集計）の後方互換を保つ。upsert 側で
 		// ai_accepted=false とタグ同期スキップを担う（各インポーターの upsert 実装を参照）。
+		// なお、一度採用され公開中の既存記事への棄却レビューは upsert 側
+		// （shouldPreserveAcceptedItem）が書き込み自体をスキップして action='skipped' を返すが、
+		// ここでの outcome は棄却時どのみち 'skipped' + reason なので区別せずそのまま扱える。
 		const upserted = await upsert(result);
 		if (!result.accepted) {
 			return { id: upserted.id, action: 'skipped', externalUrl, title, reason: result.reason };

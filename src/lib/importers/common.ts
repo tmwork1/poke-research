@@ -1,6 +1,7 @@
 // 複数の収集元（Qiita/Zenn/...）で共通する DB 書き込み・並列実行処理をまとめる。
 // ソース固有のフィールドマッピングは各インポーター側に残し、ここでは汎用部分だけを扱う。
 import { normalizeTagName } from './article-ai';
+import { shouldPreserveAcceptedItem } from './process-import-item';
 import { getSupabaseClient } from '../supabase';
 
 // 本文は検索対象を広げるために保存するが、行が肥大化しないよう妥当な長さで切り詰める。
@@ -239,17 +240,27 @@ export async function upsertItemByExternalUrl(
 	tags: string[],
 	tagLabels: Record<string, string> = {},
 	options: UpsertItemOptions = {},
-): Promise<{ id: number; action: 'inserted' | 'updated' }> {
+): Promise<{ id: number; action: 'inserted' | 'updated' | 'skipped' }> {
 	// action の判定は結果表示用の分類に過ぎず、書き込み自体は external_url の
 	// UNIQUE 制約(migrations/002)を前提にした upsert で原子的に行う。
 	const supabase = await getSupabaseClient();
 	const { data: existingItems, error: selectError } = await supabase
 		.from('items')
-		.select('id')
+		.select('id, ai_accepted')
 		.eq('external_url', payload.externalUrl)
 		.limit(1);
 	if (selectError) throw selectError;
-	const action: 'inserted' | 'updated' = existingItems?.length ? 'updated' : 'inserted';
+	const existing = (existingItems?.[0] ?? null) as { id: number; ai_accepted?: boolean } | null;
+	const action: 'inserted' | 'updated' = existing ? 'updated' : 'inserted';
+
+	// 一度採用され公開中の記事（既存行 ai_accepted=true）は、収集ジョブの再レビューが棄却に
+	// 反転しても格下げしない（retag-existing-items.mjs の「不採用判定は警告のみ」方針と揃える）。
+	// 境界記事では判定が揺れうるため、ここで上書きを許すと公開記事が収集のたびに一覧から
+	// 見えたり消えたりする。metadata/summary も含め一切書き込まず既存 id を返す
+	// （判定ロジックと詳しい理由は process-import-item.ts の shouldPreserveAcceptedItem を参照）。
+	if (existing && shouldPreserveAcceptedItem(existing.ai_accepted, payload.aiAccepted)) {
+		return { id: existing.id, action: 'skipped' };
+	}
 
 	const { data: upserted, error: upsertError } = await supabase
 		.from('items')
@@ -290,9 +301,9 @@ export async function findItemVersionByExternalUrl(externalUrl: string): Promise
 	return data?.[0]?.version ?? null;
 }
 
-// processImportItem 自体は getSupabaseClient/OpenAI 呼び出しに依存しないコールバック注入型の
+// processImportItem・shouldPreserveAcceptedItem は getSupabaseClient/OpenAI 呼び出しに依存しない
 // 純粋な関数のため、node --test から直接テストできるよう process-import-item.ts に切り出して
 // ある（cloudflare:workers 依存が無いファイルに分離することで import 時点で落ちないようにする
 // 目的。catalog-normalize.ts と同じ方針）。ここでは既存の import 元（qiita/zenn/note/blog.ts）を
 // 変えずに済むよう re-export するだけにする。
-export { processImportItem, type ImportItemOutcome } from './process-import-item';
+export { processImportItem, shouldPreserveAcceptedItem, type ImportItemOutcome } from './process-import-item';
