@@ -90,7 +90,9 @@ export interface NoteEnvDefaults {
 export function resolveNoteSyncOptions(env: NoteEnvDefaults, overrides: NoteSyncOptions = {}): Required<NoteSyncOptions> {
 	return {
 		query: overrides.query?.trim() || DEFAULT_QUERY,
-		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.NOTE_PAGES, 1)),
+		// note の検索APIは新着順を保証しないため、1ページ(10件)だけだと新着記事が
+		// 2ページ目以降に埋もれて取りこぼされるリスクがある。既定を2ページに広げて緩和する。
+		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.NOTE_PAGES, 2)),
 		perPage: parsePositiveInteger(overrides.perPage, parsePositiveInteger(env.NOTE_PER_PAGE, 10)),
 	};
 }

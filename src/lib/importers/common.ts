@@ -292,6 +292,16 @@ export async function upsertItemByExternalUrl(
 	return { id: itemId, action };
 }
 
+export async function findExistingExternalUrls(externalUrls: string[]): Promise<Set<string>> {
+	// Qiita などソート順が保証されない検索APIで、設定ページ数の最後のページが全て
+	// 既知記事かどうかを判定するために使う（新着記事が後続ページに埋もれていないかの目安）。
+	if (externalUrls.length === 0) return new Set();
+	const supabase = await getSupabaseClient();
+	const { data, error } = await supabase.from('items').select('external_url').in('external_url', externalUrls);
+	if (error) throw error;
+	return new Set((data ?? []).map((row) => row.external_url as string));
+}
+
 export async function findItemVersionByExternalUrl(externalUrl: string): Promise<string | null> {
 	// Brave Search 経由のブログ収集は fetch/AIレビューのコストが他インポーターより重いため、
 	// 本文ハッシュ(version)が前回と同じなら再レビューを省略する差分検知に使う。

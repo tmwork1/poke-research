@@ -94,9 +94,9 @@ function zennUrl(path: string): string {
 	return `${ZENN_API_BASE}${path}`;
 }
 
-async function fetchZennListPage(topic: string, page: number): Promise<ZennListResponse> {
+async function fetchZennListPage(topicName: string, page: number): Promise<ZennListResponse> {
 	const url = new URL(zennUrl('/articles'));
-	url.searchParams.set('topicname', topic);
+	url.searchParams.set('topicname', topicName);
 	url.searchParams.set('order', 'latest');
 	url.searchParams.set('page', String(page));
 
