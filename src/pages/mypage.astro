@@ -12,6 +12,7 @@ import { topic } from '../config/topic.config.mjs';
 const user = Astro.locals.user;
 const url = new URL(Astro.request.url);
 const bookmarkTag = url.searchParams.get('bookmarkTag') ?? '';
+const bookmarkQ = url.searchParams.get('bookmarkQ') ?? '';
 const bookmarkSortParam = url.searchParams.get('bookmarkSort');
 const bookmarkSort: CatalogSort =
 	bookmarkSortParam === 'oldest' || bookmarkSortParam === 'popular' ? bookmarkSortParam : 'new';
@@ -20,6 +21,7 @@ function buildBookmarkUrl(overrides: { tag: string }) {
 	const params = new URLSearchParams();
 	if (overrides.tag) params.set('bookmarkTag', overrides.tag);
 	if (bookmarkSort !== 'new') params.set('bookmarkSort', bookmarkSort);
+	if (bookmarkQ) params.set('bookmarkQ', bookmarkQ);
 	const qs = params.toString();
 	return qs ? `/mypage?${qs}` : '/mypage';
 }
@@ -33,7 +35,7 @@ let loadError = false;
 if (user) {
 	try {
 		const [bookmarked, recommended] = await Promise.all([
-			fetchBookmarkedItemsFiltered(user.id, { tag: bookmarkTag || undefined, sort: bookmarkSort }),
+			fetchBookmarkedItemsFiltered(user.id, { tag: bookmarkTag || undefined, sort: bookmarkSort, q: bookmarkQ || undefined }),
 			fetchRecommendedItems(user.id),
 		]);
 		bookmarkedItems = bookmarked.items;
@@ -60,20 +62,23 @@ if (user) {
 					<div class="empty" role="alert">お気に入りの取得に失敗しました。しばらくしてから再度お試しください。</div>
 				) : hasBookmarks ? (
 					<>
-						<div class="tag-filter">
-							<TagCloud topTags={bookmarkTagOptions} activeTags={bookmarkTag ? [bookmarkTag] : []} buildTagsUrl={(tags) => buildBookmarkUrl({ tag: tags[tags.length - 1] ?? '' })} />
-						</div>
-						<form class="sort-row" method="get" action="/mypage">
+						<form class="bookmark-filters" method="get" action="/mypage">
 							<input type="hidden" name="bookmarkTag" value={bookmarkTag} />
-							<SortSelect
-								name="bookmarkSort"
-								ariaLabel="並び替え"
-								options={[
-									{ value: 'new', label: '新着順', selected: bookmarkSort === 'new' },
-									{ value: 'popular', label: '人気順', selected: bookmarkSort === 'popular' },
-									{ value: 'oldest', label: '古い順', selected: bookmarkSort === 'oldest' },
-								]}
-							/>
+							<input class="search-input" type="search" name="bookmarkQ" value={bookmarkQ} placeholder="キーワードで検索（例: ダメージ計算）" aria-label="キーワード" />
+							<div class="tag-filter">
+								<TagCloud topTags={bookmarkTagOptions} activeTags={bookmarkTag ? [bookmarkTag] : []} buildTagsUrl={(tags) => buildBookmarkUrl({ tag: tags[tags.length - 1] ?? '' })} />
+							</div>
+							<div class="sort-row">
+								<SortSelect
+									name="bookmarkSort"
+									ariaLabel="並び替え"
+									options={[
+										{ value: 'new', label: '新着順', selected: bookmarkSort === 'new' },
+										{ value: 'popular', label: '人気順', selected: bookmarkSort === 'popular' },
+										{ value: 'oldest', label: '古い順', selected: bookmarkSort === 'oldest' },
+									]}
+								/>
+							</div>
 						</form>
 						{bookmarkedItems.length > 0 ? (
 							<div class="cards">
@@ -149,6 +154,22 @@ if (user) {
 	.panel {
 		display: grid;
 		gap: 20px;
+	}
+
+	.bookmark-filters {
+		display: grid;
+		gap: 14px;
+	}
+
+	.search-input {
+		width: 100%;
+		box-sizing: border-box;
+		padding: 14px 18px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--card-bg);
+		color: inherit;
+		font-size: 1rem;
 	}
 
 	.sort-row {

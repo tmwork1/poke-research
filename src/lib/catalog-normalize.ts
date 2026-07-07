@@ -127,3 +127,14 @@ export function tagUsageFromItems(items: CatalogItem[]): TagUsage[] {
 	}
 	return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
+
+/** ブックマーク一覧のキーワード検索。DB検索（ILIKE）と同じ「トークンごとのAND・タイトル/要約いずれかに部分一致」を
+ *  JS側で行う。取得済みの少数のアイテム集合を絞り込む用途のため、都度クエリせず既存データに対して行う。 */
+export function filterItemsByKeyword<T extends { title?: string | null; summary?: string | null }>(items: T[], query: string): T[] {
+	const tokens = query.trim().toLowerCase().split(/\s+/).filter((token) => token.length > 0);
+	if (tokens.length === 0) return items;
+	return items.filter((item) => {
+		const haystack = `${item.title ?? ''} ${item.summary ?? ''}`.toLowerCase();
+		return tokens.every((token) => haystack.includes(token));
+	});
+}

@@ -6,6 +6,7 @@ import {
 	buildTagMonthlySeries,
 	buildTrailingMonths,
 	escapeIlikeToken,
+	filterItemsByKeyword,
 	niceAxisMax,
 	normalizeItem,
 	tagUsageFromItems,
@@ -85,6 +86,39 @@ describe('tagUsageFromItems', () => {
 	it('タグが無いアイテムのみの場合は空配列を返す', () => {
 		const items: CatalogItem[] = [{ id: 1, tags: [] }];
 		assert.deepEqual(tagUsageFromItems(items), []);
+	});
+});
+
+describe('filterItemsByKeyword', () => {
+	const items: CatalogItem[] = [
+		{ id: 1, title: 'ダメージ計算ツール', summary: '対戦で使えるツール', tags: [] },
+		{ id: 2, title: 'ポケモン図鑑アプリ', summary: 'ダメージ計算にも対応', tags: [] },
+		{ id: 3, title: '育成論まとめ', summary: null, tags: [] },
+	];
+
+	it('タイトルまたは要約に部分一致するアイテムだけを返す', () => {
+		const result = filterItemsByKeyword(items, 'ダメージ');
+		assert.deepEqual(result.map((item) => item.id), [1, 2]);
+	});
+
+	it('複数トークンはAND条件（各語がタイトル/要約いずれかにあれば可）で絞り込む', () => {
+		const result = filterItemsByKeyword(items, 'ダメージ 図鑑');
+		assert.deepEqual(result.map((item) => item.id), [2]);
+	});
+
+	it('空文字・空白のみのクエリは絞り込まずそのまま返す', () => {
+		assert.deepEqual(filterItemsByKeyword(items, ''), items);
+		assert.deepEqual(filterItemsByKeyword(items, '   '), items);
+	});
+
+	it('summary が null のアイテムでもタイトル一致で拾える', () => {
+		const result = filterItemsByKeyword(items, '育成論');
+		assert.deepEqual(result.map((item) => item.id), [3]);
+	});
+
+	it('大文字小文字を区別しない', () => {
+		const englishItems: CatalogItem[] = [{ id: 1, title: 'React Native Tips', summary: null, tags: [] }];
+		assert.deepEqual(filterItemsByKeyword(englishItems, 'react'), englishItems);
 	});
 });
 

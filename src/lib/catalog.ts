@@ -7,6 +7,7 @@ import {
 	buildTagMonthlySeries,
 	buildTrailingMonths,
 	escapeIlikeToken,
+	filterItemsByKeyword,
 	normalizeItem,
 	tagUsageFromItems,
 	type CatalogItem,
@@ -415,11 +416,12 @@ export interface BookmarkedItemsResult {
 
 export async function fetchBookmarkedItemsFiltered(
 	userId: string,
-	options: { tag?: string; sort?: CatalogSort } = {},
+	options: { tag?: string; sort?: CatalogSort; q?: string } = {},
 ): Promise<BookmarkedItemsResult> {
 	const items = await fetchBookmarkedItems(userId);
 	const availableTags = tagUsageFromItems(items);
-	const filtered = options.tag ? items.filter((item) => item.tags.some((tag) => tag.name === options.tag)) : items;
+	const byTag = options.tag ? items.filter((item) => item.tags.some((tag) => tag.name === options.tag)) : items;
+	const filtered = options.q ? filterItemsByKeyword(byTag, options.q) : byTag;
 
 	let ordered: CatalogItem[];
 	if (options.sort === 'oldest') {
