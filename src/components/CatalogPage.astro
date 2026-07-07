@@ -80,7 +80,10 @@ function toggleSource(sourceId: number) {
 		<form class="filters" method="get" action={basePath}>
 			{filters.tags.map((tag) => <input type="hidden" name="tag" value={tag} />)}
 			{filters.sourceIds.map((sourceId) => <input type="hidden" name="sourceId" value={sourceId} />)}
-			<input class="search-input" type="search" name="q" value={filters.q} placeholder="キーワードで検索（例: ダメージ計算）" aria-label="キーワード" list="search-suggestions" />
+			<div class="search-row">
+				<input class="search-input" type="search" name="q" value={filters.q} placeholder="キーワードで検索（例: ダメージ計算）" aria-label="キーワード" list="search-suggestions" />
+				<a class="reset-link" href={basePath}>条件をリセット</a>
+			</div>
 			<datalist id="search-suggestions">
 				{topTags.map((tag) => <option value={tag.name} />)}
 			</datalist>
@@ -128,14 +131,11 @@ function toggleSource(sourceId: number) {
 
 				<span class="total-count">全{pagination.total}件</span>
 
-				<a class="reset-link" href={basePath}>条件をリセット</a>
+				<div class="compact-toggle-slot"><CompactToggle /></div>
 			</div>
 		</form>
 
-		<div class="top-controls">
-			<Pagination page={pagination.page} totalPages={pagination.totalPages} buildUrl={buildUrl} />
-			<div class="compact-toggle-slot"><CompactToggle /></div>
-		</div>
+		<Pagination page={pagination.page} totalPages={pagination.totalPages} buildUrl={buildUrl} />
 
 		{items.length > 0 ? (
 			<div class="grid">
@@ -226,8 +226,15 @@ function toggleSource(sourceId: number) {
 		color: var(--text-muted);
 	}
 
+	.search-row {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+
 	.search-input {
-		width: 100%;
+		flex: 1;
+		min-width: 0;
 		box-sizing: border-box;
 		padding: 14px 18px;
 		border: 1px solid var(--border);
@@ -267,7 +274,7 @@ function toggleSource(sourceId: number) {
 		background: var(--bg-soft);
 		font-size: 0.85rem;
 		flex: none;
-		margin-left: auto;
+		white-space: nowrap;
 	}
 
 	.chip-group {
@@ -308,18 +315,8 @@ function toggleSource(sourceId: number) {
 		color: rgba(255, 255, 255, 0.85);
 	}
 
-	.top-controls {
-		position: relative;
-		min-height: 44px;
-		display: flex;
-		align-items: center;
-	}
-
 	.compact-toggle-slot {
-		position: absolute;
-		top: 50%;
-		right: 0;
-		transform: translateY(-50%);
+		margin-left: auto;
 	}
 
 	.grid {

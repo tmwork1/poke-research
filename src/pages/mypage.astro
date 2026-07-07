@@ -55,7 +55,6 @@ if (user) {
 		<section class="mypage">
 			<div class="eyebrow-row">
 				<p class="eyebrow">Bookmarks</p>
-				<CompactToggle />
 			</div>
 			<section class="panel">
 				{loadError ? (
@@ -64,7 +63,10 @@ if (user) {
 					<>
 						<form class="bookmark-filters" method="get" action="/mypage">
 							<input type="hidden" name="bookmarkTag" value={bookmarkTag} />
-							<input class="search-input" type="search" name="bookmarkQ" value={bookmarkQ} placeholder="キーワードで検索（例: ダメージ計算）" aria-label="キーワード" />
+							<div class="search-row">
+								<input class="search-input" type="search" name="bookmarkQ" value={bookmarkQ} placeholder="キーワードで検索（例: ダメージ計算）" aria-label="キーワード" />
+								<a class="reset-link" href="/mypage">条件をリセット</a>
+							</div>
 							<div class="tag-filter">
 								<TagCloud topTags={bookmarkTagOptions} activeTags={bookmarkTag ? [bookmarkTag] : []} buildTagsUrl={(tags) => buildBookmarkUrl({ tag: tags[tags.length - 1] ?? '' })} />
 							</div>
@@ -78,6 +80,7 @@ if (user) {
 										{ value: 'oldest', label: '古い順', selected: bookmarkSort === 'oldest' },
 									]}
 								/>
+								<div class="compact-toggle-slot"><CompactToggle /></div>
 							</div>
 						</form>
 						{bookmarkedItems.length > 0 ? (
@@ -161,8 +164,15 @@ if (user) {
 		gap: 14px;
 	}
 
+	.search-row {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+
 	.search-input {
-		width: 100%;
+		flex: 1;
+		min-width: 0;
 		box-sizing: border-box;
 		padding: 14px 18px;
 		border: 1px solid var(--border);
@@ -172,9 +182,24 @@ if (user) {
 		font-size: 1rem;
 	}
 
+	.reset-link {
+		padding: 8px 14px;
+		border-radius: 12px;
+		background: var(--bg-soft);
+		font-size: 0.85rem;
+		flex: none;
+		white-space: nowrap;
+	}
+
 	.sort-row {
 		display: flex;
+		align-items: center;
 		justify-content: flex-start;
+		gap: 14px;
+	}
+
+	.compact-toggle-slot {
+		margin-left: auto;
 	}
 
 	.cards {
