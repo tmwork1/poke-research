@@ -1,5 +1,5 @@
 // 検索・絞り込みに役立たない不適切・低情報価値なタグを削除するメンテナンススクリプト。
-// 例: node --env-file=.env scripts/db/delete-tag.mjs テスト
+// 例: node --env-file=.env.production scripts/db/delete-tag.mjs テスト
 //
 // tag の item_tags を削除してから tag 本体を削除する（付け替え先が無い点が merge-tag.mjs と異なる）。
 // タグが存在しなければ何もしない（冪等）。本番 DB へ実行する前にユーザー確認を取ること。

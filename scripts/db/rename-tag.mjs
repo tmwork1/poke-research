@@ -1,5 +1,5 @@
 // タグ名そのものを付け替える（統合ではなく単純リネーム）メンテナンススクリプト。
-// 例: node --env-file=.env scripts/db/rename-tag.mjs ポケモン図鑑 図鑑
+// 例: node --env-file=.env.production scripts/db/rename-tag.mjs ポケモン図鑑 図鑑
 //
 // to タグが既に存在する場合は同義語の統合であり本スクリプトの対象外のため、
 // merge-tag.mjs を使うよう案内して終了する（tags.name の一意制約に違反するため）。

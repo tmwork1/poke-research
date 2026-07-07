@@ -1,5 +1,5 @@
 // 重複 source を統合するメンテナンススクリプト。
-// 例: node --env-file=.env scripts/db/merge-source.mjs 12 3
+// 例: node --env-file=.env.production scripts/db/merge-source.mjs 12 3
 //
 // from source に紐づく items.source_id を to source へ付け替え、from source 本体を削除する。
 // from source が存在しなければ何もしない（冪等）。本番 DB へ実行する前にユーザー確認を取ること。

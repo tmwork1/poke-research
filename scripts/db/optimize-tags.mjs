@@ -9,7 +9,7 @@
 // 提案は必ず人間（Claude Code 経由の場合は会話でユーザー）が内容を確認し、
 // 妥当なものだけ該当コマンドを個別に実行すること。OpenAI の提案を無条件に信用しない。
 //
-// 使い方: node --env-file=.env scripts/db/optimize-tags.mjs
+// 使い方: node --env-file=.env.production scripts/db/optimize-tags.mjs
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.SUPABASE_URL;

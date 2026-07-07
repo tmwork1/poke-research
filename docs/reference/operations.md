@@ -16,9 +16,9 @@
 前提: Cloudflare Workers（`poke-research`）は GitHub の `main` ブランチと連携済みで、push（PR の merge を含む）で自動ビルド・デプロイされる。手元での作業は、自動デプロイの対象外である本番 Supabase 側の対応のみ。ブランチ運用（作業ブランチの切り方、PR、マージ方法）は [CLAUDE.md](../../CLAUDE.md) の「Git」を参照する。
 
 1. `migrations/` に新しいマイグレーションファイルがあるか確認する。
-2. スキーマを変更した場合のみ、`scripts/db/test-db.mjs` を本番の `SUPABASE_URL` / `SUPABASE_SECRET_KEY` で実行し、CRUD が成功することを確認する（テストデータは自動で削除される）。
+2. スキーマを変更した場合のみ、`node --env-file=.env.production scripts/db/test-db.mjs` を実行し、本番の `SUPABASE_URL` / `SUPABASE_SECRET_KEY` で CRUD が成功することを確認する（テストデータは自動で削除される）。
 3. 不足しているシークレットがないか確認する（`.env.example` 参照、`wrangler secret put <NAME>` で設定）。
-4. `npm run release` を実行し、未適用のマイグレーションを適用する。`.env` の `DATABASE_URL`（本番接続文字列）を自動で参照する。`main` への push 前に済ませる。
+4. `npm run release` を実行し、未適用のマイグレーションを適用する。`.env.production` の `DATABASE_URL`（本番接続文字列）を自動で参照する。`main` への push 前に済ませる。
    ```bash
    npm run release
    ```

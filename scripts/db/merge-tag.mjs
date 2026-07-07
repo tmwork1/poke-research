@@ -1,5 +1,5 @@
 // 誤字タグを正しいタグへ統合するメンテナンススクリプト。
-// 例: node --env-file=.env scripts/db/merge-tag.mjs ポケモンカート ポケモンカード
+// 例: node --env-file=.env.production scripts/db/merge-tag.mjs ポケモンカート ポケモンカード
 //
 // from タグの item_tags を to タグへ付け替え（重複は削除）、from タグ本体を削除する。
 // from タグが存在しなければ何もしない（冪等）。本番 DB へ実行する前にユーザー確認を取ること。
