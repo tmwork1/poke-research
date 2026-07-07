@@ -56,3 +56,8 @@ export function createFixedWindowRateLimiter(options: RateLimitOptions): FixedWi
 // ユーザーID（未ログイン時はIP）ごとに60秒で30回まで。
 export const BOOKMARKS_WRITE_RATE_LIMIT: RateLimitOptions = { windowMs: 60_000, max: 30 };
 export const bookmarksWriteRateLimiter = createFixedWindowRateLimiter(BOOKMARKS_WRITE_RATE_LIMIT);
+
+// GET /api/tags/:id/explain（未認証・OpenAI呼び出しを伴う）に適用する既定設定・共有インスタンス。
+// IPごとに60秒で20回まで。
+export const TAG_EXPLAIN_RATE_LIMIT: RateLimitOptions = { windowMs: 60_000, max: 20 };
+export const tagExplainRateLimiter = createFixedWindowRateLimiter(TAG_EXPLAIN_RATE_LIMIT);
