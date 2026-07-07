@@ -671,7 +671,13 @@ const showUpdatedBadge = Boolean(
 	});
 
 	const HOVER_SHOW_DELAY_MS = 250;
-	const LONG_PRESS_MS = 500;
+	// この幅未満はモバイル画面とみなし、ホバーの代わりにタップ2回方式（1回目=説明表示、2回目=検索へ遷移）を使う。
+	// Layout.astro のトップバー折り返しと同じ 720px を基準にする。
+	const MOBILE_MAX_WIDTH_PX = 720;
+
+	function isMobileViewport(): boolean {
+		return window.matchMedia(`(max-width: ${MOBILE_MAX_WIDTH_PX}px)`).matches;
+	}
 
 	async function loadTagExplanation(tagId: string): Promise<TagExplanation | null> {
 		const cached = tagExplanationCache.get(tagId);
@@ -701,17 +707,17 @@ const showUpdatedBadge = Boolean(
 		if (result?.isDifficult && result.explanation) openTagPopover(tag, result.explanation);
 	}
 
-	// タグは通常のリンク（クリック=タグ検索へ遷移）。解説はホバー（デスクトップ）/長押し（タッチ）でのみ表示し、
-	// 長押しの直後に発火するクリックだけは遷移を止める（解説を見た直後に意図せず飛ばないように）。
+	// タグは通常のリンク（クリック=タグ検索へ遷移）。解説はデスクトップではホバーでのみ表示する。
+	// モバイル画面ではホバーが無いため、説明付きのタグに限り1回目のタップで説明を表示して遷移を止め、
+	// 説明が表示された状態での2回目のタップでタグ検索へ遷移させる（説明のないタグは従来通り即座に遷移する）。
 	function bindTagPopover(el: HTMLElement) {
 		if (el.dataset.popoverBound === 'true') return;
 		el.dataset.popoverBound = 'true';
 
 		let hoverTimer: ReturnType<typeof setTimeout> | undefined;
-		let pressTimer: ReturnType<typeof setTimeout> | undefined;
-		let longPressFired = false;
 
 		el.addEventListener('mouseenter', () => {
+			if (isMobileViewport()) return;
 			if (activeTagPopover?.tag === el) cancelClosePopover();
 			hoverTimer = setTimeout(() => void showExplanationFor(el), HOVER_SHOW_DELAY_MS);
 		});
@@ -720,31 +726,24 @@ const showUpdatedBadge = Boolean(
 			if (activeTagPopover?.tag === el) scheduleClosePopover();
 		});
 		el.addEventListener('focus', () => {
+			// モバイル画面ではタップ時にクリック前に focus が先に発火し、クリックハンドラの
+			// 「既に開いているか」判定より先にポップオーバーを開いてしまい2回タップ方式が
+			// 壊れるため、キーボードフォーカスによる表示はデスクトップ幅に限定する。
+			if (isMobileViewport()) return;
 			void showExplanationFor(el);
 		});
 		el.addEventListener('blur', () => {
 			if (activeTagPopover?.tag === el) closeTagPopover();
 		});
 
-		el.addEventListener(
-			'touchstart',
-			() => {
-				longPressFired = false;
-				pressTimer = setTimeout(() => {
-					longPressFired = true;
-					void showExplanationFor(el);
-				}, LONG_PRESS_MS);
-			},
-			{ passive: true },
-		);
-		el.addEventListener('touchend', () => clearTimeout(pressTimer));
-		el.addEventListener('touchmove', () => clearTimeout(pressTimer));
-
 		el.addEventListener('click', (event) => {
-			if (longPressFired) {
-				event.preventDefault();
-				longPressFired = false;
-			}
+			if (!isMobileViewport()) return;
+			// 既にこのタグの説明を表示中なら、2回目のタップとして通常通り遷移させる。
+			if (activeTagPopover?.tag === el) return;
+			// 解説の有無がまだ判明していない（has-explanation 未付与）タグは、判定を待たず即座に遷移させる。
+			if (!el.classList.contains('has-explanation')) return;
+			event.preventDefault();
+			void showExplanationFor(el);
 		});
 	}
 

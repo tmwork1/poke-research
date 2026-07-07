@@ -1,0 +1,257 @@
+---
+import { niceAxisMax } from '../lib/catalog-normalize';
+import type { TagTrend } from '../lib/catalog';
+import { formatTagLabel } from '../lib/tag-display';
+
+interface Props {
+	trend: TagTrend;
+}
+
+const { trend } = Astro.props as Props;
+
+const CHART_WIDTH = 640;
+const CHART_HEIGHT = 260;
+const PADDING = { top: 12, right: 16, bottom: 26, left: 30 };
+const plotWidth = CHART_WIDTH - PADDING.left - PADDING.right;
+const plotHeight = CHART_HEIGHT - PADDING.top - PADDING.bottom;
+const TICK_COUNT = 4;
+
+const hasData = trend.series.length > 0 && trend.months.length > 1;
+
+const maxCount = Math.max(1, ...trend.series.flatMap((series) => series.counts));
+const axisMax = niceAxisMax(maxCount);
+const ticks = Array.from({ length: TICK_COUNT + 1 }, (_, i) => Math.round((axisMax / TICK_COUNT) * i));
+
+function xForIndex(index: number): number {
+	if (trend.months.length <= 1) return PADDING.left;
+	return PADDING.left + (plotWidth * index) / (trend.months.length - 1);
+}
+
+function yForCount(count: number): number {
+	return PADDING.top + plotHeight - (plotHeight * count) / axisMax;
+}
+
+// 横軸ラベルは月替わりのたびに数字だけ出し、年が変わった最初の目盛りだけ年も添える。
+function formatMonthLabel(month: string, index: number): string {
+	const [year, monthPart] = month.split('-');
+	const previousYear = index > 0 ? trend.months[index - 1]?.split('-')[0] : undefined;
+	return index === 0 || year !== previousYear ? `${year}/${Number(monthPart)}` : `${Number(monthPart)}月`;
+}
+---
+
+<div class="trend-widget">
+	<button type="button" class="trend-toggle" aria-expanded="false" aria-haspopup="true">
+		<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+			<polyline points="17 6 23 6 23 12" />
+		</svg>
+		<span>月間トレンド</span>
+	</button>
+	<div class="trend-panel" hidden>
+		<p class="trend-title">上位タグの記事数推移（月次）</p>
+		{hasData ? (
+			<>
+				<svg class="trend-svg" viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} role="img" aria-label="上位タグの月別記事数推移の折れ線グラフ">
+					{ticks.map((tick) => (
+						<g class="tick-row">
+							<line x1={PADDING.left} y1={yForCount(tick)} x2={CHART_WIDTH - PADDING.right} y2={yForCount(tick)} class="gridline" />
+							<text x={PADDING.left - 6} y={yForCount(tick)} class="tick-label" text-anchor="end" dominant-baseline="middle">{tick}</text>
+						</g>
+					))}
+					{trend.months.map((month, index) => (
+						<text x={xForIndex(index)} y={CHART_HEIGHT - 8} class="x-label" text-anchor="middle">{formatMonthLabel(month, index)}</text>
+					))}
+					{trend.series.map((series, seriesIndex) => (
+						<g class="series" style={`--series-color: var(--trend-series-${seriesIndex + 1})`}>
+							<polyline points={series.counts.map((count, index) => `${xForIndex(index)},${yForCount(count)}`).join(' ')} class="series-line" />
+							{series.counts.map((count, index) => (
+								<circle cx={xForIndex(index)} cy={yForCount(count)} r="4" class="series-dot">
+									<title>{`${formatTagLabel(series.name)} ${trend.months[index]}: ${count}件`}</title>
+								</circle>
+							))}
+						</g>
+					))}
+				</svg>
+				<ul class="trend-legend">
+					{trend.series.map((series, index) => (
+						<li style={`--series-color: var(--trend-series-${index + 1})`}>
+							<span class="legend-swatch" aria-hidden="true"></span>
+							{formatTagLabel(series.name)}
+						</li>
+					))}
+				</ul>
+			</>
+		) : (
+			<p class="trend-empty">推移を表示できるデータがまだありません。</p>
+		)}
+	</div>
+</div>
+
+<style>
+	.trend-widget {
+		position: relative;
+		flex: none;
+	}
+
+	.trend-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--card-bg);
+		color: var(--text);
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.trend-toggle:hover {
+		border-color: var(--accent);
+		color: var(--accent-dark);
+	}
+
+	.trend-toggle[aria-expanded='true'] {
+		border-color: var(--accent);
+		color: var(--accent-dark);
+	}
+
+	.trend-panel {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		z-index: 20;
+		width: min(600px, 90vw);
+		padding: 16px;
+		border-radius: var(--radius-md);
+		border: 1px solid var(--border);
+		background: var(--card-bg);
+		box-shadow: var(--shadow);
+		box-sizing: border-box;
+
+		/* dataviz スキルの categorical palette（slot 1-5: blue/aqua/yellow/green/violet）。 */
+		--trend-series-1: #2a78d6;
+		--trend-series-2: #1baf7a;
+		--trend-series-3: #eda100;
+		--trend-series-4: #008300;
+		--trend-series-5: #4a3aa7;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		.trend-panel {
+			--trend-series-1: #3987e5;
+			--trend-series-2: #199e70;
+			--trend-series-3: #c98500;
+			--trend-series-4: #008300;
+			--trend-series-5: #9085e9;
+		}
+	}
+
+	.trend-title {
+		margin: 0 0 10px;
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--text);
+	}
+
+	.trend-svg {
+		display: block;
+		width: 100%;
+		height: auto;
+	}
+
+	.gridline {
+		stroke: var(--border);
+		stroke-width: 1;
+	}
+
+	.tick-label,
+	.x-label {
+		fill: var(--text-muted);
+		font-size: 9px;
+	}
+
+	.series-line {
+		fill: none;
+		stroke: var(--series-color);
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.series-dot {
+		fill: var(--series-color);
+		stroke: var(--card-bg);
+		stroke-width: 2;
+	}
+
+	.trend-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 16px;
+		list-style: none;
+		margin: 10px 0 0;
+		padding: 0;
+		font-size: 0.78rem;
+		color: var(--text-muted);
+	}
+
+	.trend-legend li {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.legend-swatch {
+		width: 10px;
+		height: 10px;
+		border-radius: 999px;
+		background: var(--series-color);
+	}
+
+	.trend-empty {
+		margin: 0;
+		font-size: 0.85rem;
+		color: var(--text-muted);
+	}
+</style>
+
+<script>
+	function closeTrendPanel(toggle: HTMLButtonElement, panel: HTMLElement) {
+		toggle.setAttribute('aria-expanded', 'false');
+		panel.setAttribute('hidden', '');
+	}
+
+	function openTrendPanel(toggle: HTMLButtonElement, panel: HTMLElement) {
+		toggle.setAttribute('aria-expanded', 'true');
+		panel.removeAttribute('hidden');
+	}
+
+	document.querySelectorAll<HTMLElement>('.trend-widget').forEach((widget) => {
+		const toggle = widget.querySelector<HTMLButtonElement>('.trend-toggle');
+		const panel = widget.querySelector<HTMLElement>('.trend-panel');
+		if (!toggle || !panel) return;
+
+		toggle.addEventListener('click', () => {
+			const isOpen = toggle.getAttribute('aria-expanded') === 'true';
+			if (isOpen) {
+				closeTrendPanel(toggle, panel);
+			} else {
+				openTrendPanel(toggle, panel);
+			}
+		});
+
+		document.addEventListener('click', (event) => {
+			if (toggle.getAttribute('aria-expanded') !== 'true') return;
+			if (widget.contains(event.target as Node)) return;
+			closeTrendPanel(toggle, panel);
+		});
+
+		document.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') {
+				closeTrendPanel(toggle, panel);
+				toggle.focus();
+			}
+		});
+	});
+</script>

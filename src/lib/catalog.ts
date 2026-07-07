@@ -4,17 +4,21 @@
 import { getSupabaseClient } from './supabase';
 import type { Annotation, Tag } from './db-types';
 import {
+	buildTagMonthlySeries,
+	buildTrailingMonths,
 	escapeIlikeToken,
+	filterItemsByKeyword,
 	normalizeItem,
 	tagUsageFromItems,
 	type CatalogItem,
 	type ItemDetail,
 	type ItemRow,
 	type SourceUsage,
+	type TagTrendSeries,
 	type TagUsage,
 } from './catalog-normalize';
 
-export type { CatalogItem, ItemDetail, SourceUsage, TagUsage };
+export type { CatalogItem, ItemDetail, SourceUsage, TagTrendSeries, TagUsage };
 
 export type SortOrder = 'asc' | 'desc';
 
@@ -313,6 +317,34 @@ export async function fetchTopTags(limit = 20): Promise<TagUsage[]> {
 	}));
 }
 
+export interface TagTrend {
+	months: string[];
+	series: TagTrendSeries[];
+}
+
+const TAG_TREND_MONTHS = 6;
+
+export async function fetchTagTrend(tags: TagUsage[], monthsBack = TAG_TREND_MONTHS): Promise<TagTrend> {
+	const months = buildTrailingMonths(monthsBack);
+	if (tags.length === 0) return { months, series: [] };
+
+	// 集計は DB 側の RPC（migrations/020 の tag_monthly_counts）で行い、行の全取得を避ける。
+	const supabase = await getSupabaseClient();
+	const { data, error } = await supabase.rpc('tag_monthly_counts', {
+		target_tag_ids: tags.map((tag) => tag.id),
+		months_back: monthsBack,
+	});
+	if (error) throw error;
+
+	const rows = ((data ?? []) as Array<{ tag_id: number; month: string; count: number | string }>).map((row) => ({
+		tag_id: row.tag_id,
+		month: row.month,
+		count: Number(row.count),
+	}));
+
+	return { months, series: buildTagMonthlySeries(tags, months, rows) };
+}
+
 export async function fetchCatalogItemById(id: number): Promise<ItemDetail | null> {
 	const supabase = await getSupabaseClient();
 	const { data, error } = await supabase
@@ -384,11 +416,12 @@ export interface BookmarkedItemsResult {
 
 export async function fetchBookmarkedItemsFiltered(
 	userId: string,
-	options: { tag?: string; sort?: CatalogSort } = {},
+	options: { tag?: string; sort?: CatalogSort; q?: string } = {},
 ): Promise<BookmarkedItemsResult> {
 	const items = await fetchBookmarkedItems(userId);
 	const availableTags = tagUsageFromItems(items);
-	const filtered = options.tag ? items.filter((item) => item.tags.some((tag) => tag.name === options.tag)) : items;
+	const byTag = options.tag ? items.filter((item) => item.tags.some((tag) => tag.name === options.tag)) : items;
+	const filtered = options.q ? filterItemsByKeyword(byTag, options.q) : byTag;
 
 	let ordered: CatalogItem[];
 	if (options.sort === 'oldest') {

@@ -17,6 +17,7 @@ export const topic = {
 		storageKeyPrefix: 'pokeresearch',
 		contactHandle: '@ml7ddw0',
 		contactUrl: 'https://x.com/ml7ddw0',
+		repoUrl: 'https://github.com/tmwork1/poke-research',
 	},
 
 	collection: {
