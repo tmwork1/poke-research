@@ -49,7 +49,22 @@ function parseOpenAIResponse(content: string): TagExplanation {
 	};
 }
 
-export async function explainTag(tagId: number, tagName: string): Promise<TagExplanation> {
+// 未解説タグへの同時リクエストが同数だけOpenAI呼び出しを起こさないよう、
+// タグIDごとにインフライトのPromiseを共有する（同一Isolate内のみ有効なベストエフォート）。
+const pendingExplanations = new Map<number, Promise<TagExplanation>>();
+
+export function explainTag(tagId: number, tagName: string): Promise<TagExplanation> {
+	const pending = pendingExplanations.get(tagId);
+	if (pending) return pending;
+
+	const promise = explainTagUncached(tagId, tagName).finally(() => {
+		pendingExplanations.delete(tagId);
+	});
+	pendingExplanations.set(tagId, promise);
+	return promise;
+}
+
+async function explainTagUncached(tagId: number, tagName: string): Promise<TagExplanation> {
 	const supabase = await getSupabaseClient();
 
 	const { data: existing, error: fetchError } = await supabase

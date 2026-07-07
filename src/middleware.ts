@@ -18,7 +18,7 @@ import { checkAdminAuth } from './lib/auth';
 import { getSessionUser } from './lib/user-session';
 import { mergeVaryHeader, resolveCacheDecision } from './lib/cache-policy';
 import { isSameOrigin } from './lib/csrf';
-import { bookmarksWriteRateLimiter } from './lib/rate-limit';
+import { bookmarksWriteRateLimiter, tagExplainRateLimiter } from './lib/rate-limit';
 import { sendOperationalAlert } from './lib/notify';
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -29,6 +29,10 @@ function isAuthRoute(pathname: string): boolean {
 
 function requiresUserAuth(pathname: string): boolean {
   return pathname.startsWith('/api/bookmarks');
+}
+
+function isTagExplainRoute(pathname: string): boolean {
+  return /^\/api\/tags\/[^/]+\/explain$/.test(pathname);
 }
 
 function requiresAdminAuth(pathname: string, method: string): boolean {
@@ -115,6 +119,18 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
 
     if (!requiresAdminAuth(url.pathname, request.method)) {
+      // GET /api/tags/:id/explain は未認証だが、内部でOpenAI APIを呼びうる（tag-explain.ts参照）ため、
+      // 課金APIの連打を防ぐベストエフォートのIPレートリミットをここでだけ適用する。
+      if (isTagExplainRoute(url.pathname) && request.method === 'GET') {
+        const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
+        const result = tagExplainRateLimiter.check(ip);
+        if (!result.allowed) {
+          return jsonError('Too many requests', 429, {
+            'Retry-After': String(Math.ceil(result.retryAfterMs / 1000)),
+          });
+        }
+      }
+
       const response = await next();
       return applyCacheControl(response, context);
     }
