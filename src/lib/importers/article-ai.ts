@@ -80,22 +80,19 @@ function createOpenAIRequest(input: ImportArticleReviewInput, model: string) {
 			},
 			{
 				role: 'user',
-				content: JSON.stringify(
-					{
-						source_name: input.sourceName,
-						query: input.query,
-						title: input.title,
-						url: input.url,
-						authors: input.authors,
-						source_tags: input.sourceTags,
-						existing_tags: input.existingTags ?? [],
-						created_at: input.createdAt,
-						updated_at: input.updatedAt,
-						body_excerpt: input.bodyExcerpt,
-					},
-					null,
-					2,
-				),
+				// インデント整形はトークンの無駄になるだけでモデルの理解には寄与しないため、コンパクトなJSONで送る。
+				content: JSON.stringify({
+					source_name: input.sourceName,
+					query: input.query,
+					title: input.title,
+					url: input.url,
+					authors: input.authors,
+					source_tags: input.sourceTags,
+					existing_tags: input.existingTags ?? [],
+					created_at: input.createdAt,
+					updated_at: input.updatedAt,
+					body_excerpt: input.bodyExcerpt,
+				}),
 			},
 		],
 	};
