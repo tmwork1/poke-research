@@ -12,12 +12,16 @@
 		"enabled": true
 	},
 	"triggers": {
+		// Cloudflare Workers は現行プランでアカウント全体の Cron Trigger 登録数が5件までのため、
+		// 日次収集・メンテナンスジョブ（本来6件）を "*/30 21-23 * * *" の1エントリへ集約している
+		// （21:00〜23:30 UTC の30分刻みで1日6回起動）。どの時刻に何を実行するかは src/worker.ts の
+		// scheduled ハンドラが controller.scheduledTime（UTC時刻）で振り分ける。
 		// 毎日 21:00 UTC (JST 06:00) に Qiita、21:30 UTC (JST 06:30) に Zenn、22:00 UTC (JST 07:00) に note、
 		// 22:30 UTC (JST 07:30) にブログ（Brave Search）の収集ジョブ、23:00 UTC (JST 08:00) にリンク切れ検出
 		// ジョブ（migrations/016）、23:30 UTC (JST 08:30) にはてなブックマーク（検索RSS）の収集ジョブを実行する。
 		// 毎週月曜 20:30 UTC (JST 05:30) には日次収集ジョブ群の直前に、DB重複候補（items/sources）を
-		// 検出するだけの読み取り専用レビュージョブを実行する（DBは書き換えない、ALERT_WEBHOOK_URLへ通知）。
-		// どれが起動したかは src/worker.ts の scheduled ハンドラが controller.cron で振り分ける。
-		"crons": ["30 20 * * 1", "0 21 * * *", "30 21 * * *", "0 22 * * *", "30 22 * * *", "0 23 * * *", "30 23 * * *"]
+		// 検出するだけの読み取り専用レビュージョブを実行する（DBは書き換えない、ALERT_WEBHOOK_URLへ通知）。こちらは
+		// controller.cron が "30 20 * * 1" と完全一致するかで振り分ける（時刻が重ならないため単独判定で十分）。
+		"crons": ["30 20 * * 1", "*/30 21-23 * * *"]
 	}
 }

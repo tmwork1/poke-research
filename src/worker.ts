@@ -14,12 +14,19 @@ import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn
 import { formatWeeklyReviewMessage, runWeeklyReview } from './lib/maintenance-review';
 
 // wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
+// Cloudflare アカウントの Cron Trigger 登録数上限（現行プランで5件）に収めるため、日次ジョブ群は
+// "*/30 21-23 * * *" の1エントリに集約している。この場合 controller.cron は6つの起動時刻すべてで
+// 同一の文字列になるため、controller.scheduledTime（UTC時刻）の時:分で個別ジョブに振り分ける。
 const WEEKLY_REVIEW_CRON = '30 20 * * 1';
-const ZENN_CRON = '30 21 * * *';
-const NOTE_CRON = '0 22 * * *';
-const BLOG_CRON = '30 22 * * *';
-const LINK_CHECK_CRON = '0 23 * * *';
-const HATENA_CRON = '30 23 * * *';
+
+const DAILY_SLOT_HANDLERS: Record<string, () => Promise<void>> = {
+	'21:00': runScheduledQiitaImport,
+	'21:30': runScheduledZennImport,
+	'22:00': runScheduledNoteImport,
+	'22:30': runScheduledBlogImport,
+	'23:00': runScheduledLinkCheck,
+	'23:30': runScheduledHatenaImport,
+};
 
 export default {
 	async fetch(request, ctxEnv, ctx) {
@@ -28,18 +35,17 @@ export default {
 	async scheduled(controller, _ctxEnv, ctx) {
 		if (controller.cron === WEEKLY_REVIEW_CRON) {
 			ctx.waitUntil(runScheduledWeeklyReview());
-		} else if (controller.cron === ZENN_CRON) {
-			ctx.waitUntil(runScheduledZennImport());
-		} else if (controller.cron === NOTE_CRON) {
-			ctx.waitUntil(runScheduledNoteImport());
-		} else if (controller.cron === BLOG_CRON) {
-			ctx.waitUntil(runScheduledBlogImport());
-		} else if (controller.cron === LINK_CHECK_CRON) {
-			ctx.waitUntil(runScheduledLinkCheck());
-		} else if (controller.cron === HATENA_CRON) {
-			ctx.waitUntil(runScheduledHatenaImport());
+			return;
+		}
+		const scheduledAt = new Date(controller.scheduledTime);
+		const hh = String(scheduledAt.getUTCHours()).padStart(2, '0');
+		const mm = String(scheduledAt.getUTCMinutes()).padStart(2, '0');
+		const slotKey = `${hh}:${mm}`;
+		const handler = DAILY_SLOT_HANDLERS[slotKey];
+		if (handler) {
+			ctx.waitUntil(handler());
 		} else {
-			ctx.waitUntil(runScheduledQiitaImport());
+			console.error('[cron] unrecognized scheduled slot', { cron: controller.cron, slotKey });
 		}
 	},
 } satisfies ExportedHandler<Env>;
