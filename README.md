@@ -65,6 +65,8 @@ cp .env.example .env
 
 2. If you accidentally committed secrets into the repository, rotate those keys in Supabase and remove them from the repo history.
 
+`.env` はローカル用の値のみを置く。本番の資格情報が必要な運用スクリプト（マイグレーション適用・DBメンテ等）は `.env.production`（gitignore 済み、未コミット）を別途用意し、`node --env-file=.env.production scripts/...` のように明示して実行する。手順は [docs/reference/operations.md](docs/reference/operations.md) を参照。
+
 ## CI
 
 `main` への push と pull request で GitHub Actions（`.github/workflows/ci.yml`）が以下を自動検証する。

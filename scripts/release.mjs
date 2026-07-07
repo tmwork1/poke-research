@@ -12,14 +12,14 @@ function run(command) {
 
 if (!process.env.DATABASE_URL) {
   try {
-    process.loadEnvFile('.env');
+    process.loadEnvFile('.env.production');
   } catch {
-    // .env not found; fall through to the check below.
+    // .env.production not found; fall through to the check below.
   }
 }
 
 if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL not set. Add it to .env or export it before running release.');
+  console.error('DATABASE_URL not set. Add it to .env.production or export it before running release.');
   process.exit(1);
 }
 

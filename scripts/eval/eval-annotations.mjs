@@ -1,7 +1,7 @@
 // annotations（GET/POST /api/annotations）の内容を記事タイトルと紐付けて一覧出力する
 // 読み取り専用のレビュー用スクリプト。件数が増えてきたときの目視確認に使う。
 //
-// 使い方: node --env-file=.env scripts/eval/eval-annotations.mjs
+// 使い方: node --env-file=.env.production scripts/eval/eval-annotations.mjs
 import { Client } from 'pg';
 
 const databaseUrl = process.env.DATABASE_URL;

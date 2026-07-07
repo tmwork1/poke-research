@@ -2,7 +2,7 @@
 // src/lib/tag-explain.ts と同じプロンプト・キャッシュ列（is_difficult/explanation/explained_at）を使う。
 // explained_at が入っているタグはスキップするため冪等。OpenAI 課金に注意して実行する。
 //
-// 使い方: node --env-file=.env scripts/db/backfill-tag-explanations.mjs
+// 使い方: node --env-file=.env.production scripts/db/backfill-tag-explanations.mjs
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.SUPABASE_URL;

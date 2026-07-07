@@ -2,7 +2,7 @@
 // 読み取り専用のレビュー用スクリプト。一時的なサイト側障害やUser-Agentブロックを
 // 恒久的なリンク切れと誤認していないか、月次程度で目視確認する運用を想定する。
 //
-// 使い方: node --env-file=.env scripts/eval/eval-broken-links.mjs
+// 使い方: node --env-file=.env.production scripts/eval/eval-broken-links.mjs
 import { Client } from 'pg';
 
 const databaseUrl = process.env.DATABASE_URL;

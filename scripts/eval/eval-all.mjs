@@ -13,9 +13,9 @@ import { execFileSync } from 'child_process';
 
 if (!process.env.DATABASE_URL) {
   try {
-    process.loadEnvFile('.env');
+    process.loadEnvFile('.env.production');
   } catch {
-    // .env not found; fall through to each sub-script's own check.
+    // .env.production not found; fall through to each sub-script's own check.
   }
 }
 

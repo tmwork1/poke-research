@@ -29,12 +29,12 @@
 //     で対象を絞り込める。--dry-run を付けると DB 書き込みをせず判定結果だけ表示する。
 //
 // 使い方:
-//   node --env-file=.env scripts/db/retag-existing-items.mjs --dry-run   # 全件プレビューのみ
-//   node --env-file=.env scripts/db/retag-existing-items.mjs --id=123    # 1件だけ実行
-//   node --env-file=.env scripts/db/retag-existing-items.mjs --limit=20  # 先頭20件だけ実行
-//   node --env-file=.env scripts/db/retag-existing-items.mjs --service=blog        # blog由来のみ対象
-//   node --env-file=.env scripts/db/retag-existing-items.mjs --service=blog --dry-run --limit=20
-//   node --env-file=.env scripts/db/retag-existing-items.mjs             # 全件実行（要事前確認）
+//   node --env-file=.env.production scripts/db/retag-existing-items.mjs --dry-run   # 全件プレビューのみ
+//   node --env-file=.env.production scripts/db/retag-existing-items.mjs --id=123    # 1件だけ実行
+//   node --env-file=.env.production scripts/db/retag-existing-items.mjs --limit=20  # 先頭20件だけ実行
+//   node --env-file=.env.production scripts/db/retag-existing-items.mjs --service=blog        # blog由来のみ対象
+//   node --env-file=.env.production scripts/db/retag-existing-items.mjs --service=blog --dry-run --limit=20
+//   node --env-file=.env.production scripts/db/retag-existing-items.mjs             # 全件実行（要事前確認）
 import { createClient } from '@supabase/supabase-js';
 import { topic } from '../../src/config/topic.config.mjs';
 import { buildSystemPrompt } from '../../src/config/ai-review-prompt.mjs';

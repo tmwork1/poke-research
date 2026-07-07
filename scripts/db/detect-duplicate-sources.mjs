@@ -5,7 +5,7 @@
 //   1) 正規化 origin_url（プロトコル・www・クエリ・末尾スラッシュを除去）が一致
 //   2) 正規化 name（空白・記号除去・小文字化）が一致、または編集距離が長さの1割以下
 //
-// 使い方: node --env-file=.env scripts/db/detect-duplicate-sources.mjs
+// 使い方: node --env-file=.env.production scripts/db/detect-duplicate-sources.mjs
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.SUPABASE_URL;
