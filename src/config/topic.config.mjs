@@ -44,5 +44,9 @@ export const topic = {
 		properNounExamples: ['ハイドロポンプ', 'ダイヤモンドパール'],
 		// 表記揺れ・打ち間違いに注意を促すための正しい表記と間違えやすい表記の例。
 		misspellingExample: { correct: 'ポケモンカード', incorrect: 'ポケモンカート' },
+		// 手法を伴わない単なる数値・データの引用だけで乱用されがちな分析系タグの例。
+		overgeneralizedTagExamples: ['統計学', '確率分布'],
+		// 上記の分析系タグが誤って付与されがちな、単なる数値・データの例（手法そのものではない）。
+		dataOnlyExamples: ['種族値', '乱数', 'APIから取得したデータ'],
 	},
 };
