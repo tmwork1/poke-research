@@ -3,6 +3,7 @@
 import { buildTagLabels, reviewImportArticle } from './article-ai';
 import {
 	fetchTopTagNames,
+	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
 	stripHtml,
@@ -192,27 +193,47 @@ async function fetchQiitaPage(query: string, page: number, perPage: number, toke
 	return (await response.json()) as QiitaItem[];
 }
 
+// Qiita の検索APIは明示的なソート順を保証しないため、設定ページ数の最後のページが
+// 全て DB 既知の記事だった場合は、新着記事が後続ページに埋もれている可能性を疑って
+// 数ページだけ追加取得する（無制限だとAPI消費が膨らむため上限を設ける）。
+const MAX_EXTRA_PAGES = 3;
+
 async function fetchQiitaItems(query: string, pages: number, perPage: number, token?: string): Promise<QiitaItem[]> {
 	// 複数ページ取得時に同一 URL が再登場しても、1 件だけ残す。
 	const results: QiitaItem[] = [];
 	const seen = new Set<string>();
+	let extraPagesUsed = 0;
 
-	for (let page = 1; page <= pages; page += 1) {
+	for (let page = 1; page <= pages + MAX_EXTRA_PAGES; page += 1) {
 		const items = await fetchQiitaPage(query, page, perPage, token);
 		if (items.length === 0) {
 			break;
 		}
 
+		const pageItems: QiitaItem[] = [];
 		for (const item of items) {
 			if (seen.has(item.url)) {
 				continue;
 			}
 			seen.add(item.url);
 			results.push(item);
+			pageItems.push(item);
 		}
 
 		if (items.length < perPage) {
 			break;
+		}
+
+		if (page >= pages) {
+			if (extraPagesUsed >= MAX_EXTRA_PAGES) {
+				break;
+			}
+			const existingUrls = await findExistingExternalUrls(pageItems.map((item) => item.url));
+			const allKnown = pageItems.length > 0 && pageItems.every((item) => existingUrls.has(item.url));
+			if (!allKnown) {
+				break;
+			}
+			extraPagesUsed += 1;
 		}
 	}
 
