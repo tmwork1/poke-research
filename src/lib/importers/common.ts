@@ -3,6 +3,7 @@
 import { normalizeTagName } from './article-ai';
 import { shouldPreserveAcceptedItem } from './process-import-item';
 import { getSupabaseClient } from '../supabase';
+import { normalizeSource, type ItemRow } from '../catalog-normalize';
 
 // 本文は検索対象を広げるために保存するが、行が肥大化しないよう妥当な長さで切り詰める。
 const MAX_STORED_BODY_CHARS = 20000;
@@ -303,6 +304,22 @@ export async function findExistingExternalUrls(externalUrls: string[]): Promise<
 	const { data, error } = await supabase.from('items').select('external_url').in('external_url', externalUrls);
 	if (error) throw error;
 	return new Set((data ?? []).map((row) => row.external_url as string));
+}
+
+export async function fetchItemSourceNames(itemIds: number[]): Promise<Map<number, string>> {
+	// 新着記事のSNS向け通知で「タイトル - ソース名」の下書きを組み立てるために使う。
+	// blog/feed/hatena は記事ごとに実際の掲載元（個人ブログ等）が異なるため、ジョブ名を
+	// 決め打ちにできず、保存済み items.source_id 経由で sources.name を都度引く。
+	if (itemIds.length === 0) return new Map();
+	const supabase = await getSupabaseClient();
+	const { data, error } = await supabase.from('items').select('id, source:sources(id, name, type, origin_url)').in('id', itemIds);
+	if (error) throw error;
+	const result = new Map<number, string>();
+	for (const row of (data ?? []) as Array<Pick<ItemRow, 'id' | 'source'>>) {
+		const source = normalizeSource(row.source);
+		if (source?.name) result.set(row.id, source.name);
+	}
+	return result;
 }
 
 export async function findItemVersionByExternalUrl(externalUrl: string): Promise<string | null> {

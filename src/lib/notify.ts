@@ -43,12 +43,14 @@ export async function sendMaintenanceReport(env: AlertEnv, title: string, body: 
 export interface NewItemDigestEntry {
 	title: string;
 	externalUrl: string;
+	/** 記事の掲載元名（sources.name）。Qiita/Zenn/noteは固定、blog/feed/hatenaは記事ごとに異なる。 */
+	sourceName: string;
 }
 
 // Xは140字制限のため、記事が複数件でも収まるよう要約・ハッシュタグは付けず、
-// サイトURL＋各記事のタイトル/URLだけの下書きにする（下書きなので投稿前の手直しは前提）。
+// サイトURL＋各記事のタイトル/URL/掲載元だけの下書きにする（下書きなので投稿前の手直しは前提）。
 function buildXPostDraft(items: NewItemDigestEntry[]): string {
-	const lines = items.map((item) => `${item.title}\n${item.externalUrl}`);
+	const lines = items.map((item) => `${item.title} - ${item.sourceName}\n${item.externalUrl}`);
 	return [`${topic.site.url}/`, ...lines].join('\n\n');
 }
 
@@ -56,5 +58,5 @@ function buildXPostDraft(items: NewItemDigestEntry[]): string {
 export async function sendNewItemsDigest(env: AlertEnv, items: NewItemDigestEntry[]): Promise<void> {
 	if (items.length === 0) return;
 	const draft = buildXPostDraft(items);
-	await postToWebhook(env, `[${topic.site.slug}] 新着 ${items.length} 件\n\n${draft.slice(0, 1500)}`);
+	await postToWebhook(env, `【${topic.site.slug}】新着 ${items.length} 件\n\n${draft.slice(0, 1500)}`);
 }
