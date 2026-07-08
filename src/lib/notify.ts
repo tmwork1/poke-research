@@ -11,7 +11,8 @@ async function postToWebhook(env: AlertEnv, message: string): Promise<void> {
 	const webhookUrl = env.ALERT_WEBHOOK_URL?.trim();
 	if (!webhookUrl) return;
 
-	const isDiscord = webhookUrl.includes('discord.com/api/webhooks');
+	// discordapp.com は Discord の旧ドメイン（現在も有効なWebhook URLとして発行される）。
+	const isDiscord = /discord(app)?\.com\/api\/webhooks/.test(webhookUrl);
 	const payload = isDiscord ? { content: message } : { text: message };
 
 	try {
