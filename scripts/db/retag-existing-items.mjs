@@ -22,9 +22,13 @@
 //     フォールバックとしてレビュー入力に使う。両方無ければそのアイテムはスキップする
 //     （既存アイテムは migrations/015 適用前に取り込まれたものが多く body が無いことがある。
 //     収集元 API への再取得は行わない）。
+//   - language（items.language、migrations/021）は accepted の結果に関わらず常に更新する
+//     （記事本文の主な言語という事実情報のため、主題の採否とは独立に記録する）。
 //   - accepted が true の場合のみ summary と タグ（item_tags）を新しい判定結果で更新する。
-//   - accepted が false（今の基準なら不採用）の場合は summary もタグも更新せず、警告ログの
-//     みを出す。既に公開済みのアイテムを自動で非公開・削除にはしない（要人手確認）。
+//   - accepted が false（今の基準なら不採用。language が ja/en 以外の場合を含む）の場合は
+//     summary もタグも更新せず、警告ログのみを出す。既に公開済みのアイテムを自動で
+//     非公開・削除にはしない（要人手確認）。日本語・英語以外と判定された既存アイテムの削除は
+//     scripts/db/delete-non-ja-en-items.mjs で別途行う。
 //   - OpenAI 課金が発生するため、既定では対象を絞らず全件処理する点に注意。--id / --limit
 //     で対象を絞り込める。--dry-run を付けると DB 書き込みをせず判定結果だけ表示する。
 //
@@ -155,6 +159,7 @@ function parseAiResponse(content) {
 
   const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
   const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : '';
+  const language = typeof parsed.language === 'string' ? parsed.language.trim().toLowerCase() : '';
   const { tags, tagLabels } = Array.isArray(parsed.tags)
     ? normalizeAiTags(parsed.tags.filter((tag) => typeof tag === 'string'))
     : { tags: [], tagLabels: {} };
@@ -162,8 +167,9 @@ function parseAiResponse(content) {
 
   if (!summary) throw new Error('OpenAI response missing summary');
   if (!reason) throw new Error('OpenAI response missing reason');
+  if (!language) throw new Error('OpenAI response missing language');
 
-  return { accepted, summary, tags, tagLabels, reason, confidence };
+  return { accepted, summary, tags, tagLabels, reason, confidence, language };
 }
 
 async function reviewImportArticle(input) {
@@ -383,15 +389,22 @@ async function main() {
         sourceName: item.metadata?.service,
       });
 
+      // language（migrations/021）は主題の採否とは独立した事実情報のため、不採用でも
+      // 既存の「公開済みアイテムは自動非公開・削除にしない」方針とは別に書き込む。
+      if (!dryRun) {
+        const { error: languageError } = await supabase.from('items').update({ language: review.language }).eq('id', item.id);
+        if (languageError) throw languageError;
+      }
+
       if (!review.accepted) {
         // 既に公開済みのアイテムを自動で非公開・削除にはしない。判定が変わったことだけ
         // 記録し、対応は利用者の判断に委ねる。
-        console.warn(`#${item.id} "${item.title}": 現行基準では不採用と判定されました（reason: ${review.reason}）。更新はスキップします。要確認。`);
+        console.warn(`#${item.id} "${item.title}": 現行基準では不採用と判定されました（reason: ${review.reason}, language: ${review.language}）。summary/タグの更新はスキップします。要確認。`);
         rejected += 1;
         continue;
       }
 
-      console.log(`#${item.id} "${item.title}": summary/タグを更新${dryRun ? '予定' : ''} -> tags=[${review.tags.join(', ')}]`);
+      console.log(`#${item.id} "${item.title}": summary/タグを更新${dryRun ? '予定' : ''} -> tags=[${review.tags.join(', ')}] (language: ${review.language})`);
       if (!dryRun) {
         const { error: updateError } = await supabase.from('items').update({ summary: review.summary }).eq('id', item.id);
         if (updateError) throw updateError;

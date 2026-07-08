@@ -266,6 +266,7 @@ async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: str
 						version: bodyHash,
 						body: truncateBodyForStorage(extracted.bodyText),
 						aiAccepted: review.accepted,
+						language: review.language,
 					},
 					review.tags,
 					review.tagLabels,
