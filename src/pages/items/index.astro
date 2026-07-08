@@ -62,7 +62,12 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 		page,
 	}),
 	fetchTopTags(20),
-	fetchCatalogSources(),
+	fetchCatalogSources({
+		q: filters.q || undefined,
+		tags: filters.tags.length > 0 ? filters.tags : undefined,
+		since,
+		sourceIds: filters.sourceIds,
+	}),
 	user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
 ]);
 ---
