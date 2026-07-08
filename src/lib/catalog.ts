@@ -108,23 +108,46 @@ export async function fetchCatalogTags(): Promise<Tag[]> {
 	return data ?? [];
 }
 
-export async function fetchCatalogSources(): Promise<SourceUsage[]> {
+export async function fetchCatalogSources(
+	filters: Pick<ItemFilters, 'q' | 'tag' | 'tags' | 'since' | 'sourceIds'> = {},
+): Promise<SourceUsage[]> {
 	const supabase = await getSupabaseClient();
-	const [{ data, error }, { data: counts, error: countsError }] = await Promise.all([
+	const hasNarrowingFilters = Boolean(filters.q?.trim() || filters.tag || (filters.tags && filters.tags.length > 0) || filters.since);
+
+	const [{ data, error }, countBySourceId] = await Promise.all([
 		supabase.from('sources').select('*').order('created_at', { ascending: false }),
-		supabase.rpc('source_item_counts'),
+		// キーワード・タグ・期間の絞り込みが無ければ、全件集計 RPC の方が軽い。
+		// 絞り込みがある場合は、それらの条件（sourceId 自体は除く）に一致する
+		// アイテムを実際に数え、フィルタ結果0件のソースをボタンから除外する。
+		hasNarrowingFilters ? countSourceMatches(filters) : countAllSources(supabase),
 	]);
 	if (error) throw error;
-	if (countsError) throw countsError;
 
-	const countBySourceId = new Map<number, number>(
-		((counts ?? []) as Array<{ source_id: number; count: number | string }>).map((row) => [row.source_id, Number(row.count)]),
-	);
-
+	const selectedSourceIds = new Set(filters.sourceIds ?? []);
 	// ソースボタンは件数の多い順に並べる（同数はソース一覧の既定順=作成日時降順を維持）。
+	// 現在選択中のソースは、他条件との組み合わせで0件になっても選択解除できるよう残す。
 	return (data ?? [])
 		.map((source) => ({ ...source, count: countBySourceId.get(source.id) ?? 0 }))
+		.filter((source) => source.count > 0 || selectedSourceIds.has(source.id))
 		.sort((a, b) => b.count - a.count);
+}
+
+async function countAllSources(supabase: Awaited<ReturnType<typeof getSupabaseClient>>): Promise<Map<number, number>> {
+	const { data, error } = await supabase.rpc('source_item_counts');
+	if (error) throw error;
+	return new Map(
+		((data ?? []) as Array<{ source_id: number; count: number | string }>).map((row) => [row.source_id, Number(row.count)]),
+	);
+}
+
+async function countSourceMatches(filters: Pick<ItemFilters, 'q' | 'tag' | 'tags' | 'since'>): Promise<Map<number, number>> {
+	const { data } = await queryCatalogItems({ ...filters, sourceIds: undefined }, { selectOverride: 'source_id' });
+	const counts = new Map<number, number>();
+	for (const row of data as unknown as Array<{ source_id: number | null }>) {
+		if (row.source_id === null || row.source_id === undefined) continue;
+		counts.set(row.source_id, (counts.get(row.source_id) ?? 0) + 1);
+	}
+	return counts;
 }
 
 export async function fetchCatalogAnnotations(itemId?: number): Promise<Annotation[]> {
@@ -140,14 +163,21 @@ export async function fetchCatalogAnnotations(itemId?: number): Promise<Annotati
 
 async function queryCatalogItems(
 	filters: ItemFilters,
-	options: { withCount?: boolean; offset?: number; orderBy?: 'published_at' | 'bookmarks_count'; includeBody?: boolean } = {},
+	options: {
+		withCount?: boolean;
+		offset?: number;
+		orderBy?: 'published_at' | 'bookmarks_count';
+		includeBody?: boolean;
+		/** ソース件数集計など、フル結合ではなく特定カラムだけ欲しい場合の select 差し替え。 */
+		selectOverride?: string;
+	} = {},
 ): Promise<{ data: ItemRow[]; count: number | null }> {
 	const searchTerm = filters.q?.trim();
 	const ascending = filters.order === 'asc';
 	const supabase = await getSupabaseClient();
 	let query = supabase
 		.from('items')
-		.select(options.includeBody ? ITEM_SELECT_WITH_BODY : ITEM_SELECT, options.withCount ? { count: 'exact' } : undefined);
+		.select(options.selectOverride ?? (options.includeBody ? ITEM_SELECT_WITH_BODY : ITEM_SELECT), options.withCount ? { count: 'exact' } : undefined);
 
 	// リンク切れ検出（migrations/016）で broken と確定したアイテムは、検索・タグ・新着などの
 	// 一覧（RSS/サイトマップも fetchCatalogItems 経由のため同様）から隠す。詳細ページ（

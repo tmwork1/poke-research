@@ -30,7 +30,7 @@ const user = Astro.locals.user;
 const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 	fetchCatalogItemsPage({ tag: tagName, page }),
 	fetchTopTags(20),
-	fetchCatalogSources(),
+	fetchCatalogSources({ tag: tagName }),
 	user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
 ]);
 
