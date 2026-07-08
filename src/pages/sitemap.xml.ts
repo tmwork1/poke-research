@@ -30,6 +30,7 @@ export async function GET() {
   const staticUrls: SitemapUrl[] = [
     { loc: `${SITE_URL}/`, lastmod },
     { loc: `${SITE_URL}/items`, lastmod },
+    { loc: `${SITE_URL}/papers`, lastmod },
     { loc: `${SITE_URL}/tags` },
     { loc: `${SITE_URL}/about` },
   ];

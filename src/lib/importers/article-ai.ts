@@ -17,6 +17,8 @@ export interface ImportArticleReviewInput {
 	updatedAt?: string;
 	sourceName?: string;
 	existingTags?: string[];
+	/** items.kind に対応する種別（既定 'article'）。'paper' は arXiv 収集（arxiv.ts）が渡す。 */
+	kind?: string;
 }
 
 export interface ImportArticleReview {
@@ -78,7 +80,7 @@ function createOpenAIRequest(input: ImportArticleReviewInput, model: string) {
 		messages: [
 			{
 				role: 'system',
-				content: buildSystemPrompt(topic),
+				content: buildSystemPrompt(topic, input.kind),
 			},
 			{
 				role: 'user',

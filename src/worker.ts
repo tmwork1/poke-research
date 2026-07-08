@@ -6,33 +6,35 @@ import { env } from 'cloudflare:workers';
 import { sendMaintenanceReport, sendNewItemsDigest, sendOperationalAlert } from './lib/notify';
 import { fetchItemSourceNames, type ImportItemOutcome } from './lib/importers/common';
 import { runAndRecord } from './lib/import-runs';
+import { resolveArxivSyncOptions, syncArxivCollection } from './lib/importers/arxiv';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
 import { resolveFeedSyncOptions, syncFeedCollection } from './lib/importers/feed';
 import { resolveHatenaSyncOptions, syncHatenaCollection } from './lib/importers/hatena';
 import { checkLinks, resolveLinkCheckOptions } from './lib/importers/link-check';
-import { resolveNoteSyncOptions, syncNoteCollection } from './lib/importers/note';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
 import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
 import { formatWeeklyReviewMessage, runWeeklyReview } from './lib/maintenance-review';
 import { topic } from './config/topic.config.mjs';
 
 // wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
-// Cloudflare アカウントの Cron Trigger 登録数上限（現行プランで5件）に収めるため、日次ジョブ群は
-// "*/30 21-23 * * *" の1エントリに集約している。この場合 controller.cron は6つの起動時刻すべてで
-// 同一の文字列になるため、controller.scheduledTime（UTC時刻）の時:分で個別ジョブに振り分ける。
 const WEEKLY_REVIEW_CRON = '30 20 * * 1';
 // feed_subscriptions（migrations/022）を直接ポーリングするジョブは単独の Cron Trigger エントリの
 // ため、controller.cron の完全一致だけで判定できる（WEEKLY_REVIEW_CRON と同じ方式）。
 const FEED_POLL_CRON = '0 20 * * *';
-
-const DAILY_SLOT_HANDLERS: Record<string, () => Promise<void>> = {
-	'21:00': runScheduledQiitaImport,
-	'21:30': runScheduledZennImport,
-	'22:00': runScheduledNoteImport,
-	'22:30': runScheduledBlogImport,
-	'23:00': runScheduledLinkCheck,
-	'23:30': runScheduledHatenaImport,
-};
+// 日次収集ジョブ群（Cloudflare アカウントの Cron Trigger 登録数上限＝現行プランで5件のため、
+// 個別エントリを確保できない）は "0 21 * * *" の1回の発火にまとめ、順にawaitして実行する
+// （並列実行ではない）。各ジョブは個別に try/catch を持つため、1つが失敗しても後続は実行される。
+// note は非公式APIが403 Access deniedを返すようになったため自動実行対象から外している
+// （コード・手動起動用API（/api/import/note）は残したまま、cronからの呼び出しのみ停止）。
+const DAILY_CRON = '0 21 * * *';
+const DAILY_JOBS: Array<() => Promise<void>> = [
+	runScheduledQiitaImport,
+	runScheduledZennImport,
+	runScheduledBlogImport,
+	runScheduledLinkCheck,
+	runScheduledHatenaImport,
+	runScheduledArxivImport,
+];
 
 export default {
 	async fetch(request, ctxEnv, ctx) {
@@ -47,18 +49,21 @@ export default {
 			ctx.waitUntil(runScheduledFeedImport());
 			return;
 		}
-		const scheduledAt = new Date(controller.scheduledTime);
-		const hh = String(scheduledAt.getUTCHours()).padStart(2, '0');
-		const mm = String(scheduledAt.getUTCMinutes()).padStart(2, '0');
-		const slotKey = `${hh}:${mm}`;
-		const handler = DAILY_SLOT_HANDLERS[slotKey];
-		if (handler) {
-			ctx.waitUntil(handler());
-		} else {
-			console.error('[cron] unrecognized scheduled slot', { cron: controller.cron, slotKey });
+		if (controller.cron === DAILY_CRON) {
+			ctx.waitUntil(runDailyJobsSequentially());
+			return;
 		}
+		console.error('[cron] unrecognized cron expression', { cron: controller.cron });
 	},
 } satisfies ExportedHandler<Env>;
+
+// 日次ジョブを1回の scheduled 起動の中で順にawaitする。各ジョブは自身の中で
+// try/catch と sendOperationalAlert を完結させているため、ここでは単純に直列実行するだけでよい。
+async function runDailyJobsSequentially(): Promise<void> {
+	for (const job of DAILY_JOBS) {
+		await job();
+	}
+}
 
 // 収集ジョブで新規採用（action='inserted'）された記事だけを、Xの下書き付きでDiscordに知らせる。
 // 更新・棄却分はここでは通知しない（新着記事のポスト下書きという用途に絞るため）。
@@ -135,24 +140,9 @@ async function runScheduledZennImport(): Promise<void> {
 	}
 }
 
-async function runScheduledNoteImport(): Promise<void> {
-	// Qiita/Zenn 同様、記事単位の失敗は syncNoteCollection 内で skipped として吸収される。
-	// 失敗時は次回 cron 実行を待つか、POST /api/import/note を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
-	try {
-		const result = await runAndRecord('note', 'cron', () => syncNoteCollection(resolveNoteSyncOptions(env)));
-		console.log('[cron:note] sync completed', {
-			query: result.query,
-			fetched: result.fetched,
-			inserted: result.inserted,
-			updated: result.updated,
-			skipped: result.skipped,
-		});
-		await notifyNewItems(result.items);
-	} catch (error) {
-		console.error('[cron:note] sync failed', error);
-		await sendOperationalAlert(env, 'note 収集ジョブが失敗しました', error);
-	}
-}
+// note の cron 経由の自動実行ジョブ（runScheduledNoteImport 相当）は、非公式APIが
+// 403 Access denied を返すようになったため 2026-07-09 に削除した。src/lib/importers/note.ts と
+// POST /api/import/note（src/pages/api/import/note.ts）は変更しておらず、手動起動は引き続き可能。
 
 async function runScheduledBlogImport(): Promise<void> {
 	// 他インポーター同様、記事単位の失敗は syncBlogCollection 内で skipped として吸収される。
@@ -232,5 +222,24 @@ async function runScheduledLinkCheck(): Promise<void> {
 	} catch (error) {
 		console.error('[cron:link-check] check failed', error);
 		await sendOperationalAlert(env, 'リンク切れ検出ジョブが失敗しました', error);
+	}
+}
+
+async function runScheduledArxivImport(): Promise<void> {
+	// 他インポーター同様、記事（論文）単位の失敗は syncArxivCollection 内で skipped として吸収される。
+	// 失敗時は次回 cron 実行を待つか、POST /api/import/arxiv を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
+	try {
+		const result = await runAndRecord('arxiv', 'cron', () => syncArxivCollection(resolveArxivSyncOptions(env)));
+		console.log('[cron:arxiv] sync completed', {
+			query: result.query,
+			fetched: result.fetched,
+			inserted: result.inserted,
+			updated: result.updated,
+			skipped: result.skipped,
+		});
+		await notifyNewItems(result.items);
+	} catch (error) {
+		console.error('[cron:arxiv] sync failed', error);
+		await sendOperationalAlert(env, 'arXiv 収集ジョブが失敗しました', error);
 	}
 }

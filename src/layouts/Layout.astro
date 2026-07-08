@@ -108,7 +108,16 @@ const websiteJsonLd = JSON.stringify({
 							<circle cx="11" cy="11" r="7" />
 							<path d="M21 21l-4.3-4.3" />
 						</svg>
-						<span>検索</span>
+						<span>技術記事</span>
+					</a>
+					<a class:list={['nav-tab', { current: pathname === '/papers' }]} href="/papers" aria-current={pathname === '/papers' ? 'page' : undefined}>
+						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M6 3h9l4 4v14H6z" />
+							<path d="M15 3v4h4" />
+							<path d="M9 12h6" />
+							<path d="M9 16h6" />
+						</svg>
+						<span>論文</span>
 					</a>
 					<div class="mypage-tab-wrap">
 						<a class:list={['nav-tab', 'mypage-tab', { 'logged-in': loggedIn, current: pathname === '/mypage' }]} href="/mypage" aria-current={pathname === '/mypage' ? 'page' : undefined}>
@@ -675,6 +684,13 @@ const websiteJsonLd = JSON.stringify({
 		.topbar {
 			align-items: flex-start;
 			flex-direction: column;
+		}
+
+		/* align-items: flex-start により、この幅では tab-nav が幅いっぱいに伸びなくなり
+		   （中身の幅にフィットするだけになり）、タブ数が増えると折り返さずに画面外へ
+		   はみ出してしまう。明示的に幅いっぱいまで広げ、flex-wrap: wrap を機能させる。 */
+		.tab-nav {
+			width: 100%;
 		}
 	}
 </style>
