@@ -27,8 +27,10 @@ export const ZENN_TOPICS = topic.collection.zennTopics;
 // トピック固有の追加分（本番調査でダメージ計算ツール等のWikiが検索結果を占有していた）は
 // topic.config.mjs の collection.extraExcludedBlogDomains で管理する。
 export const EXCLUDED_BLOG_DOMAINS = [
-	// 他インポーターが専用で扱う／対象外と決定済みのサービス（トピックに依らず共通）
-	'qiita.com', 'zenn.dev', 'note.com', 'github.com', 'youtube.com', 'x.com', 'twitter.com',
+	// 他インポーターが専用で扱う／対象外と決定済みのサービス（トピックに依らず共通）。
+	// note.com は専用API（note.ts）がCloudflare Workersからブロックされているため対象外とせず、
+	// 他の個人ブログ同様Brave Search経由で発見しHTML抽出で収集する（KNOWN_BLOG_PLATFORMSも参照）。
+	'qiita.com', 'zenn.dev', 'github.com', 'youtube.com', 'x.com', 'twitter.com',
 	...topic.collection.extraExcludedBlogDomains,
 ] as const;
 
@@ -56,6 +58,9 @@ export function isExcludedBlogDomain(hostname: string): boolean {
 // サービス単位（= 個々のユーザーのサブドメインをまとめて1レコード）で source を作る。
 // 載っていないドメインは共通の「その他」source（OTHER_BLOG_SOURCE）にまとめる。
 export const KNOWN_BLOG_PLATFORMS = [
+	// note.ts と同じ source（name: 'note', originUrl: 'https://note.com/'）に集約されるよう
+	// note.ts の NOTE_SOURCE_NAME / NOTE_SOURCE_ORIGIN_URL と一致させる。
+	{ domain: 'note.com', name: 'note' },
 	{ domain: 'hatenablog.com', name: 'はてなブログ' },
 	{ domain: 'hatenablog.jp', name: 'はてなブログ' },
 	{ domain: 'hatenadiary.jp', name: 'はてなダイアリー' },
