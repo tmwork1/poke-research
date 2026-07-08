@@ -261,6 +261,7 @@ async function processNoteKey(key: string, sourceId: number, query: string, fetc
 						version: detail.publish_at,
 						body: truncateBodyForStorage(extractBodyText(detail)),
 						aiAccepted: review.accepted,
+						language: review.language,
 					},
 					review.tags.length > 0 ? review.tags : extractTags(detail),
 					undefined,

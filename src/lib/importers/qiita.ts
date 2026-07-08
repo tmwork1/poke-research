@@ -291,6 +291,7 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 						version: item.updated_at,
 						body: truncateBodyForStorage(extractBodyText(item)),
 						aiAccepted: review.accepted,
+						language: review.language,
 					},
 					review.tags.length > 0 ? review.tags : extractTags(item),
 					undefined,

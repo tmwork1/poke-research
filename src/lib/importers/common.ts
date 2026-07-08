@@ -222,6 +222,8 @@ export interface ItemUpsertPayload {
 	version: string;
 	/** 検索対象を広げるための本文テキスト（migrations/015）。未取得なら省略可。 */
 	body?: string | null;
+	/** AIが判定した記事本文の主な言語（ISO 639-1の小文字コード。migrations/021）。 */
+	language: string | null;
 	/**
 	 * AIレビューでの採否（migrations/018）。false を渡すと一覧・検索からは除外されるが items
 	 * には保存され、偽陰性（誤棄却）レビューの対象になる（同一 external_url を後日再収集して
@@ -278,6 +280,7 @@ export async function upsertItemByExternalUrl(
 				version: payload.version,
 				body: payload.body ?? null,
 				ai_accepted: payload.aiAccepted,
+				language: payload.language,
 			},
 			{ onConflict: 'external_url' },
 		)
