@@ -49,12 +49,12 @@ export interface NewItemDigestEntry {
 // サイトURL＋各記事のタイトル/URLだけの下書きにする（下書きなので投稿前の手直しは前提）。
 function buildXPostDraft(items: NewItemDigestEntry[]): string {
 	const lines = items.map((item) => `${item.title}\n${item.externalUrl}`);
-	return [topic.site.url, ...lines].join('\n\n');
+	return [`${topic.site.url}/`, ...lines].join('\n\n');
 }
 
 // 収集ジョブで新規に採用された記事を、Xに投稿しやすい下書き文にまとめてDiscordへ送る。
-export async function sendNewItemsDigest(env: AlertEnv, jobLabel: string, items: NewItemDigestEntry[]): Promise<void> {
+export async function sendNewItemsDigest(env: AlertEnv, items: NewItemDigestEntry[]): Promise<void> {
 	if (items.length === 0) return;
 	const draft = buildXPostDraft(items);
-	await postToWebhook(env, `🆕 [${topic.site.slug}] ${jobLabel}で新着 ${items.length} 件\n\n${draft.slice(0, 1500)}`);
+	await postToWebhook(env, `[${topic.site.slug}] 新着 ${items.length} 件\n\n${draft.slice(0, 1500)}`);
 }

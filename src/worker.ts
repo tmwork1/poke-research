@@ -61,10 +61,10 @@ export default {
 
 // 収集ジョブで新規採用（action='inserted'）された記事だけを、Xの下書き付きでDiscordに知らせる。
 // 更新・棄却分はここでは通知しない（新着記事のポスト下書きという用途に絞るため）。
-async function notifyNewItems(jobLabel: string, items: ImportItemOutcome[]): Promise<void> {
+async function notifyNewItems(items: ImportItemOutcome[]): Promise<void> {
 	const newItems = items.filter((item) => item.action === 'inserted');
 	if (newItems.length === 0) return;
-	await sendNewItemsDigest(env, jobLabel, newItems);
+	await sendNewItemsDigest(env, newItems);
 }
 
 async function runScheduledWeeklyReview(): Promise<void> {
@@ -97,7 +97,7 @@ async function runScheduledQiitaImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
-		await notifyNewItems('Qiita', result.items);
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:qiita] sync failed', error);
 		// ログは Workers 内にしか残らず誰も気づけないため、Webhook にも通知する。
@@ -117,7 +117,7 @@ async function runScheduledZennImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
-		await notifyNewItems('Zenn', result.items);
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:zenn] sync failed', error);
 		await sendOperationalAlert(env, 'Zenn 収集ジョブが失敗しました', error);
@@ -136,7 +136,7 @@ async function runScheduledNoteImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
-		await notifyNewItems('note', result.items);
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:note] sync failed', error);
 		await sendOperationalAlert(env, 'note 収集ジョブが失敗しました', error);
@@ -157,7 +157,7 @@ async function runScheduledBlogImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
-		await notifyNewItems('ブログ（Brave Search）', result.items);
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:blog] sync failed', error);
 		await sendOperationalAlert(env, 'ブログ（Brave Search）収集ジョブが失敗しました', error);
@@ -177,7 +177,7 @@ async function runScheduledFeedImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
-		await notifyNewItems('RSSフィード追従', result.items);
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:feed] sync failed', error);
 		await sendOperationalAlert(env, 'RSSフィード追従収集ジョブが失敗しました', error);
@@ -199,7 +199,7 @@ async function runScheduledHatenaImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
-		await notifyNewItems('はてなブックマーク', result.items);
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:hatena] sync failed', error);
 		await sendOperationalAlert(env, 'はてなブックマーク収集ジョブが失敗しました', error);
