@@ -105,8 +105,9 @@ const websiteJsonLd = JSON.stringify({
 					</a>
 					<a class:list={['nav-tab', { current: pathname === '/items' }]} href="/items" aria-current={pathname === '/items' ? 'page' : undefined}>
 						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<circle cx="11" cy="11" r="7" />
-							<path d="M21 21l-4.3-4.3" />
+							<path d="M16 18l6-6-6-6" />
+							<path d="M8 6l-6 6 6 6" />
+							<path d="M9 20L15 4" />
 						</svg>
 						<span>技術記事</span>
 					</a>
@@ -120,11 +121,14 @@ const websiteJsonLd = JSON.stringify({
 						<span>論文</span>
 					</a>
 					<div class="mypage-tab-wrap">
-						<a class:list={['nav-tab', 'mypage-tab', { 'logged-in': loggedIn, current: pathname === '/mypage' }]} href="/mypage" aria-current={pathname === '/mypage' ? 'page' : undefined}>
-							<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-								<circle cx="12" cy="8" r="4" />
-								<path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
-							</svg>
+						<a class:list={['nav-tab', 'mypage-tab', { current: pathname === '/mypage' }]} href="/mypage" aria-current={pathname === '/mypage' ? 'page' : undefined}>
+							<span class="mypage-icon-wrap">
+								<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<circle cx="12" cy="8" r="4" />
+									<path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
+								</svg>
+								{loggedIn && <span class="login-dot" aria-hidden="true" />}
+							</span>
 							<span>マイページ</span>
 						</a>
 						{/* このドロップダウンは hover/focus-within でのみ開くため、タッチ環境ではサイドバーのログアウトが導線となる */}
@@ -607,8 +611,22 @@ const websiteJsonLd = JSON.stringify({
 		font-weight: 700;
 	}
 
-	.mypage-tab.logged-in:not(.current) {
-		color: var(--accent-dark);
+	.mypage-icon-wrap {
+		position: relative;
+		display: inline-flex;
+	}
+
+	/* current（現在地）はテキスト色+下線で示すため、ログイン中バッジは色ではなく
+	   アイコン右下の小さなドットで示し、両者が混同されないようにする。 */
+	.login-dot {
+		position: absolute;
+		right: -2px;
+		bottom: -2px;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--accent-dark);
+		border: 1.5px solid var(--bg);
 	}
 
 	.mypage-tab-wrap {
