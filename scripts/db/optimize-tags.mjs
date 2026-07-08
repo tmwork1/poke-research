@@ -79,8 +79,11 @@ async function requestSuggestions(catalog) {
 
   const trimmed = content.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '');
   const parsed = JSON.parse(trimmed);
-  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.suggestions) ? parsed.suggestions : Array.isArray(parsed.tags) ? parsed.tags : [];
-  return list;
+  if (Array.isArray(parsed)) return parsed;
+  for (const key of ['suggestions', 'tags', 'result', 'results']) {
+    if (Array.isArray(parsed[key])) return parsed[key];
+  }
+  return [];
 }
 
 function printSuggestion(suggestion) {
