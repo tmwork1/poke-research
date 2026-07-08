@@ -3,7 +3,8 @@
 import { handle } from '@astrojs/cloudflare/handler';
 import { env } from 'cloudflare:workers';
 
-import { sendMaintenanceReport, sendOperationalAlert } from './lib/notify';
+import { sendMaintenanceReport, sendNewItemsDigest, sendOperationalAlert } from './lib/notify';
+import { fetchItemSourceNames, type ImportItemOutcome } from './lib/importers/common';
 import { runAndRecord } from './lib/import-runs';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
 import { resolveFeedSyncOptions, syncFeedCollection } from './lib/importers/feed';
@@ -13,6 +14,7 @@ import { resolveNoteSyncOptions, syncNoteCollection } from './lib/importers/note
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
 import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
 import { formatWeeklyReviewMessage, runWeeklyReview } from './lib/maintenance-review';
+import { topic } from './config/topic.config.mjs';
 
 // wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
 // Cloudflare アカウントの Cron Trigger 登録数上限（現行プランで5件）に収めるため、日次ジョブ群は
@@ -58,6 +60,24 @@ export default {
 	},
 } satisfies ExportedHandler<Env>;
 
+// 収集ジョブで新規採用（action='inserted'）された記事だけを、Xの下書き付きでDiscordに知らせる。
+// 更新・棄却分はここでは通知しない（新着記事のポスト下書きという用途に絞るため）。
+async function notifyNewItems(items: ImportItemOutcome[]): Promise<void> {
+	const newItems = items.filter((item): item is ImportItemOutcome & { id: number } => item.action === 'inserted' && item.id !== null);
+	if (newItems.length === 0) return;
+	// blog/feed/hatena は記事ごとに掲載元（個人ブログ等）が異なるため、保存済みの
+	// sources.name を都度引いて「タイトル - ソース」の下書きに反映する。
+	const sourceNames = await fetchItemSourceNames(newItems.map((item) => item.id));
+	await sendNewItemsDigest(
+		env,
+		newItems.map((item) => ({
+			title: item.title,
+			externalUrl: item.externalUrl,
+			sourceName: sourceNames.get(item.id) ?? topic.site.name,
+		})),
+	);
+}
+
 async function runScheduledWeeklyReview(): Promise<void> {
 	// items/sources の重複候補を検出するだけの読み取り専用ジョブ（DBは書き換えない）。
 	// 統合が必要な候補は merge-item.mjs / merge-source.mjs を人手で確認して実行する。
@@ -88,6 +108,7 @@ async function runScheduledQiitaImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:qiita] sync failed', error);
 		// ログは Workers 内にしか残らず誰も気づけないため、Webhook にも通知する。
@@ -107,6 +128,7 @@ async function runScheduledZennImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:zenn] sync failed', error);
 		await sendOperationalAlert(env, 'Zenn 収集ジョブが失敗しました', error);
@@ -125,6 +147,7 @@ async function runScheduledNoteImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:note] sync failed', error);
 		await sendOperationalAlert(env, 'note 収集ジョブが失敗しました', error);
@@ -145,6 +168,7 @@ async function runScheduledBlogImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:blog] sync failed', error);
 		await sendOperationalAlert(env, 'ブログ（Brave Search）収集ジョブが失敗しました', error);
@@ -164,6 +188,7 @@ async function runScheduledFeedImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:feed] sync failed', error);
 		await sendOperationalAlert(env, 'RSSフィード追従収集ジョブが失敗しました', error);
@@ -185,6 +210,7 @@ async function runScheduledHatenaImport(): Promise<void> {
 			updated: result.updated,
 			skipped: result.skipped,
 		});
+		await notifyNewItems(result.items);
 	} catch (error) {
 		console.error('[cron:hatena] sync failed', error);
 		await sendOperationalAlert(env, 'はてなブックマーク収集ジョブが失敗しました', error);

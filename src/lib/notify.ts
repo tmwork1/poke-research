@@ -11,7 +11,8 @@ async function postToWebhook(env: AlertEnv, message: string): Promise<void> {
 	const webhookUrl = env.ALERT_WEBHOOK_URL?.trim();
 	if (!webhookUrl) return;
 
-	const isDiscord = webhookUrl.includes('discord.com/api/webhooks');
+	// discordapp.com は Discord の旧ドメイン（現在も有効なWebhook URLとして発行される）。
+	const isDiscord = /discord(app)?\.com\/api\/webhooks/.test(webhookUrl);
 	const payload = isDiscord ? { content: message } : { text: message };
 
 	try {
@@ -37,4 +38,25 @@ export async function sendOperationalAlert(env: AlertEnv, title: string, error: 
 // エラーではない定期レポート（週次DBレビューなど）用。⚠️ではなく📋を付け、アラートと区別する。
 export async function sendMaintenanceReport(env: AlertEnv, title: string, body: string): Promise<void> {
 	await postToWebhook(env, `📋 [${topic.site.slug}] ${title}\n${body.slice(0, 1500)}`);
+}
+
+export interface NewItemDigestEntry {
+	title: string;
+	externalUrl: string;
+	/** 記事の掲載元名（sources.name）。Qiita/Zenn/noteは固定、blog/feed/hatenaは記事ごとに異なる。 */
+	sourceName: string;
+}
+
+// Xは140字制限のため、記事が複数件でも収まるよう要約・ハッシュタグは付けず、
+// サイトURL＋各記事のタイトル/URL/掲載元だけの下書きにする（下書きなので投稿前の手直しは前提）。
+function buildXPostDraft(items: NewItemDigestEntry[]): string {
+	const lines = items.map((item) => `${item.title} - ${item.sourceName}\n${item.externalUrl}`);
+	return [`${topic.site.url}/`, ...lines].join('\n\n');
+}
+
+// 収集ジョブで新規に採用された記事を、Xに投稿しやすい下書き文にまとめてDiscordへ送る。
+export async function sendNewItemsDigest(env: AlertEnv, items: NewItemDigestEntry[]): Promise<void> {
+	if (items.length === 0) return;
+	const draft = buildXPostDraft(items);
+	await postToWebhook(env, `【${topic.site.slug}】新着 ${items.length} 件\n\n${draft.slice(0, 1500)}`);
 }
