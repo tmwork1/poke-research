@@ -127,6 +127,16 @@ cp .env.example .env
 - 手動で起動したい場合は、ローカルなら `npm run collect:hatena`、デプロイ後は `POST /api/import/hatena` を叩く。他インポーターと同様に `external_url` の UNIQUE 制約に基づく upsert なので、何度実行しても重複行は増えない（冪等）。`scripts/collect/backfill.mjs` の既定対象（`BACKFILL_TARGETS`）には含まれないため、使う場合は明示的に指定する。
 - 失敗時: `wrangler tail` などで `[cron:hatena] sync failed` を確認する。記事単位の失敗は `skipped` に吸収されるため、ジョブ全体が落ちるのははてなブックマーク側の仕様変更など致命的なケースのみ。復旧を確認したら、次回 cron を待つか手動実行で再実行すればよい。
 
+## RSSフィード追従収集ジョブ
+
+- Brave Search / はてなブックマーク検索は「新しい発信元をキーワードで毎回探す」ため、無料枠の消費や無関係な誤検出が避けられない。一度見つかった良質な発信元は、以後はその発信元が配信するRSS/AtomフィードをURL指定で直接ポーリングする方が効率的なため、`feed_subscriptions`（`migrations/022_add_feed_subscriptions.sql`）に登録して追従する。
+- **登録は自動・条件付き**: `src/lib/importers/blog.ts`/`hatena.ts` が記事ページを取得する際、`<link rel="alternate" type="application/rss+xml"|"application/atom+xml">` を検出し、**AIレビューで採用（`accepted=true`）された記事に限り** `feed_subscriptions` にフィードURLを登録する（無関係サイトのフィード登録・OpenAI課金の無駄打ちを避けるため）。個々のブログ・note著者を手動で登録する手段は無い。
+- `src/lib/importers/feed.ts` が `feed_subscriptions` の `status='active'` な行を取得し、各フィードを取得・解析（RSS 2.0 / Atom 両対応、`feed-xml.ts`）して新規記事を本文取得・AIレビュー・DB upsertする（本文抽出は blog.ts と共通）。取り込み済みのURLは本文取得前に除外し、コストを抑える。
+- フィード取得に5回連続で失敗すると `status='disabled'` になり、以後ポーリング対象から外れる（再有効化する運用コマンドは無いため、必要ならDBを直接更新する）。
+- 本番では Cloudflare Cron Triggers（`wrangler.jsonc` の `triggers.crons` に他ジョブとは別枠で追加、既定は毎日 20:00 UTC = JST 5:00、Brave/はてなの日次収集より1時間前）が `src/worker.ts` の `scheduled` ハンドラを起動する。
+- 手動で起動したい場合は、ローカルなら `npm run collect:feed`、デプロイ後は `POST /api/import/feed` を叩く。他インポーターと同様に `external_url` の UNIQUE 制約に基づく upsert なので、何度実行しても重複行は増えない（冪等）。
+- 失敗時: `wrangler tail` などで `[cron:feed] sync failed` を確認する。個々のフィード取得失敗は `feed_subscriptions.consecutive_failures` に記録され記事単位の失敗も `skipped` に吸収されるため、ジョブ全体が落ちるのは致命的なケースのみ。
+
 ## リンク切れ検出ジョブ
 
 - 元記事の削除・非公開化を検出するため、`items.external_url` を定期チェックし判定を `items.link_status`（`ok` / `broken`）・`link_checked_at`・`link_broken_since` に記録する（`migrations/016_add_link_status.sql`、実装は `src/lib/importers/link-check.ts`）。他の収集ジョブと異なり新規アイテムは作らない。

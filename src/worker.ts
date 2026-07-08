@@ -6,6 +6,7 @@ import { env } from 'cloudflare:workers';
 import { sendMaintenanceReport, sendOperationalAlert } from './lib/notify';
 import { runAndRecord } from './lib/import-runs';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
+import { resolveFeedSyncOptions, syncFeedCollection } from './lib/importers/feed';
 import { resolveHatenaSyncOptions, syncHatenaCollection } from './lib/importers/hatena';
 import { checkLinks, resolveLinkCheckOptions } from './lib/importers/link-check';
 import { resolveNoteSyncOptions, syncNoteCollection } from './lib/importers/note';
@@ -18,6 +19,9 @@ import { formatWeeklyReviewMessage, runWeeklyReview } from './lib/maintenance-re
 // "*/30 21-23 * * *" の1エントリに集約している。この場合 controller.cron は6つの起動時刻すべてで
 // 同一の文字列になるため、controller.scheduledTime（UTC時刻）の時:分で個別ジョブに振り分ける。
 const WEEKLY_REVIEW_CRON = '30 20 * * 1';
+// feed_subscriptions（migrations/022）を直接ポーリングするジョブは単独の Cron Trigger エントリの
+// ため、controller.cron の完全一致だけで判定できる（WEEKLY_REVIEW_CRON と同じ方式）。
+const FEED_POLL_CRON = '0 20 * * *';
 
 const DAILY_SLOT_HANDLERS: Record<string, () => Promise<void>> = {
 	'21:00': runScheduledQiitaImport,
@@ -35,6 +39,10 @@ export default {
 	async scheduled(controller, _ctxEnv, ctx) {
 		if (controller.cron === WEEKLY_REVIEW_CRON) {
 			ctx.waitUntil(runScheduledWeeklyReview());
+			return;
+		}
+		if (controller.cron === FEED_POLL_CRON) {
+			ctx.waitUntil(runScheduledFeedImport());
 			return;
 		}
 		const scheduledAt = new Date(controller.scheduledTime);
@@ -140,6 +148,25 @@ async function runScheduledBlogImport(): Promise<void> {
 	} catch (error) {
 		console.error('[cron:blog] sync failed', error);
 		await sendOperationalAlert(env, 'ブログ（Brave Search）収集ジョブが失敗しました', error);
+	}
+}
+
+async function runScheduledFeedImport(): Promise<void> {
+	// 他インポーター同様、記事単位の失敗は syncFeedCollection 内で skipped として吸収される。
+	// 失敗時は次回 cron 実行を待つか、POST /api/import/feed を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
+	try {
+		const result = await runAndRecord('feed', 'cron', () => syncFeedCollection(resolveFeedSyncOptions(env)));
+		console.log('[cron:feed] sync completed', {
+			feedsPolled: result.feedsPolled,
+			requestsUsed: result.requestsUsed,
+			fetched: result.fetched,
+			inserted: result.inserted,
+			updated: result.updated,
+			skipped: result.skipped,
+		});
+	} catch (error) {
+		console.error('[cron:feed] sync failed', error);
+		await sendOperationalAlert(env, 'RSSフィード追従収集ジョブが失敗しました', error);
 	}
 }
 
