@@ -41,6 +41,8 @@ export interface Item {
   link_broken_since?: string | null;
   /** AIレビューでの採否（migrations/018）。false は一覧・検索から除外される（偽陰性レビュー用に保存はする）。 */
   ai_accepted?: boolean;
+  /** AIが判定した記事本文の主な言語（ISO 639-1の小文字コード。migrations/021）。未判定はnull。 */
+  language?: string | null;
 }
 
 export interface Tag {

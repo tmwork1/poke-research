@@ -252,6 +252,7 @@ async function processZennSlug(slug: string, sourceId: number, topic: string, fe
 						version: detail.body_updated_at ?? detail.published_at,
 						body: truncateBodyForStorage(extractBodyText(detail)),
 						aiAccepted: review.accepted,
+						language: review.language,
 					},
 					review.tags.length > 0 ? review.tags : extractTags(detail),
 					undefined,

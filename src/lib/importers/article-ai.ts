@@ -26,6 +26,8 @@ export interface ImportArticleReview {
 	tagLabels: Record<string, string>;
 	reason: string;
 	confidence?: number;
+	/** AIが判定した記事本文の主な言語（ISO 639-1の小文字コード。migrations/021）。 */
+	language: string;
 	model: string;
 }
 
@@ -114,6 +116,7 @@ function parseAiResponse(content: string): Omit<ImportArticleReview, 'model'> {
 
 	const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
 	const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : '';
+	const language = typeof parsed.language === 'string' ? parsed.language.trim().toLowerCase() : '';
 	const { tags, tagLabels } = Array.isArray(parsed.tags)
 		? normalizeAiTags(parsed.tags.filter((tag): tag is string => typeof tag === 'string'))
 		: { tags: [], tagLabels: {} };
@@ -121,6 +124,7 @@ function parseAiResponse(content: string): Omit<ImportArticleReview, 'model'> {
 
 	if (!summary) throw new Error('OpenAI response missing summary');
 	if (!reason) throw new Error('OpenAI response missing reason');
+	if (!language) throw new Error('OpenAI response missing language');
 
 	return {
 		accepted,
@@ -129,6 +133,7 @@ function parseAiResponse(content: string): Omit<ImportArticleReview, 'model'> {
 		tagLabels,
 		reason,
 		confidence,
+		language,
 	};
 }
 
