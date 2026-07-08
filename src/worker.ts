@@ -22,11 +22,11 @@ const WEEKLY_REVIEW_CRON = '30 20 * * 1';
 // ため、controller.cron の完全一致だけで判定できる（WEEKLY_REVIEW_CRON と同じ方式）。
 const FEED_POLL_CRON = '0 20 * * *';
 // 日次収集ジョブ群（Cloudflare アカウントの Cron Trigger 登録数上限＝現行プランで5件のため、
-// 個別エントリを確保できない）は "0 21 * * *" の1回の発火にまとめ、順にawaitして実行する
+// 個別エントリを確保できない）は "0 0 * * *"（0:00 UTC = JST 09:00）の1回の発火にまとめ、順にawaitして実行する
 // （並列実行ではない）。各ジョブは個別に try/catch を持つため、1つが失敗しても後続は実行される。
 // note は非公式APIが403 Access deniedを返すようになったため自動実行対象から外している
 // （コード・手動起動用API（/api/import/note）は残したまま、cronからの呼び出しのみ停止）。
-const DAILY_CRON = '0 21 * * *';
+const DAILY_CRON = '0 0 * * *';
 const DAILY_JOBS: Array<() => Promise<void>> = [
 	runScheduledQiitaImport,
 	runScheduledZennImport,
