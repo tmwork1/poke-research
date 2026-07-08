@@ -14,7 +14,7 @@ describe('processImportItem', () => {
 		const outcome = await processImportItem(
 			'https://example.com/a',
 			'title-a',
-			async () => ({ accepted: true, reason: '', summary: 'summary-a', tags: ['tag-a'] }),
+			async () => ({ accepted: true, reason: '' }),
 			async (review) => {
 				upsertCalls.push(review);
 				return { id: 1, action: 'inserted' as const };
@@ -22,14 +22,7 @@ describe('processImportItem', () => {
 		);
 
 		assert.equal(upsertCalls.length, 1);
-		assert.deepEqual(outcome, {
-			id: 1,
-			action: 'inserted',
-			externalUrl: 'https://example.com/a',
-			title: 'title-a',
-			summary: 'summary-a',
-			tags: ['tag-a'],
-		});
+		assert.deepEqual(outcome, { id: 1, action: 'inserted', externalUrl: 'https://example.com/a', title: 'title-a' });
 	});
 
 	it('棄却時も upsert が呼ばれ items に保存される（案A）が、action は skipped のまま', async () => {
