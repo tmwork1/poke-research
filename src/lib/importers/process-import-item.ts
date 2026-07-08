@@ -7,6 +7,9 @@
 export interface ImportReviewOutcome {
 	accepted: boolean;
 	reason: string;
+	/** AIレビューが生成した要約・タグ（あれば）。新着記事のSNS向け通知の下書きに使う。 */
+	summary?: string;
+	tags?: string[];
 }
 
 export interface ImportItemOutcome {
@@ -15,6 +18,9 @@ export interface ImportItemOutcome {
 	externalUrl: string;
 	title: string;
 	reason?: string;
+	/** 採用時のAIレビュー結果。新着記事のSNS向け通知の下書きに使う（ImportReviewOutcome参照）。 */
+	summary?: string;
+	tags?: string[];
 }
 
 /**
@@ -55,7 +61,7 @@ export async function processImportItem<TReview extends ImportReviewOutcome>(
 			return { id: upserted.id, action: 'skipped', externalUrl, title, reason: result.reason };
 		}
 
-		return { id: upserted.id, action: upserted.action, externalUrl, title };
+		return { id: upserted.id, action: upserted.action, externalUrl, title, summary: result.summary, tags: result.tags };
 	} catch (error) {
 		return {
 			id: null,
