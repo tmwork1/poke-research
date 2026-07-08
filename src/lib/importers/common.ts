@@ -314,6 +314,76 @@ export async function findItemVersionByExternalUrl(externalUrl: string): Promise
 	return data?.[0]?.version ?? null;
 }
 
+export interface FeedSubscriptionUpsertPayload {
+	feedUrl: string;
+	hostname: string;
+	discoveredFromUrl: string;
+}
+
+export async function upsertFeedSubscription(payload: FeedSubscriptionUpsertPayload): Promise<void> {
+	// 無効化済み（status='disabled'）のフィードを再発見のたびに誤って再有効化しないよう、
+	// 既存行があれば何もしない（ignoreDuplicates）。未登録の場合のみ active で新規作成する。
+	const supabase = await getSupabaseClient();
+	const { error } = await supabase
+		.from('feed_subscriptions')
+		.upsert(
+			{ feed_url: payload.feedUrl, hostname: payload.hostname, discovered_from_url: payload.discoveredFromUrl },
+			{ onConflict: 'feed_url', ignoreDuplicates: true },
+		);
+	if (error) throw error;
+}
+
+export interface FeedSubscription {
+	id: number;
+	feedUrl: string;
+	hostname: string;
+}
+
+export async function fetchActiveFeedSubscriptions(): Promise<FeedSubscription[]> {
+	const supabase = await getSupabaseClient();
+	const { data, error } = await supabase.from('feed_subscriptions').select('id, feed_url, hostname').eq('status', 'active');
+	if (error) throw error;
+	return (data ?? []).map((row) => ({
+		id: row.id as number,
+		feedUrl: row.feed_url as string,
+		hostname: row.hostname as string,
+	}));
+}
+
+const MAX_CONSECUTIVE_FEED_FAILURES = 5;
+
+export async function recordFeedFetchOutcome(id: number, success: boolean): Promise<void> {
+	// 連続失敗が既定回数に達したフィードは status='disabled' にして、死んだフィードへの
+	// 無駄なポーリングを止める（再有効化する運用コマンドは今回は用意しない）。
+	const supabase = await getSupabaseClient();
+	const nowIso = new Date().toISOString();
+
+	if (success) {
+		const { error } = await supabase
+			.from('feed_subscriptions')
+			.update({ consecutive_failures: 0, last_fetched_at: nowIso })
+			.eq('id', id);
+		if (error) throw error;
+		return;
+	}
+
+	const { data, error: selectError } = await supabase
+		.from('feed_subscriptions')
+		.select('consecutive_failures')
+		.eq('id', id)
+		.single();
+	if (selectError) throw selectError;
+
+	const consecutiveFailures = ((data as { consecutive_failures: number }).consecutive_failures ?? 0) + 1;
+	const status = consecutiveFailures >= MAX_CONSECUTIVE_FEED_FAILURES ? 'disabled' : 'active';
+
+	const { error: updateError } = await supabase
+		.from('feed_subscriptions')
+		.update({ consecutive_failures: consecutiveFailures, last_fetched_at: nowIso, status })
+		.eq('id', id);
+	if (updateError) throw updateError;
+}
+
 // processImportItem・shouldPreserveAcceptedItem は getSupabaseClient/OpenAI 呼び出しに依存しない
 // 純粋な関数のため、node --test から直接テストできるよう process-import-item.ts に切り出して
 // ある（cloudflare:workers 依存が無いファイルに分離することで import 時点で落ちないようにする

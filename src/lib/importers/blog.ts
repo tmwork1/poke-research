@@ -10,6 +10,7 @@ import {
 	mapWithConcurrency,
 	processImportItem,
 	truncateBodyForStorage,
+	upsertFeedSubscription,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
@@ -159,7 +160,11 @@ export interface ExtractedPage {
 	modifiedAt: string | null;
 	bodyText: string;
 	extractionMethod: 'article' | 'main' | 'body';
+	/** <link rel="alternate" type="application/rss+xml|atom+xml"> で見つかったフィードURL（絶対URL化済み）。 */
+	feedUrl: string | null;
 }
+
+const FEED_LINK_TYPES = new Set(['application/rss+xml', 'application/atom+xml']);
 
 function normalizeExtractedText(text: string): string {
 	return text.replace(/\s+/g, ' ').trim();
@@ -178,6 +183,7 @@ export async function extractPage(response: Response): Promise<ExtractedPage> {
 	let mainText = '';
 	let bodyText = '';
 	let excludedDepth = 0;
+	let feedHref = '';
 
 	const rewriter = new HTMLRewriter()
 		.on('meta[property="og:title"]', {
@@ -198,6 +204,13 @@ export async function extractPage(response: Response): Promise<ExtractedPage> {
 		.on('link[rel="canonical"]', {
 			element(el) {
 				canonicalUrl = el.getAttribute('href')?.trim() || canonicalUrl;
+			},
+		})
+		.on('link[rel="alternate"]', {
+			element(el) {
+				const type = el.getAttribute('type');
+				const href = el.getAttribute('href')?.trim();
+				if (href && type && FEED_LINK_TYPES.has(type) && !feedHref) feedHref = href;
 			},
 		})
 		.on('meta[name="author"]', {
@@ -261,6 +274,15 @@ export async function extractPage(response: Response): Promise<ExtractedPage> {
 		selectedBody = normalizedMain;
 	}
 
+	let feedUrl: string | null = null;
+	if (feedHref) {
+		try {
+			feedUrl = new URL(feedHref, response.url).toString();
+		} catch {
+			feedUrl = null;
+		}
+	}
+
 	return {
 		title: ogTitle || normalizeExtractedText(titleTagText) || null,
 		ogSiteName: ogSiteName || null,
@@ -270,6 +292,7 @@ export async function extractPage(response: Response): Promise<ExtractedPage> {
 		modifiedAt: modifiedTime || null,
 		bodyText: selectedBody,
 		extractionMethod,
+		feedUrl,
 	};
 }
 
@@ -380,6 +403,13 @@ async function processBlogCandidate(candidate: BlogCandidate, fetchedAt: string,
 					bodyExcerpt: aiBodyExcerpt,
 				}),
 			async (review) => {
+				// AIレビューで採用された記事のページがRSS/Atomフィードを配信していれば、以後は
+				// feed.ts がそのフィードを直接ポーリングして追従できるよう登録する（無関係サイトの
+				// フィードを登録しOpenAI課金を無駄打ちしないよう、採用された記事に限定する）。
+				if (review.accepted && extracted.feedUrl) {
+					await upsertFeedSubscription({ feedUrl: extracted.feedUrl, hostname, discoveredFromUrl: externalUrl });
+				}
+
 				const blogSource = resolveBlogSource(hostname);
 				const source = await upsertSourceByOriginUrl({
 					name: blogSource.name,

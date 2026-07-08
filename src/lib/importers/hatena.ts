@@ -17,6 +17,7 @@ import {
 	mapWithConcurrency,
 	processImportItem,
 	truncateBodyForStorage,
+	upsertFeedSubscription,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
@@ -237,6 +238,12 @@ async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: str
 					bodyExcerpt: aiBodyExcerpt,
 				}),
 			async (review) => {
+				// blog.ts と同様、採用された記事のページがRSS/Atomフィードを配信していれば登録し、
+				// 以後 feed.ts が直接ポーリングできるようにする。
+				if (review.accepted && extracted.feedUrl) {
+					await upsertFeedSubscription({ feedUrl: extracted.feedUrl, hostname, discoveredFromUrl: externalUrl });
+				}
+
 				const blogSource = resolveBlogSource(hostname);
 				const source = await upsertSourceByOriginUrl({
 					name: blogSource.name,
