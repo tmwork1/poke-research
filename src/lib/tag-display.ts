@@ -80,6 +80,8 @@ const KNOWN_LABELS: Record<string, string> = {
 	codepen: 'CodePen',
 	hyper: 'Hyper',
 	vbalink: 'VBALink',
+	graphql: 'GraphQL',
+	numpy: 'NumPy',
 };
 
 const ASCII_WORD = /^[a-z0-9][a-z0-9.+#-]*$/i;
