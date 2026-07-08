@@ -18,16 +18,17 @@ import { topic } from './config/topic.config.mjs';
 
 // wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
 const WEEKLY_REVIEW_CRON = '30 20 * * 1';
-// feed_subscriptions（migrations/022）を直接ポーリングするジョブは単独の Cron Trigger エントリの
-// ため、controller.cron の完全一致だけで判定できる（WEEKLY_REVIEW_CRON と同じ方式）。
-const FEED_POLL_CRON = '0 20 * * *';
 // 日次収集ジョブ群（Cloudflare アカウントの Cron Trigger 登録数上限＝現行プランで5件のため、
 // 個別エントリを確保できない）は "0 0 * * *"（0:00 UTC = JST 09:00）の1回の発火にまとめ、順にawaitして実行する
 // （並列実行ではない）。各ジョブは個別に try/catch を持つため、1つが失敗しても後続は実行される。
 // note は非公式APIが403 Access deniedを返すようになったため自動実行対象から外している
 // （コード・手動起動用API（/api/import/note）は残したまま、cronからの呼び出しのみ停止）。
+// フィードポーリングは以前は独立した Cron Trigger エントリだったが、必要なのは
+// 「blog/hatenaの当日収集より先に消化する」という順序の担保だけだったため、単一発火の
+// 先頭ジョブとして統合し、Cron Trigger エントリを1つ節約した。
 const DAILY_CRON = '0 0 * * *';
 const DAILY_JOBS: Array<() => Promise<void>> = [
+	runScheduledFeedImport,
 	runScheduledQiitaImport,
 	runScheduledZennImport,
 	runScheduledBlogImport,
@@ -43,10 +44,6 @@ export default {
 	async scheduled(controller, _ctxEnv, ctx) {
 		if (controller.cron === WEEKLY_REVIEW_CRON) {
 			ctx.waitUntil(runScheduledWeeklyReview());
-			return;
-		}
-		if (controller.cron === FEED_POLL_CRON) {
-			ctx.waitUntil(runScheduledFeedImport());
 			return;
 		}
 		if (controller.cron === DAILY_CRON) {
