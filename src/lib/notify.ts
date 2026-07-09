@@ -54,9 +54,22 @@ function buildXPostDraft(items: NewItemDigestEntry[]): string {
 	return [`${topic.site.url}/`, ...lines].join('\n\n');
 }
 
-// 収集ジョブで新規に採用された記事を、Xに投稿しやすい下書き文にまとめてDiscordへ送る。
-export async function sendNewItemsDigest(env: AlertEnv, items: NewItemDigestEntry[]): Promise<void> {
-	if (items.length === 0) return;
+export interface DailySourceBreakdown {
+	label: string;
+	count: number;
+}
+
+// 日次収集（wrangler.jsonc の DAILY_CRON）1回分をまとめて1件のDigestとしてDiscordへ送る。
+// ソースごとの個別通知（旧sendNewItemsDigest）だと0件のソースは黙ってしまい、cronが
+// 正常に実行されたかどうかが通知だけでは分からなかったため、合計0件でも必ず送信する
+// （「cronが動いた」ことの確認シグナルとして機能させる）。
+export async function sendDailyDigest(env: AlertEnv, items: NewItemDigestEntry[], breakdown: DailySourceBreakdown[]): Promise<void> {
+	const breakdownLine = breakdown.map((b) => `${b.label} ${b.count}件`).join('・');
+	const header = `【${topic.site.slug}】本日の収集結果: 合計${items.length}件（${breakdownLine}）`;
+	if (items.length === 0) {
+		await postToWebhook(env, header);
+		return;
+	}
 	const draft = buildXPostDraft(items);
-	await postToWebhook(env, `【${topic.site.slug}】新着 ${items.length} 件\n\n${draft.slice(0, 1500)}`);
+	await postToWebhook(env, `${header}\n\n${draft.slice(0, 1500)}`);
 }
