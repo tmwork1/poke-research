@@ -1,0 +1,266 @@
+// arXiv API から論文（プレプリント）を収集し、AI レビューを通して DB に反映する。
+// qiita.ts（API直取得・HTML本文取得不要）を最も近いパターンとして踏襲するが、次の点が異なる。
+//   - items.kind は 'article' ではなく 'paper'（docs/plan/paper.md）。
+//   - 本文（body）は HTML 記事本文ではなくアブストラクト全文をそのまま使う。
+//   - 採否基準・要約文字数は article-ai.ts 経由で kind='paper' を渡し、
+//     src/config/ai-review-prompt.mjs 側で論文向けに出し分ける。
+//
+// 収集クエリはキーワードのみで広く収集し、AIレビューを安全網にする方針を取る
+// （Brave収集・はてなブックマーク収集と同じパターン。docs/plan/paper.md 参照）。
+// ポケモンへの一言だけの言及で無関係な論文（例: 他ゲームのRL研究の一例として名前が出るだけ）が
+// 混入しうるため、prompt 側の(2)基準で「論文全体を通じて主要な研究対象として扱っているか」を
+// 問う内容にしている。
+//
+// arXiv API利用ポリシー（https://info.arxiv.org/help/api/tou.html）は連続リクエストの間隔を
+// 空けることを求めているが、本インポーターは1回の収集で1リクエストのみ（ページング無し）の
+// ため、qiita.ts のような複数ページ取得時の待機処理は不要（深刻な連続アクセスにならない）。
+import { reviewImportArticle } from './article-ai';
+import { parseArxivFeed, type ArxivFeedEntry } from './arxiv-feed';
+import {
+	fetchTopTagNames,
+	mapWithConcurrency,
+	processImportItem,
+	truncateBodyForStorage,
+	upsertItemByExternalUrl,
+	upsertSourceByOriginUrl,
+	type ImportItemOutcome,
+} from './common';
+import { POKEMON_KEYWORDS } from './keywords';
+import { parsePositiveInteger } from '../params';
+import { topic } from '../../config/topic.config.mjs';
+
+const ARXIV_API_URL = 'https://export.arxiv.org/api/query';
+const ARXIV_SOURCE_NAME = 'arXiv';
+const ARXIV_SOURCE_ORIGIN_URL = 'https://arxiv.org/';
+const DEFAULT_KIND = 'paper';
+const MAX_AI_BODY_CHARS = 4000;
+const DEFAULT_MAX_RESULTS = 50;
+const IMPORT_CONCURRENCY = 4;
+
+// arXivの検索構文（search_query）は日本語キーワードを扱えないため、topic.config.mjs の
+// searchKeywords のうち英数字のみのもの（pokemon/pokeapi 等）を all: フィールドで束ねる
+// （ai-review-prompt.mjs の englishSynonym 抽出と同じ絞り込みロジック）。
+const ARXIV_KEYWORDS = POKEMON_KEYWORDS.filter((keyword) => /^[a-z0-9]+$/i.test(keyword));
+// arXivの検索インデックスはアクセント記号のfoldingを行わないため、"pokemon"では
+// "Pokémon"表記（アクセント付きé）のみを使う論文がヒットしない（実例:
+// arXiv:2504.04395 "Human-Level Competitive Pokémon via..."。all:pokemonでは0件、
+// all:pokémonでは別途32件ヒットを確認）。pokemonを含むキーワードに限り、アクセント付き
+// 表記も OR で束ねて取りこぼしを防ぐ。
+const ARXIV_ACCENTED_VARIANTS: Record<string, string> = { pokemon: 'pokémon' };
+const ARXIV_QUERY_TERMS = ARXIV_KEYWORDS.flatMap((keyword) => {
+	const accented = ARXIV_ACCENTED_VARIANTS[keyword.toLowerCase()];
+	return accented ? [keyword, accented] : [keyword];
+});
+const DEFAULT_QUERY = ARXIV_QUERY_TERMS.map((keyword) => `all:${keyword}`).join(' OR ');
+
+export interface ArxivSyncOptions {
+	query?: string;
+	maxResults?: number;
+	start?: number;
+}
+
+export interface ArxivSyncResult {
+	query: string;
+	maxResults: number;
+	start: number;
+	fetched: number;
+	inserted: number;
+	updated: number;
+	skipped: number;
+	sourceId: number;
+	fetchedAt: string;
+	items: ImportItemOutcome[];
+}
+
+function normalizeQuery(query?: string): string {
+	const trimmed = query?.trim();
+	return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_QUERY;
+}
+
+// API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う
+// 前提で用意しているが、今回のスコープでは cron（wrangler.jsonc）への組み込みは行わない
+// （Cloudflareアカウントのcron trigger数上限のため、docs/plan/paper.md 参照）。
+// 検索語（query）は収集内容の質に直結するため、env では管理せずコード（DEFAULT_QUERY）に一本化する。
+export interface ArxivEnvDefaults {
+	ARXIV_MAX_RESULTS?: string | number;
+}
+
+export function resolveArxivSyncOptions(env: ArxivEnvDefaults, overrides: ArxivSyncOptions = {}): Required<ArxivSyncOptions> {
+	return {
+		query: overrides.query?.trim() || DEFAULT_QUERY,
+		maxResults: parsePositiveInteger(overrides.maxResults, parsePositiveInteger(env.ARXIV_MAX_RESULTS, DEFAULT_MAX_RESULTS)),
+		// start=0（先頭から取得）が既定のため、0以上の整数を明示的に渡された場合だけ上書きする。
+		start: Number.isInteger(overrides.start) && (overrides.start as number) >= 0 ? (overrides.start as number) : 0,
+	};
+}
+
+function extractArxivId(entryId: string): string {
+	// 例: http://arxiv.org/abs/2401.01234v1 -> 2401.01234v1
+	const match = entryId.match(/\/abs\/([^/]+)$/);
+	return match ? match[1] : entryId;
+}
+
+function canonicalizeAbsUrl(entryId: string): string {
+	// スキームをhttpsに揃え、末尾のバージョン番号（vN）を取り除く。arXivは論文が改訂される
+	// たびにIDのバージョンが上がる（例: v1 -> v2）ため、バージョン込みのURLをそのまま
+	// external_url にすると改訂のたびに別記事として重複登録されてしまう。バージョン番号を
+	// 除いた URL を external_url の UNIQUE 制約（migrations/002）に載せることで、
+	// 改訂後も同一論文として upsert され続ける（version 列には entry.updated を使うため、
+	// 改訂内容自体は version の変化で検知できる）。
+	const withHttps = entryId.replace(/^http:\/\//, 'https://');
+	return withHttps.replace(/v\d+$/, '');
+}
+
+function createAiBodyExcerpt(entry: ArxivFeedEntry): string {
+	// アブストラクトはHTML記事本文と比べて短いため切り詰めが必要になることは稀だが、
+	// OpenAI 送信用のコスト・応答安定性のため他インポーター同様に上限を設ける。
+	return entry.summary.length > MAX_AI_BODY_CHARS ? entry.summary.slice(0, MAX_AI_BODY_CHARS) : entry.summary;
+}
+
+function createSourceMetadata(query: string, fetchedAt: string, maxResults: number, start: number) {
+	return {
+		service: 'arxiv',
+		api_url: ARXIV_API_URL,
+		origin_url: ARXIV_SOURCE_ORIGIN_URL,
+		collection: {
+			query,
+			max_results: maxResults,
+			start,
+			fetched_at: fetchedAt,
+		},
+	};
+}
+
+function createItemMetadata(entry: ArxivFeedEntry, query: string, fetchedAt: string, aiReview: Awaited<ReturnType<typeof reviewImportArticle>>) {
+	const arxivId = extractArxivId(entry.id);
+	return {
+		service: 'arxiv',
+		arxiv: {
+			arxiv_id: arxivId,
+			categories: entry.categories,
+			primary_category: entry.primaryCategory,
+		},
+		provenance: {
+			source: 'arxiv-importer',
+			query,
+			fetched_at: fetchedAt,
+			arxiv_id: arxivId,
+			arxiv_url: entry.id,
+			arxiv_updated_at: entry.updated,
+		},
+		ai: {
+			model: aiReview.model,
+			accepted: aiReview.accepted,
+			reason: aiReview.reason,
+			confidence: aiReview.confidence ?? null,
+			summary: aiReview.summary,
+			tags: aiReview.tags,
+		},
+	};
+}
+
+async function fetchArxivEntries(query: string, maxResults: number, start: number): Promise<ArxivFeedEntry[]> {
+	const url = new URL(ARXIV_API_URL);
+	url.searchParams.set('search_query', query);
+	url.searchParams.set('start', String(start));
+	url.searchParams.set('max_results', String(maxResults));
+	url.searchParams.set('sortBy', 'submittedDate');
+	url.searchParams.set('sortOrder', 'descending');
+
+	const response = await fetch(url, {
+		headers: { 'User-Agent': `${topic.site.slug}-arxiv-importer` },
+	});
+	if (!response.ok) {
+		const detail = await response.text();
+		throw new Error(`arXiv API request failed (${response.status}): ${detail}`);
+	}
+
+	return parseArxivFeed(await response.text());
+}
+
+export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promise<ArxivSyncResult> {
+	const query = normalizeQuery(options.query);
+	const maxResults = parsePositiveInteger(options.maxResults, DEFAULT_MAX_RESULTS);
+	const start = Number.isInteger(options.start) && (options.start as number) >= 0 ? (options.start as number) : 0;
+	const fetchedAt = new Date().toISOString();
+
+	const [entries, source, existingTags] = await Promise.all([
+		fetchArxivEntries(query, maxResults, start),
+		upsertSourceByOriginUrl({
+			name: ARXIV_SOURCE_NAME,
+			type: 'arxiv',
+			originUrl: ARXIV_SOURCE_ORIGIN_URL,
+			metadata: createSourceMetadata(query, fetchedAt, maxResults, start),
+		}),
+		fetchTopTagNames(),
+	]);
+
+	const itemResults = await mapWithConcurrency(entries, IMPORT_CONCURRENCY, (entry) => {
+		const externalUrl = canonicalizeAbsUrl(entry.id);
+
+		return processImportItem(
+			externalUrl,
+			entry.title,
+			() =>
+				reviewImportArticle({
+					sourceName: ARXIV_SOURCE_NAME,
+					query,
+					title: entry.title,
+					url: externalUrl,
+					authors: entry.authors,
+					sourceTags: entry.categories,
+					existingTags,
+					createdAt: entry.published ?? undefined,
+					updatedAt: entry.updated ?? undefined,
+					bodyExcerpt: createAiBodyExcerpt(entry),
+					kind: DEFAULT_KIND,
+				}),
+			(review) =>
+				upsertItemByExternalUrl(
+					{
+						sourceId: source.id,
+						externalUrl,
+						kind: DEFAULT_KIND,
+						title: entry.title,
+						authors: entry.authors,
+						summary: review.summary,
+						publishedAt: entry.published,
+						updatedAt: entry.updated,
+						metadata: createItemMetadata(entry, query, fetchedAt, review),
+						version: entry.updated ?? entry.id,
+						body: truncateBodyForStorage(entry.summary),
+						aiAccepted: review.accepted,
+						language: review.language,
+					},
+					// arXivのcategory（cs.AI等）は分類コードであり、ユーザー向けタグとしての可読性に
+					// 欠けるため、qiita.tsと異なりフォールバックには使わずAIレビューのtagsのみを使う
+					// （hatena.tsと同じ方針。sourceTagsとしてはAIレビューの判断材料に渡している）。
+					review.tags,
+					undefined,
+					{ syncTags: review.accepted },
+				),
+		);
+	});
+
+	let inserted = 0;
+	let updated = 0;
+	let skipped = 0;
+	for (const result of itemResults) {
+		if (result.action === 'inserted') inserted += 1;
+		else if (result.action === 'updated') updated += 1;
+		else skipped += 1;
+	}
+
+	return {
+		query,
+		maxResults,
+		start,
+		fetched: entries.length,
+		inserted,
+		updated,
+		skipped,
+		sourceId: source.id,
+		fetchedAt,
+		items: itemResults,
+	};
+}

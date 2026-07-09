@@ -30,6 +30,7 @@
 | `scripts/collect/collect-blog.mjs` | `npm run collect:blog` | Brave Search経由の個人ブログ収集。`BLOG_QUERY`/`BRAVE_COUNT`/`BLOG_PAGES`。Brave無料枠（月1000件）に注意。 | OpenAI + Brave |
 | `scripts/collect/collect-hatena.mjs` | `npm run collect:hatena` | はてなブックマーク検索RSS経由の記事収集。`HATENA_KEYWORD`/`HATENA_MAX_CANDIDATES`。全ウェブ横断検索のため収集精度が低いことが判明済み（[docs/progress/2026-07-07.md](../progress/2026-07-07.md)）、AIレビューを安全網として運用する方針。既定の`BACKFILL_TARGETS`には含まれない。 | OpenAI |
 | `scripts/collect/collect-feed.mjs` | `npm run collect:feed` | 登録済みRSS/Atomフィード（`feed_subscriptions`、migrations/022）を直接ポーリングする収集。`FEED_MAX_ENTRIES`。フィードはblog.ts/hatena.tsがAIレビュー採用済み記事のページから自動登録するため事前の手動登録は不要。既定の`BACKFILL_TARGETS`には含まれない。 | OpenAI |
+| `scripts/collect/collect-arxiv.mjs` | `npm run collect:arxiv` | arXiv API経由の論文収集（`items.kind='paper'`）。`ARXIV_QUERY`/`ARXIV_MAX_RESULTS`。cronには未組み込みで手動起動のみ（[docs/plan/paper.md](../plan/paper.md)）。既定の`BACKFILL_TARGETS`には含まれない。 | OpenAI |
 | `scripts/collect/backfill.mjs` | `npm run collect:backfill` | qiita/zenn/note/blogをまとめて広めの範囲で一括収集する。対象は`BACKFILL_TARGETS`（既定`qiita,zenn,note,blog`、`hatena`は明示指定時のみ対象）で絞れる。本番実行はレートリミット・OpenAI課金に注意しユーザー確認の上で行う。 | OpenAI + Brave（一括収集のため件数大） |
 | `scripts/collect/check-links.mjs` | `npm run collect:check-links` | リンク切れ検出ジョブを手動起動。`LINK_CHECK_BATCH_LIMIT`/`LINK_CHECK_CONCURRENCY`/`LINK_CHECK_RECHECK_DAYS`。 | なし |
 

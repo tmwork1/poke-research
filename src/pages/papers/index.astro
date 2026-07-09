@@ -35,37 +35,34 @@ const filters = {
 };
 const page = parseOptionalPositiveInteger(url.searchParams.get('page')) ?? 1;
 
-// クエリの組み合わせごとに大量の重複ページができるため、検索条件が付いた URL は
-// 基本的に noindex とし、canonical は /items（クエリなし）へ寄せる。
-// ただし tag を1つだけ指定した状態は実質的にタグページと同じ内容のため、
-// canonical をそのタグページ（/tags/{name}）へ正規化する。
-const rawTagParams = url.searchParams.getAll('tag');
-const hasOtherQueryParams =
+// タグページ（/tags/{name}）は記事・論文の両方の kind を横断する既存の仕組みのため、
+// items/index.astro のような単一タグ時の canonical 正規化はここでは行わず、
+// 検索条件付きの URL は常に /papers（クエリなし）へ寄せる。
+const hasAnyQueryParam =
 	url.searchParams.has('q') ||
+	url.searchParams.has('tag') ||
 	url.searchParams.has('sourceId') ||
 	url.searchParams.has('sort') ||
 	url.searchParams.has('period') ||
 	url.searchParams.has('page');
-const isSingleTagOnly = rawTagParams.length === 1 && !hasOtherQueryParams;
-const hasAnyQueryParam = hasOtherQueryParams || rawTagParams.length > 0;
-const canonicalPath = isSingleTagOnly ? `/tags/${encodeURIComponent(rawTagParams[0])}` : '/items';
+const canonicalPath = '/papers';
 
 const user = Astro.locals.user;
 
 const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 	fetchCatalogItemsPage({
 		q: filters.q || undefined,
-		kind: 'article',
+		kind: 'paper',
 		tags: filters.tags.length > 0 ? filters.tags : undefined,
 		sourceIds: filters.sourceIds.length > 0 ? filters.sourceIds : undefined,
 		since,
 		sort: filters.sort,
 		page,
 	}),
-	fetchTopTags(20, 'article'),
+	fetchTopTags(20, 'paper'),
 	fetchCatalogSources({
 		q: filters.q || undefined,
-		kind: 'article',
+		kind: 'paper',
 		tags: filters.tags.length > 0 ? filters.tags : undefined,
 		since,
 		sourceIds: filters.sourceIds,
@@ -75,15 +72,15 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 ---
 
 <Layout
-	title={`技術記事 | ${topic.site.name}`}
-	description="技術記事の一覧・検索画面"
+	title={`論文 | ${topic.site.name}`}
+	description="論文の一覧・検索画面"
 	loggedIn={Boolean(user)}
 	canonicalPath={canonicalPath}
 	noindex={hasAnyQueryParam}
 >
 	<CatalogPage
-		eyebrow="Articles"
-		basePath="/items"
+		eyebrow="Papers"
+		basePath="/papers"
 		items={itemsPage.items}
 		topTags={topTags}
 		sources={sources}

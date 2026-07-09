@@ -109,10 +109,13 @@ export async function fetchCatalogTags(): Promise<Tag[]> {
 }
 
 export async function fetchCatalogSources(
-	filters: Pick<ItemFilters, 'q' | 'tag' | 'tags' | 'since' | 'sourceIds'> = {},
+	filters: Pick<ItemFilters, 'q' | 'tag' | 'tags' | 'since' | 'sourceIds' | 'kind'> = {},
 ): Promise<SourceUsage[]> {
 	const supabase = await getSupabaseClient();
-	const hasNarrowingFilters = Boolean(filters.q?.trim() || filters.tag || (filters.tags && filters.tags.length > 0) || filters.since);
+	// kind 絞り込み（技術記事/論文タブ）がある場合も、全件集計 RPC ではなく実件数を数える必要がある。
+	const hasNarrowingFilters = Boolean(
+		filters.q?.trim() || filters.tag || (filters.tags && filters.tags.length > 0) || filters.since || filters.kind?.trim(),
+	);
 
 	const [{ data, error }, countBySourceId] = await Promise.all([
 		supabase.from('sources').select('*').order('created_at', { ascending: false }),
@@ -140,7 +143,7 @@ async function countAllSources(supabase: Awaited<ReturnType<typeof getSupabaseCl
 	);
 }
 
-async function countSourceMatches(filters: Pick<ItemFilters, 'q' | 'tag' | 'tags' | 'since'>): Promise<Map<number, number>> {
+async function countSourceMatches(filters: Pick<ItemFilters, 'q' | 'tag' | 'tags' | 'since' | 'kind'>): Promise<Map<number, number>> {
 	const { data } = await queryCatalogItems({ ...filters, sourceIds: undefined }, { selectOverride: 'source_id' });
 	const counts = new Map<number, number>();
 	for (const row of data as unknown as Array<{ source_id: number | null }>) {
@@ -334,10 +337,11 @@ export async function fetchCatalogItemsPage(
 	};
 }
 
-export async function fetchTopTags(limit = 20): Promise<TagUsage[]> {
-	// 集計は DB 側の RPC（migrations/012 の top_tags）で行い、行の全取得を避ける。
+export async function fetchTopTags(limit = 20, kind?: string): Promise<TagUsage[]> {
+	// 集計は DB 側の RPC（migrations/012 の top_tags、migrations/023 で kind_filter 引数を追加）で
+	// 行い、行の全取得を避ける。kind を省略した場合は従来どおり記事・論文を横断した全件集計になる。
 	const supabase = await getSupabaseClient();
-	const { data, error } = await supabase.rpc('top_tags', { tag_limit: limit });
+	const { data, error } = await supabase.rpc('top_tags', { tag_limit: limit, kind_filter: kind ?? null });
 	if (error) throw error;
 
 	return ((data ?? []) as Array<{ id: number; name: string; count: number | string }>).map((row) => ({
