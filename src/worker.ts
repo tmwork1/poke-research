@@ -4,7 +4,7 @@ import { handle } from '@astrojs/cloudflare/handler';
 import { env } from 'cloudflare:workers';
 
 import { type DailySourceBreakdown, sendDailyDigest, sendMaintenanceReport, sendOperationalAlert } from './lib/notify';
-import { fetchItemSourceNames, type ImportItemOutcome } from './lib/importers/common';
+import { fetchDailyDigestItems, type ImportItemOutcome } from './lib/importers/common';
 import { runAndRecord } from './lib/import-runs';
 import { resolveArxivSyncOptions, syncArxivCollection } from './lib/importers/arxiv';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
@@ -20,22 +20,48 @@ import { topic } from './config/topic.config.mjs';
 
 // wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
 const WEEKLY_REVIEW_CRON = '30 20 * * 1';
-// 日次収集ジョブ群（Cloudflare アカウントの Cron Trigger 登録数上限＝現行プランで5件のため、
-// 個別エントリを確保できない）は "0 0 * * *"（0:00 UTC = JST 09:00）の1回の発火にまとめ、順にawaitして実行する
-// （並列実行ではない）。各ジョブは個別に try/catch を持つため、1つが失敗しても後続は実行される。
+// 日次収集ジョブ群（フィード/Qiita/Zenn/はてな/arXivの5ジョブ、noteは403のため対象外）は、
+// Cloudflare アカウントの Cron Trigger 登録数上限（現行プランで5件）のため個別エントリを
+// 確保できず、1つの Cron Trigger 文字列 "0,5,10,15,20 0 * * *"（0:00〜0:20 UTCを5分刻みで
+// 1日5回）に束ねている。controller.cron はどのスロットでも同一文字列になるため、
+// controller.scheduledTime の分（UTC）から実行するジョブを判定する（DAILY_SLOT_JOBS）。
+// 2026-07-09判明の subrequest 上限問題（docs/issue/cron-subrequest-limit.md）以降、
+// 差分検知・新着件数上限を導入済みだが、それでも1回のWorker呼び出しに全ジョブを集約すると
+// 新着急増日に上限を超えうるため、ジョブごとに別々のWorker呼び出しへ分離した。
+// 順序は「記事の無駄な重複ができるだけ少なくなる」ことを狙って決めている。Qiita/Zenn/arXivは
+// 固有ドメイン（qiita.com/zenn.dev/arxiv.org）のためジョブ間・他ジョブとの重複はほぼ起きない。
+// フィードは購読中の個別ブログを直接ポーリングするため、そのブログの記事URLを最初に確定できる。
+// はてなブックマークはWeb横断のブックマーク検索のため、フィードが既に収集済みの同一URLを
+// 再発見しやすい。既存URL判定（findExistingExternalUrls）は既に収集済みのURLを早期スキップ
+// するため、はてなを最後に置くことで、その時点までに他ジョブが収集済みのURLがはてなの
+// 判定でも無駄なくスキップされる。
+const DAILY_CRON = '0,5,10,15,20 0 * * *';
 // note は非公式APIが403 Access deniedを返すようになったため自動実行対象から外している
 // （コード・手動起動用API（/api/import/note）は残したまま、cronからの呼び出しのみ停止）。
-// フィードポーリングは以前は独立した Cron Trigger エントリだったが、必要なのは
-// 「blog/hatenaの当日収集より先に消化する」という順序の担保だけだったため、単一発火の
-// 先頭ジョブとして統合し、Cron Trigger エントリを1つ節約した。
-// リンク切れ検出・ブログ（Brave Search）は下記の理由で個別の専用エントリに分離済みのため、
-// この日次バンドルには含まれない（フィード/Qiita/Zenn/はてな/arXivの5ジョブ）。
-const DAILY_CRON = '0 0 * * *';
+const DAILY_SLOT_JOBS: Array<{ minute: number; label: string; run: () => Promise<ImportItemOutcome[]> }> = [
+	{ minute: 0, label: 'フィード', run: runScheduledFeedImport },
+	{ minute: 5, label: 'Qiita', run: runScheduledQiitaImport },
+	{ minute: 10, label: 'Zenn', run: runScheduledZennImport },
+	{ minute: 15, label: 'arXiv', run: runScheduledArxivImport },
+	{ minute: 20, label: 'はてな', run: runScheduledHatenaImport },
+];
+// 日次収集ジョブ群のうち、新着記事を生む5ジョブが実際に保存する items.collection_route の値。
+// 日次まとめ通知（runScheduledDailyDigest）がDBから当日分を集計する際の絞り込みに使う。
+const DAILY_COLLECTION_ROUTES: Array<{ route: string; label: string }> = [
+	{ route: 'feed-importer', label: 'フィード' },
+	{ route: 'qiita-importer', label: 'Qiita' },
+	{ route: 'zenn-importer', label: 'Zenn' },
+	{ route: 'arxiv-importer', label: 'arXiv' },
+	{ route: 'hatena-bookmark-importer', label: 'はてな' },
+];
+// 日次収集ジョブ群がスロットごとに別々のWorker呼び出しに分かれたため、まとめ通知は
+// メモリ上で結果を受け渡せない。全スロット（0:00〜0:20 UTC）完了後の 0:40 UTC に専用の
+// Cron Trigger を発火させ、DBから当日分を集計してDiscordへまとめて送る。
+const DAILY_DIGEST_CRON = '40 0 * * *';
 // リンク切れ検出は「新着」の概念がなく、対象URLへのprobe fetch自体が1件1fetchで
 // 差分検知による削減ができない（docs/issue/cron-subrequest-limit.md参照）。日次収集ジョブ群と
 // 同一呼び出しに束ねると、双方の subrequest が合算されCloudflareの上限（50/呼び出し）を
-// 超えやすいため、別の発火時刻を持つ専用の Cron Trigger に分離する（アカウント上限5件のうち
-// まだ余裕があるため追加できる）。
+// 超えやすいため、別の発火時刻を持つ専用の Cron Trigger に分離する。
 const LINK_CHECK_CRON = '30 0 * * *';
 // ブログ（Brave Search）は発見段階のキーワード検索が新規/既存の判定より前にかかる固定コストで、
 // 差分検知でも削減できない。さらに検索キーワード（POKEMON_KEYWORDS）は今後も増減しうるため、
@@ -47,16 +73,6 @@ const BLOG_CRON = '0 1,5,9,13,17,21 * * *';
 // BLOG_CRON の発火間隔（4時間）と一致させる。resolveBlogKeywordIndex の通し番号（tick）が
 // 発火のたびにちょうど1ずつ進むようにするための値。
 const BLOG_ROTATION_SLOT_MS = 4 * 60 * 60 * 1000;
-// 新着記事を生む収集ジョブだけを label 付きで登録する（リンク切れ検出は「新着」の概念が
-// ないため対象外、ブログは専用エントリに分離済みのため、いずれも runDailyJobsSequentially
-// には含めず個別に呼ぶ）。
-const DAILY_COLLECTION_JOBS: Array<{ label: string; run: () => Promise<ImportItemOutcome[]> }> = [
-	{ label: 'フィード', run: runScheduledFeedImport },
-	{ label: 'Qiita', run: runScheduledQiitaImport },
-	{ label: 'Zenn', run: runScheduledZennImport },
-	{ label: 'はてな', run: runScheduledHatenaImport },
-	{ label: 'arXiv', run: runScheduledArxivImport },
-];
 
 export default {
 	async fetch(request, ctxEnv, ctx) {
@@ -68,7 +84,17 @@ export default {
 			return;
 		}
 		if (controller.cron === DAILY_CRON) {
-			ctx.waitUntil(runDailyJobsSequentially());
+			const minute = new Date(controller.scheduledTime).getUTCMinutes();
+			const slot = DAILY_SLOT_JOBS.find((job) => job.minute === minute);
+			if (!slot) {
+				console.error('[cron] unrecognized daily slot minute', { scheduledTime: controller.scheduledTime, minute });
+				return;
+			}
+			ctx.waitUntil(runDailySlotJob(slot));
+			return;
+		}
+		if (controller.cron === DAILY_DIGEST_CRON) {
+			ctx.waitUntil(runScheduledDailyDigest(controller.scheduledTime));
 			return;
 		}
 		if (controller.cron === LINK_CHECK_CRON) {
@@ -83,41 +109,42 @@ export default {
 	},
 } satisfies ExportedHandler<Env>;
 
-// 日次ジョブを1回の scheduled 起動の中で順にawaitする。各ジョブは自身の中で
-// try/catch と sendOperationalAlert を完結させているため、ここでは単純に直列実行するだけでよい。
-// リンク切れ検出は「新着」の概念がなく、probe fetchの subrequest 数も抑えられないため
-// DAILY_COLLECTION_JOBS には含めず、LINK_CHECK_CRON の専用発火から個別に呼ぶ。
-async function runDailyJobsSequentially(): Promise<void> {
-	const allNewItems: Array<ImportItemOutcome & { id: number }> = [];
-	const breakdown: DailySourceBreakdown[] = [];
-
-	for (const job of DAILY_COLLECTION_JOBS) {
-		const items = await job.run();
-		const newItems = items.filter((item): item is ImportItemOutcome & { id: number } => item.action === 'inserted' && item.id !== null);
-		breakdown.push({ label: job.label, count: newItems.length });
-		allNewItems.push(...newItems);
-	}
-
-	await notifyDailyDigest(allNewItems, breakdown);
+// 日次収集ジョブの1スロット分を実行する。ジョブ自身が try/catch と sendOperationalAlert を
+// 完結させているため、ここでは呼び出すだけでよい。
+async function runDailySlotJob(slot: { run: () => Promise<ImportItemOutcome[]> }): Promise<void> {
+	await slot.run();
 }
 
-// 1日分の収集結果（全ソース合計）を、Xに投稿しやすい下書き文と内訳付きで1件のDigestとして
-// Discordに知らせる。新規採用（action='inserted'）された記事だけを対象にする（更新・棄却分は
-// 新着記事のポスト下書きという用途から外れるため含めない）。合計0件でもcronが正常に実行された
+// 日次収集ジョブ群（DAILY_CRON）がスロットごとに別々のWorker呼び出しに分かれたため、
+// 各ジョブの結果をメモリで受け渡せない。全スロット完了後に発火する専用cron
+// （DAILY_DIGEST_CRON）から呼ばれ、当日 0:00 UTC 以降に作成された対象ジョブの items を
+// DBから直接集計してDiscordへ1件のDigestとして知らせる。合計0件でもcronが正常に実行された
 // ことの確認シグナルとして必ず送信する（sendDailyDigest側の仕様）。
-async function notifyDailyDigest(newItems: Array<ImportItemOutcome & { id: number }>, breakdown: DailySourceBreakdown[]): Promise<void> {
-	// blog/feed/hatena は記事ごとに掲載元（個人ブログ等）が異なるため、保存済みの
-	// sources.name を都度引いて「タイトル - ソース」の下書きに反映する。
-	const sourceNames = newItems.length > 0 ? await fetchItemSourceNames(newItems.map((item) => item.id)) : new Map<number, string>();
-	await sendDailyDigest(
-		env,
-		newItems.map((item) => ({
-			title: item.title,
-			externalUrl: item.externalUrl,
-			sourceName: sourceNames.get(item.id) ?? topic.site.name,
-		})),
-		breakdown,
-	);
+async function runScheduledDailyDigest(scheduledTime: number): Promise<void> {
+	try {
+		const sinceDate = new Date(scheduledTime);
+		sinceDate.setUTCHours(0, 0, 0, 0);
+		const rows = await fetchDailyDigestItems(
+			sinceDate.toISOString(),
+			DAILY_COLLECTION_ROUTES.map((r) => r.route),
+		);
+		const breakdown: DailySourceBreakdown[] = DAILY_COLLECTION_ROUTES.map(({ route, label }) => ({
+			label,
+			count: rows.filter((row) => row.collectionRoute === route).length,
+		}));
+		await sendDailyDigest(
+			env,
+			rows.map((row) => ({
+				title: row.title,
+				externalUrl: row.externalUrl,
+				sourceName: row.sourceName ?? topic.site.name,
+			})),
+			breakdown,
+		);
+	} catch (error) {
+		console.error('[cron:daily-digest] digest failed', error);
+		await sendOperationalAlert(env, '日次まとめ通知が失敗しました', error);
+	}
 }
 
 async function runScheduledWeeklyReview(): Promise<void> {

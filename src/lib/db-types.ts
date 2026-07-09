@@ -43,6 +43,8 @@ export interface Item {
   ai_accepted?: boolean;
   /** AIが判定した記事本文の主な言語（ISO 639-1の小文字コード。migrations/021）。未判定はnull。 */
   language?: string | null;
+  /** 実際に収集したジョブ（経路）。事後解析用（migrations/024）。 */
+  collection_route?: string | null;
 }
 
 export interface Tag {
