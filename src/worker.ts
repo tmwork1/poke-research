@@ -55,14 +55,19 @@ const DAILY_COLLECTION_ROUTES: Array<{ route: string; label: string }> = [
 	{ route: 'hatena-bookmark-importer', label: 'はてな' },
 ];
 // 日次収集ジョブ群がスロットごとに別々のWorker呼び出しに分かれたため、まとめ通知は
-// メモリ上で結果を受け渡せない。全スロット（0:00〜0:20 UTC）完了後の 0:40 UTC に専用の
-// Cron Trigger を発火させ、DBから当日分を集計してDiscordへまとめて送る。
-const DAILY_DIGEST_CRON = '40 0 * * *';
-// リンク切れ検出は「新着」の概念がなく、対象URLへのprobe fetch自体が1件1fetchで
-// 差分検知による削減ができない（docs/issue/cron-subrequest-limit.md参照）。日次収集ジョブ群と
-// 同一呼び出しに束ねると、双方の subrequest が合算されCloudflareの上限（50/呼び出し）を
-// 超えやすいため、別の発火時刻を持つ専用の Cron Trigger に分離する。
-const LINK_CHECK_CRON = '30 0 * * *';
+// メモリ上で結果を受け渡せない。全スロット（0:00〜0:20 UTC）完了後に専用の Cron Trigger を
+// 発火させ、DBから当日分を集計してDiscordへまとめて送る。
+//
+// リンク切れ検出も「新着」の概念がなく、対象URLへのprobe fetch自体が1件1fetchで差分検知による
+// 削減ができない（docs/issue/cron-subrequest-limit.md参照）ため、以前は日次収集ジョブ群・まとめ
+// 通知それぞれと別発火時刻の専用エントリに分離していた（0:30 UTC）。だが両者を単純に合算しても
+// リンク切れ検出（probe fetch最大 SAFE_MAX_BATCH_LIMIT 件＋DB呼び出し数件）＋まとめ通知（DB集計
+// 1回＋Webhook送信1回）で概算45件前後にしかならず、Cloudflareの上限（50/呼び出し）に収まる
+// 見込みが立ったため、account全体のCron Trigger登録数上限（5件）の消費を1件減らす目的で
+// 1つのCron Triggerに統合した（Worker呼び出し内で順にawaitするだけで、日次収集ジョブ群の時間
+// 分割のようなスロット判定は不要）。安全マージン確保のため、統合にあわせて
+// SAFE_MAX_BATCH_LIMIT を40→35に引き下げてある（src/lib/importers/link-check.ts）。
+const LINK_CHECK_AND_DIGEST_CRON = '40 0 * * *';
 // ブログ（Brave Search）は発見段階のキーワード検索が新規/既存の判定より前にかかる固定コストで、
 // 差分検知でも削減できない。さらに検索キーワード（POKEMON_KEYWORDS）は今後も増減しうるため、
 // 「1日に何回・何キーワードずつ」をcron側にハードコードしたくない。そこで専用エントリを
@@ -93,12 +98,8 @@ export default {
 			ctx.waitUntil(runDailySlotJob(slot));
 			return;
 		}
-		if (controller.cron === DAILY_DIGEST_CRON) {
-			ctx.waitUntil(runScheduledDailyDigest(controller.scheduledTime));
-			return;
-		}
-		if (controller.cron === LINK_CHECK_CRON) {
-			ctx.waitUntil(runScheduledLinkCheck());
+		if (controller.cron === LINK_CHECK_AND_DIGEST_CRON) {
+			ctx.waitUntil(runScheduledLinkCheckAndDigest(controller.scheduledTime));
 			return;
 		}
 		if (controller.cron === BLOG_CRON) {
@@ -115,11 +116,11 @@ async function runDailySlotJob(slot: { run: () => Promise<ImportItemOutcome[]> }
 	await slot.run();
 }
 
-// 日次収集ジョブ群（DAILY_CRON）がスロットごとに別々のWorker呼び出しに分かれたため、
-// 各ジョブの結果をメモリで受け渡せない。全スロット完了後に発火する専用cron
-// （DAILY_DIGEST_CRON）から呼ばれ、当日 0:00 UTC 以降に作成された対象ジョブの items を
-// DBから直接集計してDiscordへ1件のDigestとして知らせる。合計0件でもcronが正常に実行された
-// ことの確認シグナルとして必ず送信する（sendDailyDigest側の仕様）。
+// LINK_CHECK_AND_DIGEST_CRON から runScheduledLinkCheck() に続けて呼ばれる。日次収集ジョブ群
+// （DAILY_CRON）がスロットごとに別々のWorker呼び出しに分かれたため、各ジョブの結果をメモリで
+// 受け渡せない。全スロット（0:00〜0:20 UTC）完了後の発火時刻を利用し、当日 0:00 UTC 以降に
+// 作成された対象ジョブの items をDBから直接集計してDiscordへ1件のDigestとして知らせる。
+// 合計0件でもcronが正常に実行されたことの確認シグナルとして必ず送信する（sendDailyDigest側の仕様）。
 async function runScheduledDailyDigest(scheduledTime: number): Promise<void> {
 	try {
 		const sinceDate = new Date(scheduledTime);
@@ -278,6 +279,14 @@ async function runScheduledHatenaImport(): Promise<ImportItemOutcome[]> {
 		await sendOperationalAlert(env, 'はてなブックマーク収集ジョブが失敗しました', error);
 		return [];
 	}
+}
+
+// LINK_CHECK_AND_DIGEST_CRON から呼ばれる。リンク切れ検出とまとめ通知は互いの結果に依存しないため、
+// 順にawaitするだけでよい（両関数とも内部でtry/catchとsendOperationalAlertを完結させており、
+// 一方が失敗してももう一方の実行は妨げない）。
+async function runScheduledLinkCheckAndDigest(scheduledTime: number): Promise<void> {
+	await runScheduledLinkCheck();
+	await runScheduledDailyDigest(scheduledTime);
 }
 
 async function runScheduledLinkCheck(): Promise<void> {
