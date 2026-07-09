@@ -35,7 +35,9 @@ const WEEKLY_REVIEW_CRON = '30 20 * * 1';
 // 再発見しやすい。既存URL判定（findExistingExternalUrls）は既に収集済みのURLを早期スキップ
 // するため、はてなを最後に置くことで、その時点までに他ジョブが収集済みのURLがはてなの
 // 判定でも無駄なくスキップされる。
-const DAILY_CRON = '0,5,10,15,20 0 * * *';
+// 2026-07-09 一時変更: 本番Cloudflare上での時間分割cron検証のため「時」を 0→9（UTC）へ一時的に
+// ずらしている（wrangler.jsonc の同名エントリと完全一致させること）。検証後は 0 に戻す。
+const DAILY_CRON = '0,5,10,15,20 9 * * *';
 // note は非公式APIが403 Access deniedを返すようになったため自動実行対象から外している
 // （コード・手動起動用API（/api/import/note）は残したまま、cronからの呼び出しのみ停止）。
 const DAILY_SLOT_JOBS: Array<{ minute: number; label: string; run: () => Promise<ImportItemOutcome[]> }> = [
@@ -57,7 +59,9 @@ const DAILY_COLLECTION_ROUTES: Array<{ route: string; label: string }> = [
 // 日次収集ジョブ群がスロットごとに別々のWorker呼び出しに分かれたため、まとめ通知は
 // メモリ上で結果を受け渡せない。全スロット（0:00〜0:20 UTC）完了後の 0:40 UTC に専用の
 // Cron Trigger を発火させ、DBから当日分を集計してDiscordへまとめて送る。
-const DAILY_DIGEST_CRON = '40 0 * * *';
+// 2026-07-09 一時変更: 上記 DAILY_CRON と同様、検証のため「時」を 0→9（UTC）へ一時的にずらしている。
+// 検証後は 0 に戻す。
+const DAILY_DIGEST_CRON = '40 9 * * *';
 // リンク切れ検出は「新着」の概念がなく、対象URLへのprobe fetch自体が1件1fetchで
 // 差分検知による削減ができない（docs/issue/cron-subrequest-limit.md参照）。日次収集ジョブ群と
 // 同一呼び出しに束ねると、双方の subrequest が合算されCloudflareの上限（50/呼び出し）を
