@@ -20,6 +20,14 @@ import { mergeVaryHeader, resolveCacheDecision } from './lib/cache-policy';
 import { isSameOrigin } from './lib/csrf';
 import { bookmarksWriteRateLimiter, tagExplainRateLimiter } from './lib/rate-limit';
 import { sendOperationalAlert } from './lib/notify';
+import { getSubrequestCount, installSubrequestCounter, resetSubrequestCount } from './lib/subrequest-counter';
+
+// DEBUG_SUBREQUEST_COUNT は Env の型定義に含まれない開発用フラグのため、openai.ts・auth.ts 等と
+// 同様に緩い型でキャストし、ローカル開発（process.env経由の.env読み込み）とCloudflare実行環境の
+// 両方から読めるようにする。
+const runtimeEnv = (globalThis as typeof globalThis & { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
+const debugSubrequestCount =
+	(env as unknown as Record<string, string | undefined>).DEBUG_SUBREQUEST_COUNT || runtimeEnv.DEBUG_SUBREQUEST_COUNT;
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -33,6 +41,13 @@ function requiresUserAuth(pathname: string): boolean {
 
 function isTagExplainRoute(pathname: string): boolean {
   return /^\/api\/tags\/[^/]+\/explain$/.test(pathname);
+}
+
+// 収集ジョブ（/api/import/*）のsubrequest消費数をローカルで実測するための開発者向けフラグ。
+// DEBUG_SUBREQUEST_COUNT が未設定の通常運用では常にfalseで、本番挙動には影響しない。
+// scripts/eval/eval-subrequests.mjs から利用する（docs/reference/scripts.md 参照）。
+function shouldCountSubrequests(pathname: string, method: string, debugFlag: string | undefined): boolean {
+  return Boolean(debugFlag) && pathname.startsWith('/api/import/') && method === 'POST';
 }
 
 function requiresAdminAuth(pathname: string, method: string): boolean {
@@ -147,6 +162,15 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
 
     context.locals.actor = result.username;
+
+    if (shouldCountSubrequests(url.pathname, request.method, debugSubrequestCount)) {
+      installSubrequestCounter();
+      resetSubrequestCount();
+      const response = await next();
+      response.headers.set('X-Subrequest-Count', String(getSubrequestCount()));
+      return response;
+    }
+
     return await next();
   } catch (error) {
     await reportRequestError(url.pathname, request.method, Boolean(context.locals.user), error);
