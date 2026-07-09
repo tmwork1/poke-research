@@ -26,7 +26,9 @@ const WEEKLY_REVIEW_CRON = '30 20 * * 1';
 // フィードポーリングは以前は独立した Cron Trigger エントリだったが、必要なのは
 // 「blog/hatenaの当日収集より先に消化する」という順序の担保だけだったため、単一発火の
 // 先頭ジョブとして統合し、Cron Trigger エントリを1つ節約した。
-const DAILY_CRON = '0 0 * * *';
+// 2026-07-09: 日次通知の集約変更（PR #36）のcron動作確認のため、一時的に "15 1 * * *"
+// （1:15 UTC = JST 10:15）に変更中。確認後は '0 0 * * *'（JST 09:00）に戻すこと（wrangler.jsonc も同様）。
+const DAILY_CRON = '15 1 * * *';
 // 新着記事を生む収集ジョブだけを label 付きで登録する（リンク切れ検出は「新着」の概念が
 // ないため対象外とし、runDailyJobsSequentially 内で個別に実行する）。
 const DAILY_COLLECTION_JOBS: Array<{ label: string; run: () => Promise<ImportItemOutcome[]> }> = [
