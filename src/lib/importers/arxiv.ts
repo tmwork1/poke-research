@@ -170,6 +170,7 @@ function createItemMetadata(entry: ArxivFeedEntry, query: string, fetchedAt: str
 		},
 		ai: {
 			model: aiReview.model,
+			prompt_hash: aiReview.promptHash,
 			accepted: aiReview.accepted,
 			reason: aiReview.reason,
 			confidence: aiReview.confidence ?? null,
@@ -287,6 +288,10 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 						body: truncateBodyForStorage(entry.summary),
 						aiAccepted: review.accepted,
 						language: review.language,
+						aiRecheckModel: review.model,
+						aiRecheckPromptHash: review.promptHash,
+						aiRecheckReason: review.reason,
+						aiRecheckConfidence: review.confidence ?? null,
 					},
 					// arXivのcategory（cs.AI等）は分類コードであり、ユーザー向けタグとしての可読性に
 					// 欠けるため、qiita.tsと異なりフォールバックには使わずAIレビューのtagsのみを使う

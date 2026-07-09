@@ -200,6 +200,7 @@ function createItemMetadata(
 		},
 		ai: {
 			model: review.model,
+			prompt_hash: review.promptHash,
 			accepted: review.accepted,
 			reason: review.reason,
 			confidence: review.confidence ?? null,
@@ -287,6 +288,10 @@ async function processHatenaCandidate(
 						body: truncateBodyForStorage(extracted.bodyText),
 						aiAccepted: review.accepted,
 						language: review.language,
+						aiRecheckModel: review.model,
+						aiRecheckPromptHash: review.promptHash,
+						aiRecheckReason: review.reason,
+						aiRecheckConfidence: review.confidence ?? null,
 					},
 					review.tags,
 					review.tagLabels,

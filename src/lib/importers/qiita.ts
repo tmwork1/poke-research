@@ -175,6 +175,7 @@ function createItemMetadata(item: QiitaItem, query: string, fetchedAt: string, a
 		},
 		ai: {
 			model: aiReview.model,
+			prompt_hash: aiReview.promptHash,
 			accepted: aiReview.accepted,
 			reason: aiReview.reason,
 			confidence: aiReview.confidence ?? null,
@@ -349,6 +350,10 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 						body: truncateBodyForStorage(extractBodyText(item)),
 						aiAccepted: review.accepted,
 						language: review.language,
+						aiRecheckModel: review.model,
+						aiRecheckPromptHash: review.promptHash,
+						aiRecheckReason: review.reason,
+						aiRecheckConfidence: review.confidence ?? null,
 					},
 					tags,
 					undefined,

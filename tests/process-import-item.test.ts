@@ -6,7 +6,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { processImportItem, shouldPreserveAcceptedItem } from '../src/lib/importers/process-import-item.ts';
+import {
+	buildAiRecheckColumns,
+	buildAiReviewColumns,
+	processImportItem,
+	shouldPreserveAcceptedItem,
+} from '../src/lib/importers/process-import-item.ts';
 
 describe('processImportItem', () => {
 	it('採用時は upsert を呼び、action/id を upsert の結果に合わせる', async () => {
@@ -148,5 +153,58 @@ describe('shouldPreserveAcceptedItem', () => {
 		assert.equal(shouldPreserveAcceptedItem(true, true), false);
 		assert.equal(shouldPreserveAcceptedItem(false, true), false);
 		assert.equal(shouldPreserveAcceptedItem(undefined, true), false);
+	});
+});
+
+describe('buildAiRecheckColumns', () => {
+	it('レビュー結果を ai_recheck_* 列にマッピングする（ai_accepted 列とは独立）', () => {
+		const columns = buildAiRecheckColumns(
+			{ accepted: false, model: 'gpt-5-nano', promptHash: 'abc123', reason: '主題外', confidence: 0.8 },
+			'2026-07-10T00:00:00.000Z',
+		);
+
+		assert.deepEqual(columns, {
+			ai_recheck_accepted: false,
+			ai_recheck_model: 'gpt-5-nano',
+			ai_recheck_prompt_hash: 'abc123',
+			ai_recheck_reason: '主題外',
+			ai_recheck_confidence: 0.8,
+			ai_rechecked_at: '2026-07-10T00:00:00.000Z',
+		});
+	});
+
+	it('confidence が無い場合は null をそのまま保持する', () => {
+		const columns = buildAiRecheckColumns(
+			{ accepted: true, model: 'gpt-5-nano', promptHash: 'abc123', reason: '採用', confidence: null },
+			'2026-07-10T00:00:00.000Z',
+		);
+
+		assert.equal(columns.ai_recheck_confidence, null);
+	});
+});
+
+describe('buildAiReviewColumns', () => {
+	it('レビュー結果を ai_review_* 列にマッピングする（accepted は含まない。ai_accepted 列がその役割を兼ねるため）', () => {
+		const columns = buildAiReviewColumns(
+			{ model: 'gpt-5-nano', promptHash: 'abc123', reason: '採用', confidence: 0.9 },
+			'2026-07-10T00:00:00.000Z',
+		);
+
+		assert.deepEqual(columns, {
+			ai_review_model: 'gpt-5-nano',
+			ai_review_prompt_hash: 'abc123',
+			ai_review_reason: '採用',
+			ai_review_confidence: 0.9,
+			ai_reviewed_at: '2026-07-10T00:00:00.000Z',
+		});
+	});
+
+	it('confidence が無い場合は null をそのまま保持する', () => {
+		const columns = buildAiReviewColumns(
+			{ model: 'gpt-5-nano', promptHash: 'abc123', reason: '採用', confidence: null },
+			'2026-07-10T00:00:00.000Z',
+		);
+
+		assert.equal(columns.ai_review_confidence, null);
 	});
 });

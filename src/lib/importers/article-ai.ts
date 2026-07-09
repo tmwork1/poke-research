@@ -2,7 +2,7 @@
 // JSON 形式の応答を前提にして、後続の DB 保存処理を安定させる。
 import { getOpenAIConfig, OPENAI_CHAT_COMPLETIONS_URL } from '../openai';
 import { topic } from '../../config/topic.config.mjs';
-import { buildSystemPrompt } from './ai-review-prompt.mjs';
+import { buildSystemPrompt, computePromptHash } from './ai-review-prompt.mjs';
 
 const MAX_AI_TAGS = 5;
 
@@ -31,6 +31,8 @@ export interface ImportArticleReview {
 	/** AIが判定した記事本文の主な言語（ISO 639-1の小文字コード。migrations/021）。 */
 	language: string;
 	model: string;
+	/** レビュー時点の system prompt のハッシュ（migrations/025、ai-review-prompt.mjs の computePromptHash）。 */
+	promptHash: string;
 }
 
 export function normalizeTagName(tagName: string): string {
@@ -102,7 +104,7 @@ function createOpenAIRequest(input: ImportArticleReviewInput, model: string) {
 	};
 }
 
-function parseAiResponse(content: string): Omit<ImportArticleReview, 'model'> {
+function parseAiResponse(content: string): Omit<ImportArticleReview, 'model' | 'promptHash'> {
 	// 返答にコードフェンスが混ざっても読めるように、先に包みを外す。
 	const trimmed = content.trim();
 	const normalized = trimmed
@@ -167,8 +169,10 @@ export async function reviewImportArticle(input: ImportArticleReviewInput): Prom
 	}
 
 	const review = parseAiResponse(content);
+	const promptHash = await computePromptHash(topic, input.kind);
 	return {
 		...review,
 		model,
+		promptHash,
 	};
 }

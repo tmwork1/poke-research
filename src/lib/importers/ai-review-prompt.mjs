@@ -86,3 +86,23 @@ export function buildSystemPrompt(topic, kind = 'article') {
 		tagsBlock
 	);
 }
+
+// buildSystemPrompt(topic, kind) の出力をハッシュ化し、items.ai_recheck_prompt_hash に
+// 記録する短い識別子を作る（docs/progress/2026-07-10.md: 「ai_accepted=true のまま古いプロンプト
+// 基準の判定が凍結されている記事」をSQLで抽出できるようにする目的）。
+// crypto.subtle は Cloudflare Workers と Node(>=22.15.0、package.json engines) の両方で
+// グローバルに使えるため追加依存は不要（src/lib/importers/blog.ts の hashBody と同じ実装）。
+const promptHashCache = new Map();
+
+/**
+ * @param {import('../../config/topic.config.mjs').topic} topic
+ * @param {'article' | 'paper'} [kind]
+ * @returns {Promise<string>}
+ */
+export async function computePromptHash(topic, kind = 'article') {
+	if (promptHashCache.has(kind)) return promptHashCache.get(kind);
+	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(buildSystemPrompt(topic, kind)));
+	const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, 16);
+	promptHashCache.set(kind, hash);
+	return hash;
+}
