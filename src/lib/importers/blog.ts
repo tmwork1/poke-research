@@ -63,8 +63,10 @@ export interface BlogEnvDefaults {
 	BLOG_MAX_NEW_PER_RUN?: string | number;
 }
 
-// Brave Search の無料枠は月1000件（≒1日30件）が上限。cron は1日1回のため、
-// 既定は「クエリ数(POKEMON_KEYWORDS=6) × pages ≒ 30件/日」に収まるよう pages=5 とする。
+// Brave Search の無料枠は月1000件（≒1日30件）が上限。既定は「クエリ数(POKEMON_KEYWORDS=6) ×
+// pages ≒ 30件/日」に収まるよう pages=5 とする（query省略時＝手動での全キーワード一括実行時の
+// 既定値）。cronからは resolveBlogKeywordIndex で選んだ1キーワードだけを query に渡して1日複数回
+// 発火するため、1回あたりのBrave呼び出し数はさらに少ない（詳細はsrc/worker.tsのBLOG_CRON）。
 // また Brave の offset は「ページ番号」で最大9（=10ページ目まで）という API 制約がある。
 const DEFAULT_PAGES = 5;
 const BRAVE_MAX_PAGE_OFFSET = 9;
