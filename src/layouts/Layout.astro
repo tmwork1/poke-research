@@ -129,7 +129,8 @@ const websiteJsonLd = JSON.stringify({
 								</svg>
 								<span class="login-dot" aria-hidden="true" />
 							</span>
-							<span>マイページ</span>
+							<span class="mypage-label-full">マイページ</span>
+							<span class="mypage-label-short">マイ</span>
 						</a>
 					) : (
 						<div class="mypage-tab-wrap">
@@ -140,7 +141,8 @@ const websiteJsonLd = JSON.stringify({
 										<path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
 									</svg>
 								</span>
-								<span>マイページ</span>
+								<span class="mypage-label-full">マイページ</span>
+								<span class="mypage-label-short">マイ</span>
 							</a>
 							{/* 未ログイン時のみ、タブ1回クリックでGoogleログインボタンをドロップダウンで直接出す
 							    （ログイン中はドロップダウンを持たず、ログアウトはサイドバーに一本化） */}
@@ -625,6 +627,10 @@ const websiteJsonLd = JSON.stringify({
 		font-weight: 700;
 	}
 
+	.mypage-label-short {
+		display: none;
+	}
+
 	.mypage-icon-wrap {
 		position: relative;
 		display: inline-flex;
@@ -739,6 +745,16 @@ const websiteJsonLd = JSON.stringify({
 			justify-content: center;
 			width: 100%;
 			box-sizing: border-box;
+		}
+
+		/* 「マイページ」は5文字で他タブより長く、狭い画面幅では折り返してしまうため
+		   モバイル幅のみ「マイ」に短縮する。 */
+		.mypage-label-full {
+			display: none;
+		}
+
+		.mypage-label-short {
+			display: inline;
 		}
 	}
 </style>
