@@ -93,8 +93,9 @@ export interface ArxivEnvDefaults {
 }
 
 // 新規論文1件あたりのsubrequestはOpenAIレビュー1回＋item upsert1回（assumeNewで既存チェックの
-// selectを省略）の計2件。固定コストと合わせ、10件処理時のワーストケースは実測で約25
-// subrequests程度（詳細はdocs/progress/2026-07-09.md「MAX_NEW_PER_RUNの再調整要否を検討」）。
+// selectを省略）の計2件（Qiitaと同構造、2026-07-09に実測で確認）。固定コスト（新規0件時で
+// 実測5）に加え、新規記事が1件以上あるときだけ発生するタグ同期バッチの初回コスト（2件程度）を
+// 合わせると、10件処理時のワーストケースは約27 subrequests程度（詳細はdocs/issue/cron-subrequest-limit.md参照）。
 const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
 
 export function resolveArxivSyncOptions(env: ArxivEnvDefaults, overrides: ArxivSyncOptions = {}): Required<ArxivSyncOptions> {

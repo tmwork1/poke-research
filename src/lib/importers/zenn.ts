@@ -91,10 +91,12 @@ export interface ZennEnvDefaults {
 	ZENN_MAX_NEW_PER_RUN?: string | number;
 }
 
-// 新規記事1件あたりのsubrequestは詳細取得1回＋OpenAIレビュー1回＋item upsert1回の計3件
-// （Qiita/arXivと異なりassumeNew非対応のため既存チェックのselectも残る）。固定コストと
-// 合わせ、8件処理時のワーストケースは実測で約29 subrequests程度のため、Qiita/arXivより
-// 控えめにする（詳細はdocs/progress/2026-07-09.md「MAX_NEW_PER_RUNの再調整要否を検討」）。
+// 新規記事1件あたりのsubrequestは詳細取得1回＋OpenAIレビュー1回＋item upsert1回（Qiita/arXiv
+// と同様assumeNewで既存チェックのselectを省略）の計3件。2026-07-09の実測でも固定コスト
+// （新規0件時で実測5）からの差分+5を確認しており、詳細取得分の+3に加え新規記事が1件以上ある
+// ときだけ発生するタグ同期バッチの初回コスト（+2程度）が乗ることを裏付けている。8件処理時の
+// ワーストケースは約31 subrequests程度で、詳細取得が1回多い分Qiita/arXivより控えめにする
+// （詳細はdocs/issue/cron-subrequest-limit.md参照）。
 const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 8;
 
 export function resolveZennSyncOptions(env: ZennEnvDefaults, overrides: ZennSyncOptions = {}): Required<ZennSyncOptions> {

@@ -90,9 +90,10 @@ export interface QiitaEnvDefaults {
 }
 
 // 新規記事1件あたりのsubrequestはOpenAIレビュー1回＋item upsert1回（assumeNewで既存チェックの
-// selectを省略）の計2件。既存URL判定・source upsert・タグバッチ処理・import_runs記録などの
-// 固定コストと合わせ、10件処理時のワーストケースは実測で約25 subrequests程度（上限50/呼び出しに
-// 対し安全マージンあり。詳細はdocs/progress/2026-07-09.md「MAX_NEW_PER_RUNの再調整要否を検討」）。
+// selectを省略）の計2件（2026-07-09に実測で確認）。既存URL判定等の固定コスト（新規0件時で
+// 実測11）に加え、新規記事が1件以上あるときだけ発生するタグ同期バッチの初回コスト（2件程度）を
+// 合わせると、10件処理時のワーストケースは約33 subrequests程度（上限50/呼び出しに対し安全
+// マージンあり。詳細はdocs/issue/cron-subrequest-limit.md参照）。
 const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
 
 export function resolveQiitaSyncOptions(env: QiitaEnvDefaults, overrides: QiitaSyncOptions = {}): Required<QiitaSyncOptions> {

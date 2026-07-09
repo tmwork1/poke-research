@@ -240,6 +240,59 @@ subrequests、Zenn（実測48件/回）は全件新規なら約190〜200 subrequ
 ローカル環境で`maxNewItemsPerRun`を意図的に1に絞って実行し、Qiita・Zennともに超過分が正しく
 スキップされることを確認した。
 
+## 2026-07-09: 実験によるsubrequest消費数の確定
+
+各ジョブの`DEFAULT_MAX_NEW_ITEMS_PER_RUN`（`src/lib/importers/{qiita,zenn,arxiv,hatena,blog,feed}.ts`）の
+根拠が「約N subrequests程度」という見積りに留まっていたため、実際にローカルでCloudflare Workers
+のsubrequest数（Worker内から発行したfetch呼び出しの回数）を計測して確定させた。
+
+### 計測の仕組み
+
+`src/lib/subrequest-counter.ts`・`src/middleware.ts`・`scripts/eval/eval-subrequests.mjs`
+（PR #55）で、`/api/import/*`のPOSTに対して`DEBUG_SUBREQUEST_COUNT=1`（`.dev.vars`に追記して
+dev server再起動が必要）のときだけ実際のfetch呼び出し回数を数え、`X-Subrequest-Count`
+レスポンスヘッダーに載せる仕組みを追加した。Supabaseクライアントは`@supabase/supabase-js`の
+Vite依存事前バンドルの影響でグローバルなfetch差し替えだけでは計測できないため、
+`createClient`の`global.fetch`オプションに計測用fetchを直接渡す方式にしている。
+
+### 確定した値
+
+各ルートについて「新規0件の定常状態（固定コスト）」と「対象を1件だけローカルDBから削除して
+新規扱いにし、`maxNewItemsPerRun=1`で処理させたときの合計」を実測し、差分を新規1件あたりの
+追加コストとした。
+
+| ルート | 固定コスト（新規0件） | 新規1件あたり | 内訳 | 検証方法 |
+|---|---|---|---|---|
+| qiita | 11 | 2 | OpenAIレビュー1＋item upsert1（assumeNew） | 実測 |
+| zenn | 5 | 3 | 詳細取得1＋OpenAIレビュー1＋item upsert1（assumeNew） | 実測（+5との差分はタグ同期バッチの初回コストで説明可） |
+| arxiv | 5 | 2 | OpenAIレビュー1＋item upsert1（assumeNew） | コード読解（qiitaと同構造） |
+| feed | 21 | 4 | fetch1＋既存チェック1＋OpenAIレビュー1＋item upsert1 | 実測 |
+| hatena | **39（未解明）** | 4 | fetch1＋既存チェック1＋OpenAIレビュー1＋item upsert1 | 固定コストのみ実測、内訳はコード読解 |
+| blog | 未再測定（既存見積り20〜23のまま） | 4 | fetch1＋既存チェック1＋OpenAIレビュー1＋item upsert1 | コード読解 |
+
+いずれのルートも、新規記事が1件以上あるときだけ`syncNewItemTagsBatch`（既存タグのみなら
+select 1回＋item_tags insert 1回の2件、新規タグ作成が絡むと最大5件程度）が一度だけ追加でかかる
+（新規件数Nに比例せず、ジョブ内で1回だけ発生する点に注意）。
+
+`DEFAULT_MAX_NEW_ITEMS_PER_RUN`件が全件新規だった場合のワーストケース（固定コスト＋N×新規1件
+あたり＋タグ同期バッチ概算2）:
+
+- qiita: 11+10×2+2 = **33**
+- zenn: 5+8×3+2 = **31**
+- arxiv: 5+10×2+2 = **27**
+- **feed: 21+10×4+2 = 63（上限50/呼び出しを超えうることが判明。要対応検討）**
+- hatena: 39+6×4+2 = 65（固定コスト自体が未解明のため参考値）
+- blog: 見積りベースで20〜23+6×4+2 ≒ 46〜49（既存見積りのまま、上限に近い）
+
+### 未解明・持ち越しの課題
+
+- **hatenaの固定コスト（実測39）が、コードから見積もる素朴な理論値（検索RSS取得6回＋既存URL
+  一括チェック1回＋タグ上位取得1回≒9件程度）と大きく乖離している。** 原因調査は未着手。
+- **blogは`'pokeapi'`検索に未収集候補が多数残っており、「新規0件」の定常状態を作れず固定コストを
+  再測定できなかった。** 既存見積り（20〜23）のまま。
+- **feedのワーストケース試算（63）が上限50/呼び出しを超える。** `FEED_MAX_NEW_PER_RUN`の
+  引き下げ、または購読フィード数自体の増加抑制などの対応要否は未検討。
+
 ## 副次的に判明したリスク（未対応）
 
 `src/lib/openai.ts`のfetch呼び出しにタイムアウト・AbortControllerが設定されていない。

@@ -66,10 +66,13 @@ export interface HatenaEnvDefaults {
 	HATENA_MAX_NEW_PER_RUN?: string | number;
 }
 
-// 発見段階（キーワードごとの検索RSS取得）の固定コストに加え、新規記事1件あたり本文取得＋
-// OpenAIレビュー＋item upsertの計3 subrequestsがかかる。6件処理時のワーストケースは実測で
-// 約40 subrequests程度と他ジョブより固定コストの比重が大きいため、件数は控えめにする
-// （詳細はdocs/progress/2026-07-09.md「MAX_NEW_PER_RUNの再調整要否を検討」）。
+// 発見段階（キーワードごとの検索RSS取得等）の固定コストに加え、新規記事1件あたり本文取得＋
+// 既存チェック（assumeNew非対応）＋OpenAIレビュー＋item upsertの計4 subrequestsがかかる
+// （common.tsの構造から確定。他ジョブと異なりassumeNewを使っていないため既存チェックのselect
+// が残る）。固定コスト（新規0件時）は2026-07-09の実測で39だったが、コードから見積もる素朴な
+// 理論値（検索RSS取得6回＋既存URL一括チェック1回＋タグ上位取得1回≒9件程度）とは大きな乖離が
+// あり、原因は未解明（要調査）。他ジョブより固定コストの実測値が大きいため、件数は控えめにする
+// （詳細はdocs/issue/cron-subrequest-limit.md参照）。
 const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 6;
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
