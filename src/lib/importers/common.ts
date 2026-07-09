@@ -376,19 +376,22 @@ export interface DailyDigestItemRow {
 	externalUrl: string;
 	collectionRoute: string;
 	sourceName: string | null;
+	kind: string;
 }
 
 // 日次収集ジョブが複数のWorker呼び出し（時間分割スロット）に分かれたため、まとめ通知は
 // メモリ上の結果を受け渡せない。代わりにこの関数で、指定時刻以降に作成された対象ジョブの
 // itemsをDBから直接集計する（src/worker.ts の日次まとめ通知専用cronが呼ぶ）。
+// AIレビューで棄却された記事（ai_accepted=false、偽陰性対策で保存はされる）は通知対象外にする。
 export async function fetchDailyDigestItems(sinceIso: string, collectionRoutes: string[]): Promise<DailyDigestItemRow[]> {
 	if (collectionRoutes.length === 0) return [];
 	const supabase = await getSupabaseClient();
 	const { data, error } = await supabase
 		.from('items')
-		.select('title, external_url, collection_route, source:sources(id, name, type, origin_url)')
+		.select('title, external_url, collection_route, kind, source:sources(id, name, type, origin_url)')
 		.gte('created_at', sinceIso)
-		.in('collection_route', collectionRoutes);
+		.in('collection_route', collectionRoutes)
+		.eq('ai_accepted', true);
 	if (error) throw error;
 	return (data ?? []).map((row) => {
 		const source = normalizeSource((row as Pick<ItemRow, 'source'>).source);
@@ -397,6 +400,7 @@ export async function fetchDailyDigestItems(sinceIso: string, collectionRoutes: 
 			externalUrl: row.external_url as string,
 			collectionRoute: row.collection_route as string,
 			sourceName: source?.name ?? null,
+			kind: row.kind as string,
 		};
 	});
 }
