@@ -4,7 +4,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { EXCLUDED_BLOG_DOMAINS, FILTERED_BLOG_DOMAINS, isExcludedBlogDomain, POKEMON_KEYWORDS } from '../src/lib/importers/keywords.ts';
+import { BLOG_KEYWORDS, EXCLUDED_BLOG_DOMAINS, FILTERED_BLOG_DOMAINS, isExcludedBlogDomain, POKEMON_KEYWORDS } from '../src/lib/importers/keywords.ts';
 
 describe('isExcludedBlogDomain', () => {
 	it('EXCLUDED_BLOG_DOMAINS に載っているサービス・企業攻略サイトを除外する', () => {
@@ -41,6 +41,12 @@ describe('POKEMON_KEYWORDS', () => {
 	it('ダメージ計算はツールページではなく実装記事へ絞り込むため「実装」を伴う', () => {
 		assert.ok(POKEMON_KEYWORDS.includes('ダメージ計算 実装' as (typeof POKEMON_KEYWORDS)[number]));
 		assert.ok(!POKEMON_KEYWORDS.includes('ダメージ計算' as (typeof POKEMON_KEYWORDS)[number]));
+	});
+});
+
+describe('BLOG_KEYWORDS', () => {
+	it('Brave Search課金対策のため、Qiita/note等が使うPOKEMON_KEYWORDSより絞った独立リストである', () => {
+		assert.ok(BLOG_KEYWORDS.length < POKEMON_KEYWORDS.length);
 	});
 });
 

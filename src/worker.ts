@@ -11,7 +11,7 @@ import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog
 import { resolveBlogKeywordIndex } from './lib/importers/blog-rotation';
 import { resolveFeedSyncOptions, syncFeedCollection } from './lib/importers/feed';
 import { resolveHatenaSyncOptions, syncHatenaCollection } from './lib/importers/hatena';
-import { POKEMON_KEYWORDS } from './lib/importers/keywords';
+import { BLOG_KEYWORDS } from './lib/importers/keywords';
 import { checkLinks, resolveLinkCheckOptions } from './lib/importers/link-check';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
 import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
@@ -63,7 +63,7 @@ const DAILY_COLLECTION_ROUTES = ['feed-importer', 'qiita-importer', 'zenn-import
 // SAFE_MAX_BATCH_LIMIT を40→35に引き下げてある（src/lib/importers/link-check.ts）。
 const LINK_CHECK_AND_DIGEST_CRON = '40 15 * * *';
 // ブログ（Brave Search）は発見段階のキーワード検索が新規/既存の判定より前にかかる固定コストで、
-// 差分検知でも削減できない。さらに検索キーワード（POKEMON_KEYWORDS）は今後も増減しうるため、
+// 差分検知でも削減できない。さらに検索キーワード（BLOG_KEYWORDS）は今後も増減しうるため、
 // 「1日に何回・何キーワードずつ」をcron側にハードコードしたくない。そこで専用エントリを
 // 1日6回（4時間おき）発火させ、resolveBlogKeywordIndex で発火時刻からキーワードを1つだけ選んで
 // 実行する（詳細はsrc/lib/importers/blog-rotation.ts）。キーワード数が変わっても、一巡に要する
@@ -203,7 +203,7 @@ async function runScheduledBlogImport(scheduledTime: number): Promise<ImportItem
 	// 失敗時は次回 cron 実行を待つか、POST /api/import/blog を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
 	// 発火のたびに全キーワードをまとめて検索すると発見段階だけで固定コストが大きいため
 	// （docs/issue/cron-subrequest-limit.md参照）、resolveBlogKeywordIndex で1キーワードだけ選ぶ。
-	const keyword = POKEMON_KEYWORDS[resolveBlogKeywordIndex(scheduledTime, BLOG_ROTATION_SLOT_MS, POKEMON_KEYWORDS.length)];
+	const keyword = BLOG_KEYWORDS[resolveBlogKeywordIndex(scheduledTime, BLOG_ROTATION_SLOT_MS, BLOG_KEYWORDS.length)];
 	try {
 		const result = await runAndRecord('blog', 'cron', () => syncBlogCollection(resolveBlogSyncOptions(env, { query: keyword })));
 		console.log('[cron:blog] sync completed', {

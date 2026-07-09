@@ -6,7 +6,8 @@ import { topic } from '../../config/topic.config.mjs';
 // 付けているだけで、値自体は保持しない）。
 // ============================================================================
 
-// Qiita/note などキーワード検索型のインポーターが共通で使う検索語彙。
+// Qiita/note/arXiv/はてなブックマークなどキーワード検索型のインポーターが共通で使う検索語彙。
+// Brave Search（blog.ts）はここには含めない（BLOG_KEYWORDS を参照）。
 // 新しい略称・愛称（例: 「ポケカ」）を追加・削除したい場合は、各インポーター本体ではなく
 // src/config/topic.config.mjs の collection.searchKeywords を編集する
 // （Zenn はトピックタグでの絞り込みのため対象外）。
@@ -17,6 +18,11 @@ import { topic } from '../../config/topic.config.mjs';
 // AI レビューがツールページを記事として誤って accepted=true にしてしまう事例が本番で発生した
 // ため、「実装」を足してツールの解説記事に絞り込む。
 export const POKEMON_KEYWORDS = topic.collection.searchKeywords;
+
+// Brave Search のブログ収集専用の検索語彙。Brave は語数に比例して課金対象のAPI呼び出し（job）が
+// 増えるため、POKEMON_KEYWORDS（6語）とは切り離し、意図的に絞った少数語で独立管理する。
+// 追加・削除したい場合は src/config/topic.config.mjs の collection.blogSearchKeywords を編集する。
+export const BLOG_KEYWORDS = topic.collection.blogSearchKeywords;
 
 // Zenn はキーワード全文検索ではなくトピックタグでの絞り込みのため、別リストで管理する
 // （Zenn のトピックスラッグは英数字のみ、日本語不可）。複数指定するとマージ・重複排除して取得する。
