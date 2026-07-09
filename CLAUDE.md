@@ -8,7 +8,7 @@
 
 ## Git
 
-`src/`・`migrations/`・`wrangler.jsonc`・`package.json`・`scripts/` など実行に関わる変更は、`main` から作業用ブランチ（`<type>/<topic>`、`type` はコミットと同じ `feat`/`fix`/`docs`/`chore`/`refactor` 等）を切って行う。`docs/` 配下や進捗ログなど、ビルド・デプロイに影響しない変更は `main` への直接コミットでよい。
+UI 関連の変更（Astro コンポーネント、レイアウト、スタイルなど見た目の調整）は `main` への直接コミットでよい。それ以外で実行に関わる変更（`src/lib` のロジック、`migrations/`、`wrangler.jsonc`、`package.json`、`scripts/` など）は、`main` から作業用ブランチ（`<type>/<topic>`、`type` はコミットと同じ `feat`/`fix`/`docs`/`chore`/`refactor` 等）または git worktree を切って行う。`docs/` 配下や進捗ログなど、ビルド・デプロイに影響しない変更は `main` への直接コミットでよい。
 
 作業がまとまったらブランチを push して `main` へのプルリクエストを作成し、CI（`.github/workflows/ci.yml` の `build`/`migrations`）が通ることを確認してからマージする。マイグレーションを含む変更は、マージ（＝`main` への push、Cloudflare の自動デプロイが起動する）より先に本番 Supabase へ適用する（[docs/reference/operations.md](docs/reference/operations.md) の手順に従う）。
 
