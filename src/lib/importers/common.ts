@@ -331,6 +331,22 @@ export async function findItemVersionByExternalUrl(externalUrl: string): Promise
 	return data?.[0]?.version ?? null;
 }
 
+export async function findExistingItemVersions(externalUrls: string[]): Promise<Map<string, string>> {
+	// Qiita/Zenn/arXiv 向け: 候補記事のURLをまとめて1回のクエリで問い合わせ、前回収集時の
+	// version（更新日時等）と一致する候補はAIレビュー・DB書き込みごとスキップする差分検知に使う
+	// （findItemVersionByExternalUrl の1件ずつ版とは異なり、cronのsubrequest数を抑えるため
+	// 候補数に関わらず1クエリで済ませる）。
+	if (externalUrls.length === 0) return new Map();
+	const supabase = await getSupabaseClient();
+	const { data, error } = await supabase.from('items').select('external_url, version').in('external_url', externalUrls);
+	if (error) throw error;
+	const result = new Map<string, string>();
+	for (const row of (data ?? []) as Array<{ external_url: string; version: string | null }>) {
+		if (row.version) result.set(row.external_url, row.version);
+	}
+	return result;
+}
+
 export interface FeedSubscriptionUpsertPayload {
 	feedUrl: string;
 	hostname: string;

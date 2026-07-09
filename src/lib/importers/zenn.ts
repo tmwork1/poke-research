@@ -4,6 +4,7 @@
 import { reviewImportArticle } from './article-ai';
 import {
 	fetchTopTagNames,
+	findExistingItemVersions,
 	mapWithConcurrency,
 	processImportItem,
 	stripHtml,
@@ -215,59 +216,68 @@ function createItemMetadata(detail: ZennArticleDetail, topic: string, fetchedAt:
 	};
 }
 
-async function processZennSlug(slug: string, sourceId: number, topic: string, fetchedAt: string, existingTags: string[]): Promise<ImportItemOutcome> {
+interface ZennDetailFetchResult {
+	slug: string;
+	detail: ZennArticleDetail | null;
+	error?: string;
+}
+
+async function fetchZennDetailSafely(slug: string): Promise<ZennDetailFetchResult> {
 	// 詳細取得（非公式API）自体が失敗するケースも、記事単位の skipped として吸収する。
 	try {
-		const detail = await fetchZennArticleDetail(slug);
-		const url = articleUrl(detail);
-
-		return await processImportItem(
-			url,
-			detail.title,
-			() =>
-				reviewImportArticle({
-					sourceName: ZENN_SOURCE_NAME,
-					query: topic,
-					title: detail.title,
-					url,
-					authors: createAuthors(detail),
-					sourceTags: extractTags(detail),
-					existingTags,
-					createdAt: detail.published_at,
-					updatedAt: detail.body_updated_at ?? detail.published_at,
-					bodyExcerpt: createAiBodyExcerpt(detail),
-				}),
-			(review) =>
-				upsertItemByExternalUrl(
-					{
-						sourceId,
-						externalUrl: url,
-						kind: DEFAULT_KIND,
-						title: detail.title,
-						authors: createAuthors(detail),
-						summary: review.summary,
-						publishedAt: detail.published_at,
-						updatedAt: detail.body_updated_at ?? detail.published_at,
-						metadata: createItemMetadata(detail, topic, fetchedAt, review),
-						version: detail.body_updated_at ?? detail.published_at,
-						body: truncateBodyForStorage(extractBodyText(detail)),
-						aiAccepted: review.accepted,
-						language: review.language,
-					},
-					review.tags.length > 0 ? review.tags : extractTags(detail),
-					undefined,
-					{ syncTags: review.accepted },
-				),
-		);
+		return { slug, detail: await fetchZennArticleDetail(slug) };
 	} catch (error) {
-		return {
-			id: null,
-			action: 'skipped',
-			externalUrl: `https://zenn.dev/articles/${slug}`,
-			title: slug,
-			reason: error instanceof Error ? error.message : 'unknown error',
-		};
+		return { slug, detail: null, error: error instanceof Error ? error.message : 'unknown error' };
 	}
+}
+
+async function reviewAndUpsertZennArticle(
+	detail: ZennArticleDetail,
+	sourceId: number,
+	topic: string,
+	fetchedAt: string,
+	existingTags: string[],
+): Promise<ImportItemOutcome> {
+	const url = articleUrl(detail);
+
+	return processImportItem(
+		url,
+		detail.title,
+		() =>
+			reviewImportArticle({
+				sourceName: ZENN_SOURCE_NAME,
+				query: topic,
+				title: detail.title,
+				url,
+				authors: createAuthors(detail),
+				sourceTags: extractTags(detail),
+				existingTags,
+				createdAt: detail.published_at,
+				updatedAt: detail.body_updated_at ?? detail.published_at,
+				bodyExcerpt: createAiBodyExcerpt(detail),
+			}),
+		(review) =>
+			upsertItemByExternalUrl(
+				{
+					sourceId,
+					externalUrl: url,
+					kind: DEFAULT_KIND,
+					title: detail.title,
+					authors: createAuthors(detail),
+					summary: review.summary,
+					publishedAt: detail.published_at,
+					updatedAt: detail.body_updated_at ?? detail.published_at,
+					metadata: createItemMetadata(detail, topic, fetchedAt, review),
+					version: detail.body_updated_at ?? detail.published_at,
+					body: truncateBodyForStorage(extractBodyText(detail)),
+					aiAccepted: review.accepted,
+					language: review.language,
+				},
+				review.tags.length > 0 ? review.tags : extractTags(detail),
+				undefined,
+				{ syncTags: review.accepted },
+			),
+	);
 }
 
 export async function syncZennCollection(options: ZennSyncOptions = {}): Promise<ZennSyncResult> {
@@ -286,9 +296,40 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 		fetchTopTagNames(),
 	]);
 
-	const itemResults = await mapWithConcurrency(slugs, IMPORT_CONCURRENCY, (slug) =>
-		processZennSlug(slug, source.id, topic, fetchedAt, existingTags),
-	);
+	// slugだけではURL・更新日時が分からず詳細取得(fetchZennArticleDetail)が必須のため、まず全件の
+	// 詳細を取得してから、前回収集時と body_updated_at が変わっていない記事をまとめて判定する
+	// （cronのsubrequest数・OpenAI課金を抑える差分検知。qiita/arxivと同じ方針だが、詳細取得
+	// 自体は1候補1回のfetchとして残る）。
+	const detailResults = await mapWithConcurrency(slugs, IMPORT_CONCURRENCY, fetchZennDetailSafely);
+	const fetchedDetails = detailResults.flatMap((result) => (result.detail ? [result.detail] : []));
+	const existingVersions = await findExistingItemVersions(fetchedDetails.map((detail) => articleUrl(detail)));
+
+	const itemResults = await mapWithConcurrency(detailResults, IMPORT_CONCURRENCY, (result) => {
+		if (!result.detail) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl: `https://zenn.dev/articles/${result.slug}`,
+				title: result.slug,
+				reason: result.error ?? 'unknown error',
+			});
+		}
+
+		const { detail } = result;
+		const url = articleUrl(detail);
+		const version = detail.body_updated_at ?? detail.published_at;
+		if (existingVersions.get(url) === version) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl: url,
+				title: detail.title,
+				reason: 'unchanged since last collection',
+			});
+		}
+
+		return reviewAndUpsertZennArticle(detail, source.id, topic, fetchedAt, existingTags);
+	});
 
 	let inserted = 0;
 	let updated = 0;

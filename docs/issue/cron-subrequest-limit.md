@@ -1,7 +1,7 @@
 # 日次cronがCloudflare Workersのsubrequest数上限と衝突する問題
 
 - **発覚日**: 2026-07-09
-- **状態**: 未解決（cron発火時刻を09:00 JSTへ復旧したのみの暫定対応。PR #39）
+- **状態**: 恒久対応実施済み（Qiita/Zenn/arXivへの差分検知移植。ブランチ`fix/cron-subrequest-diff-detection`）
 - **関連PR**: #36（日次通知の集約）、#37（動作確認用の一時cron変更）、#39（09:00へ復旧）
 
 ## 問題
@@ -51,15 +51,27 @@ PR #36（日次収集Discord通知の集約・0件でも送信するよう変更
 cronの発火時刻を`0 0 * * *`（JST 09:00）へ復旧した（PR #39）。根本原因は未解消のため、
 日次収集が引き続き不安定な可能性がある。
 
-## 検討すべき根本対応（未着手）
+## 根本対応（実施済み）
 
-1. **ジョブ分割**: 日次収集ジョブをCloudflare Queuesなどを介して独立したWorker呼び出しに分離し、
-   ジョブごとに新しいsubrequest予算を持たせる。根本解決だが実装コストが大きい。
-2. **cron trigger数上限との再調整**: 現行5件中3件を使用（週次DBレビュー・日次収集集約・
-   ※フィードポーリングは日次収集に統合済み）。ジョブを複数のcron trigger・時間帯に再分割し、
-   1呼び出しあたりの処理対象ソース数を減らす。
-3. **`wrangler.jsonc`の`limits`設定確認**: 現在のCloudflareプランでsubrequest上限自体を
-   引き上げられるか確認する（プラン次第では根本解決にならない可能性もある）。
+調査の結果、根本原因は「7ジョブを1回の呼び出しに集約したこと」自体よりも、**Qiita/Zenn/arXivの
+3インポーターが、fetchしたAPI候補を毎日無条件に全件AIレビュー・DB書き込みしていたこと**だと判明した
+（arXivは既定`maxResults=50`で最大50件/日）。1件の新規/更新記事の処理には OpenAIレビュー1回＋
+Supabase呼び出し6〜8回（既存チェック・upsert・タグ照合・item_tags同期）がかかるため、Qiitaの候補
+20件だけでも120〜180 subrequestsに達し、本番で実際に上限超過が起きていた。
+
+一方、Blog（Brave Search）・はてなブックマーク・RSSフィード追従の3インポーターは既に
+「前回収集時と内容（本文ハッシュ or 更新日時）が同じなら、AIレビュー・DB書き込みを行わずスキップする」
+差分検知を実装済みだった（`findItemVersionByExternalUrl`、`src/lib/importers/common.ts`）。この
+差分検知をQiita/Zenn/arXivにも移植し（バッチ版の`findExistingItemVersions`を新設し、候補記事URLを
+まとめて1回のクエリで問い合わせる）、変更のない記事の無駄な再レビューをなくすことで、cron呼び出し
+あたりのsubrequest数とOpenAI課金の両方を削減した。ローカルSupabaseに対する実行で、既存記事の
+大半が`reason: 'unchanged since last collection'`としてAIレビュー・DB書き込みなしにスキップされる
+ことを確認済み（Qiita 3件中2件、Zenn 48件中44件、arXiv 5件中5件）。
+
+cron構成（`wrangler.jsonc`の1回集約、`src/worker.ts`のジョブ順序・Discord通知）は変更していない。
+
+Cloudflare Workers Paidプラン（$5/月、subrequest上限50→1000）へのアップグレードは、ユーザーが
+Cloudflareダッシュボードで別途判断・実施する事項として今回のスコープ外とした。
 
 ## 副次的に判明したリスク（未対応）
 
