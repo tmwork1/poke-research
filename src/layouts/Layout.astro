@@ -120,28 +120,43 @@ const websiteJsonLd = JSON.stringify({
 						</svg>
 						<span>論文</span>
 					</a>
-					<div class="mypage-tab-wrap">
+					{user ? (
 						<a class:list={['nav-tab', 'mypage-tab', { current: pathname === '/mypage' }]} href="/mypage" aria-current={pathname === '/mypage' ? 'page' : undefined}>
 							<span class="mypage-icon-wrap">
 								<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 									<circle cx="12" cy="8" r="4" />
 									<path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
 								</svg>
-								{loggedIn && <span class="login-dot" aria-hidden="true" />}
+								<span class="login-dot" aria-hidden="true" />
 							</span>
 							<span>マイページ</span>
 						</a>
-						{/* このドロップダウンは hover/focus-within でのみ開くため、タッチ環境ではサイドバーのログアウトが導線となる */}
-						{user ? (
+					) : (
+						<div class="mypage-tab-wrap">
+							<a class:list={['nav-tab', 'mypage-tab', { current: pathname === '/mypage' }]} href="/mypage" aria-current={pathname === '/mypage' ? 'page' : undefined}>
+								<span class="mypage-icon-wrap">
+									<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<circle cx="12" cy="8" r="4" />
+										<path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
+									</svg>
+								</span>
+								<span>マイページ</span>
+							</a>
+							{/* 未ログイン時のみ、タブ1回クリックでGoogleログインボタンをドロップダウンで直接出す
+							    （ログイン中はドロップダウンを持たず、ログアウトはサイドバーに一本化） */}
 							<div class="account-dropdown">
-								<p class="dropdown-name">{user.displayName ?? user.email ?? 'ログイン中'}</p>
-								{user.email ? <p class="dropdown-email">{user.email}</p> : null}
-								<form method="post" action="/api/auth/logout">
-									<button type="submit">ログアウト</button>
-								</form>
+								<a class="dropdown-login-button" href="/api/auth/login">
+									<svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
+										<path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z" />
+										<path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4c-7.7 0-14.3 4.4-17.7 10.7z" />
+										<path fill="#4CAF50" d="M24 44c5.5 0 10.5-2.1 14.3-5.6l-6.6-5.6C29.6 34.6 26.9 36 24 36c-5.3 0-9.7-3.1-11.3-7.6l-6.5 5C9.6 39.5 16.2 44 24 44z" />
+										<path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.6l6.6 5.6C41.5 36.6 44 30.8 44 24c0-1.3-.1-2.7-.4-3.5z" />
+									</svg>
+									<span>Google でログイン</span>
+								</a>
 							</div>
-						) : null}
-					</div>
+						</div>
+					)}
 				</nav>
 			</header>
 			<main class="page">
@@ -285,7 +300,8 @@ const websiteJsonLd = JSON.stringify({
 		}
 	});
 
-	// タッチ環境では account-dropdown が hover/focus-within で開けないため、タップでも開閉できるようにする。
+	// 未ログイン時のみ、タブクリックでGoogleログインボタンのドロップダウンを開閉する
+	// （ログイン中はこの要素自体が存在しないため何もしない）。
 	const mypageTabWrap = document.querySelector('.mypage-tab-wrap');
 
 	function closeMypageDropdown() {
@@ -293,25 +309,22 @@ const websiteJsonLd = JSON.stringify({
 	}
 
 	mypageTabWrap?.addEventListener('click', (event) => {
-		if (!mypageTabWrap.querySelector('.account-dropdown')) return;
 		if (!(event.target instanceof Element) || !event.target.closest('.mypage-tab')) return;
-		if (!mypageTabWrap.classList.contains('open')) {
-			event.preventDefault();
-			mypageTabWrap.classList.add('open');
-		} else {
-			mypageTabWrap.classList.remove('open');
-		}
+		event.preventDefault();
+		mypageTabWrap.classList.toggle('open');
 	});
 
-	document.addEventListener('click', (event) => {
-		if (mypageTabWrap && event.target instanceof Node && !mypageTabWrap.contains(event.target)) {
-			closeMypageDropdown();
-		}
-	});
+	if (mypageTabWrap) {
+		document.addEventListener('click', (event) => {
+			if (event.target instanceof Node && !mypageTabWrap.contains(event.target)) {
+				closeMypageDropdown();
+			}
+		});
 
-	document.addEventListener('keydown', (event) => {
-		if (event.key === 'Escape') closeMypageDropdown();
-	});
+		document.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape') closeMypageDropdown();
+		});
+	}
 </script>
 
 <style>
@@ -660,37 +673,22 @@ const websiteJsonLd = JSON.stringify({
 		transform: translateY(0);
 	}
 
-	.dropdown-name {
-		margin: 0;
-		font-size: 0.92rem;
-		font-weight: 700;
-		white-space: nowrap;
-	}
-
-	.dropdown-email {
-		margin: 2px 0 10px;
-		font-size: 0.8rem;
-		color: var(--text-muted);
-		white-space: nowrap;
-	}
-
-	.account-dropdown form {
-		margin: 0;
-	}
-
-	.account-dropdown button {
+	.dropdown-login-button {
+		box-sizing: border-box;
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
 		width: 100%;
 		padding: 6px 10px;
 		border-radius: 8px;
 		border: 1px solid var(--border);
-		background: transparent;
-		color: var(--text-muted);
+		color: var(--text);
 		font-weight: 500;
 		font-size: 0.85rem;
-		cursor: pointer;
+		white-space: nowrap;
 	}
 
-	.account-dropdown button:hover {
+	.dropdown-login-button:hover {
 		background: var(--bg-soft);
 	}
 
