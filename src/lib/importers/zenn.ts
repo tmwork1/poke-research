@@ -250,6 +250,7 @@ async function processZennSlug(slug: string, sourceId: number, topic: string, fe
 						updatedAt: detail.body_updated_at ?? detail.published_at,
 						metadata: createItemMetadata(detail, topic, fetchedAt, review),
 						version: detail.body_updated_at ?? detail.published_at,
+						collectionRoute: 'zenn-importer',
 						body: truncateBodyForStorage(extractBodyText(detail)),
 						aiAccepted: review.accepted,
 						language: review.language,
