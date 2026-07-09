@@ -35,7 +35,9 @@ const ARXIV_SOURCE_NAME = 'arXiv';
 const ARXIV_SOURCE_ORIGIN_URL = 'https://arxiv.org/';
 const DEFAULT_KIND = 'paper';
 const MAX_AI_BODY_CHARS = 4000;
-const DEFAULT_MAX_RESULTS = 50;
+// 既存論文はAIレビュー・DB書き込みをスキップするため実質的な負荷は新着論文数に比例するが、
+// 初回投入日・急増日のsubrequest数の頭打ちとして既定値は控えめにする（旧50→20）。
+const DEFAULT_MAX_RESULTS = 20;
 const IMPORT_CONCURRENCY = 4;
 
 // arXivの検索構文（search_query）は日本語キーワードを扱えないため、topic.config.mjs の
@@ -252,7 +254,9 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 					// （hatena.tsと同じ方針。sourceTagsとしてはAIレビューの判断材料に渡している）。
 					review.tags,
 					undefined,
-					{ syncTags: review.accepted },
+					// 直前に existingUrls でこの候補が新規であることを確認済みのため、
+					// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。
+					{ syncTags: review.accepted, assumeNew: true },
 				),
 		);
 	});

@@ -282,7 +282,9 @@ async function reviewAndUpsertZennArticle(
 				},
 				review.tags.length > 0 ? review.tags : extractTags(detail),
 				undefined,
-				{ syncTags: review.accepted },
+				// 直前に existingUrls でこの記事が新規であることを確認済みのため、
+				// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。
+				{ syncTags: review.accepted, assumeNew: true },
 			),
 	);
 }

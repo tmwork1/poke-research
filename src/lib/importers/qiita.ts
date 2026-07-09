@@ -89,7 +89,9 @@ export function resolveQiitaSyncOptions(env: QiitaEnvDefaults, overrides: QiitaS
 	return {
 		query: overrides.query?.trim() || DEFAULT_QUERY,
 		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.QIITA_PAGES, 1)),
-		perPage: parsePositiveInteger(overrides.perPage, parsePositiveInteger(env.QIITA_PER_PAGE, 20)),
+		// 既存記事はAIレビュー・DB書き込みをスキップするため実質的な負荷は新着記事数に比例するが、
+		// 初回投入日・急増日のsubrequest数の頭打ちとして既定値は控えめにする（旧20→10）。
+		perPage: parsePositiveInteger(overrides.perPage, parsePositiveInteger(env.QIITA_PER_PAGE, 10)),
 		token: overrides.token?.trim() || env.QIITA_TOKEN?.trim() || '',
 	};
 }
@@ -309,7 +311,9 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 					},
 					review.tags.length > 0 ? review.tags : extractTags(item),
 					undefined,
-					{ syncTags: review.accepted },
+					// 直前に existingUrls でこの候補が新規であることを確認済みのため、
+					// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。
+					{ syncTags: review.accepted, assumeNew: true },
 				),
 		);
 	});

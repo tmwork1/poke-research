@@ -82,6 +82,11 @@ export async function checkLinks(options: LinkCheckOptions = {}): Promise<LinkCh
 	let updated = 0;
 	let skipped = 0;
 	const items: LinkCheckItemResult[] = [];
+	// DB更新は1件ずつupdateすると最大batchLimit件分のsubrequestになるため、probe結果をためて
+	// 最後に1回のupsertでまとめて反映する（cronのsubrequest数を抑える）。upsertは行の全体像を
+	// 送る必要があるため、decision.update が省略したフィールドは target の現在値で補って
+	// 意図せずNULL化しないようにする。
+	const pendingUpdates: Array<{ id: number; link_status: string | null; link_checked_at: string; link_broken_since: string | null }> = [];
 
 	await mapWithConcurrency(targets, resolved.concurrency, async (target) => {
 		const externalUrl = target.external_url ?? '';
@@ -95,20 +100,29 @@ export async function checkLinks(options: LinkCheckOptions = {}): Promise<LinkCh
 			const { dead } = await probeUrl(externalUrl, resolved.timeoutMs);
 			const decision = decideLinkStatus(target, dead, checkedAt);
 
-			const { error: updateError } = await supabase.from('items').update(decision.update).eq('id', target.id);
-			if (updateError) throw updateError;
+			pendingUpdates.push({
+				id: target.id,
+				link_status: decision.update.link_status ?? target.link_status,
+				link_checked_at: decision.update.link_checked_at,
+				link_broken_since: decision.update.link_broken_since !== undefined ? decision.update.link_broken_since : target.link_broken_since,
+			});
 
 			if (decision.outcome === 'broken') inserted += 1;
 			else if (decision.outcome === 'recovered') updated += 1;
 			items.push({ id: target.id, externalUrl, outcome: decision.outcome });
 		} catch (checkError) {
-			// 1件の失敗（fetch失敗・DB更新失敗）がバッチ全体を止めないよう、ここで吸収する。
+			// 1件の失敗（fetch失敗）がバッチ全体を止めないよう、ここで吸収する。
 			skipped += 1;
 			items.push({ id: target.id, externalUrl, outcome: 'skipped' });
 			// eslint-disable-next-line no-console
 			console.error('[link-check] failed to check item', target.id, checkError);
 		}
 	});
+
+	if (pendingUpdates.length > 0) {
+		const { error: updateError } = await supabase.from('items').upsert(pendingUpdates, { onConflict: 'id' });
+		if (updateError) throw updateError;
+	}
 
 	return {
 		fetched: targets.length,

@@ -236,6 +236,14 @@ export interface ItemUpsertPayload {
 export interface UpsertItemOptions {
 	/** 棄却記事はタグ同期をスキップし、tags テーブルをノイズで汚さないようにする（既定 true）。 */
 	syncTags?: boolean;
+	/**
+	 * 呼び出し側が事前に findExistingExternalUrls 等で external_url の非存在を確認済みの場合、
+	 * ここでの既存行チェック（select）を省略して1 subrequest 減らす（Qiita/Zenn/arXivは
+	 * 既存候補を呼び出し前にスキップしているため、ここに到達するのは常に新規行）。
+	 * 既存有無が保証できない呼び出し元（blog/hatena/feedは正規化後のURLが事前チェック時と
+	 * 異なりうる）では既定の false のままにする。
+	 */
+	assumeNew?: boolean;
 }
 
 export async function upsertItemByExternalUrl(
@@ -247,22 +255,26 @@ export async function upsertItemByExternalUrl(
 	// action の判定は結果表示用の分類に過ぎず、書き込み自体は external_url の
 	// UNIQUE 制約(migrations/002)を前提にした upsert で原子的に行う。
 	const supabase = await getSupabaseClient();
-	const { data: existingItems, error: selectError } = await supabase
-		.from('items')
-		.select('id, ai_accepted')
-		.eq('external_url', payload.externalUrl)
-		.limit(1);
-	if (selectError) throw selectError;
-	const existing = (existingItems?.[0] ?? null) as { id: number; ai_accepted?: boolean } | null;
-	const action: 'inserted' | 'updated' = existing ? 'updated' : 'inserted';
+	let action: 'inserted' | 'updated' = 'inserted';
 
-	// 一度採用され公開中の記事（既存行 ai_accepted=true）は、収集ジョブの再レビューが棄却に
-	// 反転しても格下げしない（retag-existing-items.mjs の「不採用判定は警告のみ」方針と揃える）。
-	// 境界記事では判定が揺れうるため、ここで上書きを許すと公開記事が収集のたびに一覧から
-	// 見えたり消えたりする。metadata/summary も含め一切書き込まず既存 id を返す
-	// （判定ロジックと詳しい理由は process-import-item.ts の shouldPreserveAcceptedItem を参照）。
-	if (existing && shouldPreserveAcceptedItem(existing.ai_accepted, payload.aiAccepted)) {
-		return { id: existing.id, action: 'skipped' };
+	if (!options.assumeNew) {
+		const { data: existingItems, error: selectError } = await supabase
+			.from('items')
+			.select('id, ai_accepted')
+			.eq('external_url', payload.externalUrl)
+			.limit(1);
+		if (selectError) throw selectError;
+		const existing = (existingItems?.[0] ?? null) as { id: number; ai_accepted?: boolean } | null;
+		action = existing ? 'updated' : 'inserted';
+
+		// 一度採用され公開中の記事（既存行 ai_accepted=true）は、収集ジョブの再レビューが棄却に
+		// 反転しても格下げしない（retag-existing-items.mjs の「不採用判定は警告のみ」方針と揃える）。
+		// 境界記事では判定が揺れうるため、ここで上書きを許すと公開記事が収集のたびに一覧から
+		// 見えたり消えたりする。metadata/summary も含め一切書き込まず既存 id を返す
+		// （判定ロジックと詳しい理由は process-import-item.ts の shouldPreserveAcceptedItem を参照）。
+		if (existing && shouldPreserveAcceptedItem(existing.ai_accepted, payload.aiAccepted)) {
+			return { id: existing.id, action: 'skipped' };
+		}
 	}
 
 	const { data: upserted, error: upsertError } = await supabase
