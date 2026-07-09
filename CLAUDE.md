@@ -40,7 +40,11 @@ Manage the background server with `astro dev stop`, `astro dev status`, and `ast
 
 `scripts/` 配下のスクリプトを追加・削除・改名したら、[docs/reference/scripts.md](docs/reference/scripts.md) も同時に更新する。
 
-`src/lib/importers/article-ai.ts` のプロンプトや要約基準を変更したら、既存記事への `scripts/db/retag-existing-items.mjs` 再適用の要否を検討する（OpenAI 課金が発生するため実行前にユーザー確認）。
+`src/lib/importers/article-ai.ts`（実体は `src/config/ai-review-prompt.mjs` の `buildSystemPrompt()`）のプロンプトや要約基準を変更したら、全件再適用の前にまず問題事例だけで少数再テストする。採用済み記事は `scripts/db/retag-existing-items.mjs --id=<id> --dry-run` で確認できるが、棄却済み記事（`items.ai_accepted=false`）は同スクリプトの対象外（`fetchTargetItems` が `ai_accepted=true` のみ取得する設計）のため、使い捨てスクリプト（読み取り専用、DB書き込みなし）で個別に再判定する。少数検証で意図通り判定が変わることを確認したうえで、既存記事全体への `retag-existing-items.mjs` 再適用の要否を検討する（OpenAI 課金が発生するため実行前にユーザー確認）。
+
+プロンプトやモデル（`OPENAI_MODEL`）を変えて少数再テストを行う実験は、1回実行するごとに結果を `docs/optimization/` 配下のドキュメントへ逐一記録する（チャットでの報告だけで済ませない）。まとめて後で書くのではなく、実験→記録→次の実験、を1サイクルとして繰り返す。
+
+実験の記録には、accepted/rejected を問わず reason・confidence・language など判定の検証に必要な情報を必ず含める。`retag-existing-items.mjs` の accepted 分岐は元々 reason を出力していなかった（ログを見て「なぜ採用されたか」を後から追えない）バグがあったため、両分岐で reason/confidence を出力するよう修正済み。同種の使い捨て検証スクリプトを新たに書く場合も、判定結果は accepted の値に関わらず reason 等をログに残す。
 
 ## Progress
 
