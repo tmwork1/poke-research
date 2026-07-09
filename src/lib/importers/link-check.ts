@@ -6,7 +6,7 @@
 import { mapWithConcurrency } from './common';
 import { decideLinkStatus, probeUrl, type LinkCheckOutcome, type LinkCheckTarget } from '../link-status';
 import { getSupabaseClient } from '../supabase';
-import { parsePositiveInteger } from '../params';
+import { parseOptionalPositiveInteger, parsePositiveInteger } from '../params';
 
 // 収集ジョブ本体（検索語等）と異なり、これらはチェック実行の負荷調整パラメータに過ぎないため
 // env 経由の上書きを許容する（keywords.ts のような品質直結の値ではない）。
@@ -24,14 +24,24 @@ export interface LinkCheckOptions {
 	timeoutMs?: number;
 }
 
-const DEFAULT_BATCH_LIMIT = 100;
 const DEFAULT_CONCURRENCY = 5;
 const DEFAULT_RECHECK_INTERVAL_DAYS = 7;
 const DEFAULT_TIMEOUT_MS = 8_000;
+// batchLimitを明示指定しない場合、対象件数から「recheckIntervalDays日で一巡する」件数を
+// 自動算出する（下記resolveAdaptiveBatchLimit）。件数が増えても手動でLINK_CHECK_BATCH_LIMITを
+// 都度調整せずに済むが、Cloudflareのsubrequest上限（無料/標準プランで50/呼び出し）を
+// probe fetch（1件1fetch）だけで超えないよう、この安全上限で頭打ちにする（超えて増える分は
+// 一巡にかかる日数が伸びるだけで、subrequest超過にはならない）。
+const SAFE_MAX_BATCH_LIMIT = 40;
+const MIN_BATCH_LIMIT = 10;
+const BATCH_LIMIT_MARGIN = 5;
 
-export function resolveLinkCheckOptions(env: LinkCheckEnvDefaults, overrides: LinkCheckOptions = {}): Required<LinkCheckOptions> {
+export function resolveLinkCheckOptions(
+	env: LinkCheckEnvDefaults,
+	overrides: LinkCheckOptions = {},
+): Required<Omit<LinkCheckOptions, 'batchLimit'>> & { batchLimit?: number } {
 	return {
-		batchLimit: parsePositiveInteger(overrides.batchLimit, parsePositiveInteger(env.LINK_CHECK_BATCH_LIMIT, DEFAULT_BATCH_LIMIT)),
+		batchLimit: overrides.batchLimit ?? parseOptionalPositiveInteger(env.LINK_CHECK_BATCH_LIMIT),
 		concurrency: parsePositiveInteger(overrides.concurrency, parsePositiveInteger(env.LINK_CHECK_CONCURRENCY, DEFAULT_CONCURRENCY)),
 		recheckIntervalDays: parsePositiveInteger(
 			overrides.recheckIntervalDays,
@@ -39,6 +49,24 @@ export function resolveLinkCheckOptions(env: LinkCheckEnvDefaults, overrides: Li
 		),
 		timeoutMs: parsePositiveInteger(overrides.timeoutMs, parsePositiveInteger(env.LINK_CHECK_TIMEOUT_MS, DEFAULT_TIMEOUT_MS)),
 	};
+}
+
+// LINK_CHECK_BATCH_LIMITが未指定の場合に使う既定のbatchLimitを、チェック対象になりうる
+// 件数（ai_accepted=trueかつexternal_urlがある件数）から算出する。
+async function resolveAdaptiveBatchLimit(
+	supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
+	recheckIntervalDays: number,
+): Promise<number> {
+	const { count, error } = await supabase
+		.from('items')
+		.select('id', { count: 'exact', head: true })
+		.not('external_url', 'is', null)
+		.eq('ai_accepted', true);
+	if (error) throw error;
+
+	const eligibleTotal = count ?? 0;
+	const target = Math.ceil(eligibleTotal / recheckIntervalDays) + BATCH_LIMIT_MARGIN;
+	return Math.min(Math.max(target, MIN_BATCH_LIMIT), SAFE_MAX_BATCH_LIMIT);
 }
 
 export interface LinkCheckItemResult {
@@ -62,6 +90,8 @@ export async function checkLinks(options: LinkCheckOptions = {}): Promise<LinkCh
 	const cutoff = new Date(Date.now() - resolved.recheckIntervalDays * 24 * 60 * 60 * 1000).toISOString();
 
 	const supabase = await getSupabaseClient();
+	const batchLimit = resolved.batchLimit ?? (await resolveAdaptiveBatchLimit(supabase, resolved.recheckIntervalDays));
+
 	// 全件を毎回叩くとチェック対象サイトへの負荷や実行時間が無視できないため、
 	// 未チェック・チェック間隔を過ぎたものだけを対象にし、古い順にバッチ件数だけ処理する。
 	const { data, error } = await supabase
@@ -73,7 +103,7 @@ export async function checkLinks(options: LinkCheckOptions = {}): Promise<LinkCh
 		.eq('ai_accepted', true)
 		.or(`link_checked_at.is.null,link_checked_at.lt.${cutoff}`)
 		.order('link_checked_at', { ascending: true, nullsFirst: true })
-		.limit(resolved.batchLimit);
+		.limit(batchLimit);
 	if (error) throw error;
 
 	const targets = (data ?? []) as LinkCheckTarget[];

@@ -27,6 +27,12 @@ const WEEKLY_REVIEW_CRON = '30 20 * * 1';
 // 「blog/hatenaの当日収集より先に消化する」という順序の担保だけだったため、単一発火の
 // 先頭ジョブとして統合し、Cron Trigger エントリを1つ節約した。
 const DAILY_CRON = '0 0 * * *';
+// リンク切れ検出は「新着」の概念がなく、対象URLへのprobe fetch自体が1件1fetchで
+// 差分検知による削減ができない（docs/issue/cron-subrequest-limit.md参照）。日次収集6ジョブと
+// 同一呼び出しに束ねると、双方の subrequest が合算されCloudflareの上限（50/呼び出し）を
+// 超えやすいため、別の発火時刻を持つ専用の Cron Trigger に分離する（アカウント上限5件のうち
+// まだ余裕があるため追加できる）。
+const LINK_CHECK_CRON = '30 0 * * *';
 // 新着記事を生む収集ジョブだけを label 付きで登録する（リンク切れ検出は「新着」の概念が
 // ないため対象外とし、runDailyJobsSequentially 内で個別に実行する）。
 const DAILY_COLLECTION_JOBS: Array<{ label: string; run: () => Promise<ImportItemOutcome[]> }> = [
@@ -51,14 +57,18 @@ export default {
 			ctx.waitUntil(runDailyJobsSequentially());
 			return;
 		}
+		if (controller.cron === LINK_CHECK_CRON) {
+			ctx.waitUntil(runScheduledLinkCheck());
+			return;
+		}
 		console.error('[cron] unrecognized cron expression', { cron: controller.cron });
 	},
 } satisfies ExportedHandler<Env>;
 
 // 日次ジョブを1回の scheduled 起動の中で順にawaitする。各ジョブは自身の中で
 // try/catch と sendOperationalAlert を完結させているため、ここでは単純に直列実行するだけでよい。
-// リンク切れ検出だけは「新着」の概念がないため DAILY_COLLECTION_JOBS に含めず、元の実行順
-// （blogの後・はてなの前）を保ったまま個別に呼ぶ。
+// リンク切れ検出は「新着」の概念がなく、probe fetchの subrequest 数も抑えられないため
+// DAILY_COLLECTION_JOBS には含めず、LINK_CHECK_CRON の専用発火から個別に呼ぶ。
 async function runDailyJobsSequentially(): Promise<void> {
 	const allNewItems: Array<ImportItemOutcome & { id: number }> = [];
 	const breakdown: DailySourceBreakdown[] = [];
@@ -68,10 +78,6 @@ async function runDailyJobsSequentially(): Promise<void> {
 		const newItems = items.filter((item): item is ImportItemOutcome & { id: number } => item.action === 'inserted' && item.id !== null);
 		breakdown.push({ label: job.label, count: newItems.length });
 		allNewItems.push(...newItems);
-
-		if (job.label === 'ブログ') {
-			await runScheduledLinkCheck();
-		}
 	}
 
 	await notifyDailyDigest(allNewItems, breakdown);
