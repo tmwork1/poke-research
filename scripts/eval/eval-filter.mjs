@@ -13,7 +13,7 @@
 // 未適用のDBには存在しない）には依存しない。
 import { Client } from 'pg';
 import { topic } from '../../src/config/topic.config.mjs';
-import { buildSystemPrompt } from '../../src/config/ai-review-prompt.mjs';
+import { buildSystemPrompt } from '../../src/lib/importers/ai-review-prompt.mjs';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -22,7 +22,7 @@ if (!databaseUrl) {
 }
 
 async function printCurrentPrompt() {
-	console.log('=== 現在のシステムプロンプト (src/config/ai-review-prompt.mjs: buildSystemPrompt) ===');
+	console.log('=== 現在のシステムプロンプト (src/lib/importers/ai-review-prompt.mjs: buildSystemPrompt) ===');
 	console.log(buildSystemPrompt(topic));
 	console.log('');
 }
