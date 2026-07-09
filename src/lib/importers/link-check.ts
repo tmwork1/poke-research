@@ -32,7 +32,10 @@ const DEFAULT_TIMEOUT_MS = 8_000;
 // 都度調整せずに済むが、Cloudflareのsubrequest上限（無料/標準プランで50/呼び出し）を
 // probe fetch（1件1fetch）だけで超えないよう、この安全上限で頭打ちにする（超えて増える分は
 // 一巡にかかる日数が伸びるだけで、subrequest超過にはならない）。
-const SAFE_MAX_BATCH_LIMIT = 40;
+// この呼び出しは日次まとめ通知（DB集計1回＋Webhook送信1回、fetchDailyDigestItems/
+// sendDailyDigest）と同一Worker呼び出しに統合されている（LINK_CHECK_AND_DIGEST_CRON、
+// src/worker.ts）ため、統合前の40から35へ引き下げ、まとめ通知分の余裕を確保してある。
+const SAFE_MAX_BATCH_LIMIT = 35;
 const MIN_BATCH_LIMIT = 10;
 const BATCH_LIMIT_MARGIN = 5;
 

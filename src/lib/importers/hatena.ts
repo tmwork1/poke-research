@@ -66,8 +66,13 @@ export interface HatenaEnvDefaults {
 	HATENA_MAX_NEW_PER_RUN?: string | number;
 }
 
-// 新着記事1件の処理（本文取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行
-// あたりこの件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。
+// 発見段階（キーワードごとの検索RSS取得等）の固定コストに加え、新規記事1件あたり本文取得＋
+// 既存チェック（assumeNew非対応）＋OpenAIレビュー＋item upsertの計4 subrequestsがかかる
+// （common.tsの構造から確定。他ジョブと異なりassumeNewを使っていないため既存チェックのselect
+// が残る）。固定コスト（新規0件時）は2026-07-09の実測で39だったが、コードから見積もる素朴な
+// 理論値（検索RSS取得6回＋既存URL一括チェック1回＋タグ上位取得1回≒9件程度）とは大きな乖離が
+// あり、原因は未解明（要調査）。他ジョブより固定コストの実測値が大きいため、件数は控えめにする
+// （詳細はdocs/issue/cron-subrequest-limit.md参照）。
 const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 6;
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。

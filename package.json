@@ -32,6 +32,7 @@
 		"eval:tags": "node ./scripts/eval/eval-tags.mjs",
 		"eval:annotations": "node ./scripts/eval/eval-annotations.mjs",
 		"eval:broken-links": "node ./scripts/eval/eval-broken-links.mjs",
+		"eval:subrequests": "node ./scripts/eval/eval-subrequests.mjs",
 		"eval:all": "node ./scripts/eval/eval-all.mjs",
 		"test": "node --test \"tests/**/*.test.ts\"",
 		"build": "astro build",

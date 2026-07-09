@@ -399,12 +399,12 @@ async function main() {
       if (!review.accepted) {
         // 既に公開済みのアイテムを自動で非公開・削除にはしない。判定が変わったことだけ
         // 記録し、対応は利用者の判断に委ねる。
-        console.warn(`#${item.id} "${item.title}": 現行基準では不採用と判定されました（reason: ${review.reason}, language: ${review.language}）。summary/タグの更新はスキップします。要確認。`);
+        console.warn(`#${item.id} "${item.title}": 現行基準では不採用と判定されました（reason: ${review.reason}, language: ${review.language}, confidence: ${review.confidence}）。summary/タグの更新はスキップします。要確認。`);
         rejected += 1;
         continue;
       }
 
-      console.log(`#${item.id} "${item.title}": summary/タグを更新${dryRun ? '予定' : ''} -> tags=[${review.tags.join(', ')}] (language: ${review.language})`);
+      console.log(`#${item.id} "${item.title}": summary/タグを更新${dryRun ? '予定' : ''} -> tags=[${review.tags.join(', ')}] (language: ${review.language}, confidence: ${review.confidence}, reason: ${review.reason})`);
       if (!dryRun) {
         const { error: updateError } = await supabase.from('items').update({ summary: review.summary }).eq('id', item.id);
         if (updateError) throw updateError;

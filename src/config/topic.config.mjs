@@ -48,5 +48,16 @@ export const topic = {
 		overgeneralizedTagExamples: ['統計学', '確率分布'],
 		// 上記の分析系タグが誤って付与されがちな、単なる数値・データの例（手法そのものではない）。
 		dataOnlyExamples: ['種族値', '乱数', 'APIから取得したデータ'],
+		// 条件(1)の境界判断（比喩として使っているだけ vs 実データ・実仕様を分析対象にしている）を
+		// 小型モデルに掴ませるためのfew-shot例。{label} はプロンプト側で主題名に置換される。
+		boundaryExamples: [
+			{ title: '{label}に学ぶ○○【総目次】', accepted: false, reason: '本文が既存記事へのリンク列挙のみの目次ページ' },
+			{
+				title: 'Javaのメソッドが分からなかったので{label}のキャラクターで覚えたら理解できた話',
+				accepted: false,
+				reason: '架空の数値やキャラクター名を暗記の題材にしているだけで、{label}固有の実データ・ルールを分析対象にしていない',
+			},
+			{ title: '{label}の○○という特性を数理モデルで解析してみた', accepted: true, reason: '{label}の実際の仕様・データを分析対象にした技術記事' },
+		],
 	},
 };

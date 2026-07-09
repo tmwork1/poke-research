@@ -45,6 +45,8 @@ export interface NewItemDigestEntry {
 	externalUrl: string;
 	/** 記事の掲載元名（sources.name）。Qiita/Zenn/noteは固定、blog/feed/hatenaは記事ごとに異なる。 */
 	sourceName: string;
+	/** 'article' | 'paper'。ヘッダーの内訳（記事/論文）の集計に使う。 */
+	kind: string;
 }
 
 // Xは140字制限のため、記事が複数件でも収まるよう要約・ハッシュタグは付けず、
@@ -54,18 +56,16 @@ function buildXPostDraft(items: NewItemDigestEntry[]): string {
 	return [`${topic.site.url}/`, ...lines].join('\n\n');
 }
 
-export interface DailySourceBreakdown {
-	label: string;
-	count: number;
-}
-
 // 日次収集（wrangler.jsonc の DAILY_CRON）1回分をまとめて1件のDigestとしてDiscordへ送る。
 // ソースごとの個別通知（旧sendNewItemsDigest）だと0件のソースは黙ってしまい、cronが
 // 正常に実行されたかどうかが通知だけでは分からなかったため、合計0件でも必ず送信する
 // （「cronが動いた」ことの確認シグナルとして機能させる）。
-export async function sendDailyDigest(env: AlertEnv, items: NewItemDigestEntry[], breakdown: DailySourceBreakdown[]): Promise<void> {
-	const breakdownLine = breakdown.map((b) => `${b.label} ${b.count}件`).join('・');
-	const header = `【${topic.site.slug}】本日の収集結果: 合計${items.length}件（${breakdownLine}）`;
+// items は呼び出し側（fetchDailyDigestItems）であらかじめ ai_accepted=true のみに
+// 絞り込まれている前提（棄却記事は通知に含めない）。
+export async function sendDailyDigest(env: AlertEnv, items: NewItemDigestEntry[]): Promise<void> {
+	const articleCount = items.filter((item) => item.kind !== 'paper').length;
+	const paperCount = items.filter((item) => item.kind === 'paper').length;
+	const header = `【${topic.site.slug}】更新のお知らせ\n記事 ${articleCount} 件 / 論文 ${paperCount} 件`;
 	if (items.length === 0) {
 		await postToWebhook(env, header);
 		return;
