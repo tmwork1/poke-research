@@ -23,10 +23,15 @@ export const topic = {
 	collection: {
 		// AIレビューの system prompt 内で主題名として使う表記。
 		label: 'ポケモン',
-		// Qiita/note などキーワード検索型インポーターが使う検索語彙。
+		// Qiita/note/arXiv/はてなブックマークなどキーワード検索型インポーターが使う検索語彙。
+		// Brave Search（blog.ts）は語数に比例して課金対象のAPI呼び出し（job）が増えるため、
+		// ここには含めず collection.blogSearchKeywords で別管理する。
 		searchKeywords: ['ポケモン', 'ポケカ', 'ポケットモンスター', 'pokemon', 'pokeapi', 'ダメージ計算 実装'],
 		// Zenn のトピックタグ絞り込み（日本語不可、英数字のみ）。
 		zennTopics: ['pokemon'],
+		// Brave Search のブログ収集専用の検索語彙。searchKeywords とは独立して増減できる
+		// （Brave は語数だけ課金対象のAPI呼び出しが増えるため、意図的に絞った少数語にする）。
+		blogSearchKeywords: ['ポケモン', 'pokemon'],
 		// Brave Search のブログ収集で、検索結果を占有しがちな攻略Wiki等トピック固有の除外ドメイン。
 		// qiita.com/zenn.dev/note.com/github.com等の汎用的な除外は keywords.ts 側に共通で持つ。
 		extraExcludedBlogDomains: ['yakkun.com', 'gamewith.jp', 'appmedia.jp', 'game8.jp', 'altema.jp', 'gamerch.com'],
