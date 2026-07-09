@@ -90,6 +90,15 @@ const SYSTEM_PROMPT = buildSystemPrompt(topic);
 // kind='article' 前提で計算する（このスクリプト自体が kind を区別せず全アイテムを article 基準で
 // 再評価する既存の制約に合わせている。paper については別途要検討、今回のタスクのスコープ外）。
 const PROMPT_HASH = await computePromptHash(topic);
+// このハッシュが実際どのプロンプト文面だったかを後から引けるよう記録する（migrations/026、
+// docs/issue/items-schema-scalability.md）。プロンプト全文は保存せず、既にgitが持つ
+// ai-review-prompt.mjs の履歴と重複させない。スクリプト全体でハッシュは1つだけなので1回のみ実行。
+{
+  const { error: promptHashError } = await supabase
+    .from('ai_prompt_hashes')
+    .upsert({ prompt_hash: PROMPT_HASH, kind: 'article' }, { onConflict: 'prompt_hash', ignoreDuplicates: true });
+  if (promptHashError) throw promptHashError;
+}
 
 function normalizeTagName(tagName) {
   // 大文字小文字違い（AI/ai）やアクセント記号違い（Pokédex/pokedex）のタグが

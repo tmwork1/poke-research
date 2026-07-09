@@ -303,6 +303,22 @@ export interface UpsertItemOptions {
 	assumeNew?: boolean;
 }
 
+// items.ai_review_prompt_hash/ai_recheck_prompt_hash（migrations/025）は「同じか違うか」の比較にしか
+// 使えないため、あるハッシュが実際どのプロンプト文面だったかを引けるよう、初めて見たハッシュを
+// ai_prompt_hashes（migrations/026）に記録する。プロンプト全文は保存せず、git（ai-review-prompt.mjs
+// の履歴）が既に持つ内容と重複させない（docs/issue/items-schema-scalability.md 参照）。
+// 同一 Worker 呼び出し内（cronの1スロットは1インポーターのみを扱うため kind もほぼ固定）で同じ
+// ハッシュに何度も subrequest を使わないよう、プロセス内キャッシュで既知ハッシュをスキップする
+// （Cloudflare Workers の subrequest 予算制約、docs/issue/cron-subrequest-limit.md 参照）。
+const recordedPromptHashes = new Set<string>();
+
+async function recordPromptHashIfNew(supabase: Awaited<ReturnType<typeof getSupabaseClient>>, promptHash: string, kind: string): Promise<void> {
+	if (recordedPromptHashes.has(promptHash)) return;
+	const { error } = await supabase.from('ai_prompt_hashes').upsert({ prompt_hash: promptHash, kind }, { onConflict: 'prompt_hash', ignoreDuplicates: true });
+	if (error) throw error;
+	recordedPromptHashes.add(promptHash);
+}
+
 export async function upsertItemByExternalUrl(
 	payload: ItemUpsertPayload,
 	tags: string[],
@@ -314,6 +330,7 @@ export async function upsertItemByExternalUrl(
 	const supabase = await getSupabaseClient();
 	let action: 'inserted' | 'updated' = 'inserted';
 	const recheckedAtIso = new Date().toISOString();
+	await recordPromptHashIfNew(supabase, payload.aiRecheckPromptHash, payload.kind);
 	const aiRecheckColumns = buildAiRecheckColumns(
 		{
 			accepted: payload.aiAccepted,

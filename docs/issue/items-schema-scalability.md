@@ -116,8 +116,17 @@ WHERE ai_accepted AND ai_review_prompt_hash IS DISTINCT FROM ai_recheck_prompt_h
 
 この値の実体は system prompt 本文（`buildSystemPrompt`の出力）のSHA-256ハッシュであり、人為的に連番を振る「バージョン」ではない。`version`という語は「意図的に更新された世代番号」を連想させ、実際の実装（文面が1文字変わっただけでも別の値になる機械的なハッシュ）と合わないという判断で、`ai_review_prompt_version`/`ai_recheck_prompt_version`を`ai_review_prompt_hash`/`ai_recheck_prompt_hash`に改名した（`computePromptVersion`関数も`computePromptHash`に改名）。本ドキュメント中の`prompt_version`表記は、改名前の議論の記録としてそのまま残している箇所がある。
 
+## 追記3: prompt_hashの中身を引くためのai_prompt_hashesテーブル
+
+`ai_review_prompt_hash`/`ai_recheck_prompt_hash`は「同じか違うか」の比較にしか使えず、あるハッシュ値が実際どのプロンプト文面だったかを引く手段が無いという指摘があった。`src/lib/importers/ai-review-prompt.mjs`はgitで全文・全履歴を管理しているため、プロンプト全文をDBにも保存すると単なる複製になる。
+
+そこで、プロンプト全文は持たず「このハッシュを最初に見た日時」だけを記録する参照テーブル`ai_prompt_hashes`（`prompt_hash` PK / `kind` / `first_seen_at`）を追加した（`migrations/026`）。`first_seen_at`と`git log -- src/lib/importers/ai-review-prompt.mjs`のコミット日時を突き合わせれば、どのコミットのプロンプトだったかを絞り込める。
+
+書き込みは`common.ts`の`upsertItemByExternalUrl`と`retag-existing-items.mjs`から、初めて見たハッシュの時だけ行う（`ON CONFLICT (prompt_hash) DO NOTHING`、2回目以降は無条件でスキップ）。Cloudflare Workersのsubrequest予算制約（[docs/issue/cron-subrequest-limit.md](cron-subrequest-limit.md)）があるため、同一Worker呼び出し内ではプロセス内キャッシュ（`recordedPromptHashes`）で既知ハッシュへの再送信自体を避ける。
+
 ## 参照
 
 - [docs/progress/2026-07-10.md](../progress/2026-07-10.md) — `ai_review_*`/`ai_recheck_*`列を追加するに至った経緯
 - `migrations/016_add_link_status.sql` — 今回と構造的に同型の既存パターン（ただし「last」省略の理屈がそのまま転用できない点は上記参照）
 - `migrations/025_add_items_ai_review_recheck_columns.sql`
+- `migrations/026_add_ai_prompt_hashes.sql`
