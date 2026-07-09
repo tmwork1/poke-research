@@ -65,7 +65,7 @@ function buildXPostDraft(items: NewItemDigestEntry[]): string {
 export async function sendDailyDigest(env: AlertEnv, items: NewItemDigestEntry[]): Promise<void> {
 	const articleCount = items.filter((item) => item.kind !== 'paper').length;
 	const paperCount = items.filter((item) => item.kind === 'paper').length;
-	const header = `【${topic.site.slug}】更新 ${items.length}件 - 記事${articleCount}件 / 論文${paperCount}件`;
+	const header = `【${topic.site.slug}】更新のお知らせ\n記事 ${articleCount} 件 / 論文 ${paperCount} 件`;
 	if (items.length === 0) {
 		await postToWebhook(env, header);
 		return;
