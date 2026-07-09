@@ -40,6 +40,7 @@ const DEFAULT_MAX_ENTRIES_PER_FEED = 10;
 
 export interface FeedSyncOptions {
 	maxEntriesPerFeed?: number;
+	maxNewItemsPerRun?: number;
 }
 
 export interface FeedSyncResult {
@@ -56,7 +57,14 @@ export interface FeedSyncResult {
 
 export interface FeedEnvDefaults {
 	FEED_MAX_ENTRIES?: string | number;
+	FEED_MAX_NEW_PER_RUN?: string | number;
 }
+
+// 新着記事1件の処理（本文取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行
+// あたりこの件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。フィード購読数は
+// 今後も増え続ける（blog/hatenaが記事採用時に自動登録するため）ため、購読数に関わらずこの上限で
+// 頭打ちにする。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
 export function resolveFeedSyncOptions(env: FeedEnvDefaults, overrides: FeedSyncOptions = {}): Required<FeedSyncOptions> {
@@ -64,6 +72,13 @@ export function resolveFeedSyncOptions(env: FeedEnvDefaults, overrides: FeedSync
 		maxEntriesPerFeed: parsePositiveInteger(
 			overrides.maxEntriesPerFeed,
 			parsePositiveInteger(env.FEED_MAX_ENTRIES, DEFAULT_MAX_ENTRIES_PER_FEED),
+		),
+		// 新着記事が急増した日（購読フィードのバックログ発生時等）でも1回の実行でsubrequest上限を
+		// 超えないよう、実際に処理する新規件数に上限を設ける。超過分は次回実行に持ち越される
+		// （既存URL判定に残るため記事が失われることはない）。
+		maxNewItemsPerRun: parsePositiveInteger(
+			overrides.maxNewItemsPerRun,
+			parsePositiveInteger(env.FEED_MAX_NEW_PER_RUN, DEFAULT_MAX_NEW_ITEMS_PER_RUN),
 		),
 	};
 }
@@ -263,20 +278,36 @@ async function processFeedCandidate(
 
 export async function syncFeedCollection(options: FeedSyncOptions = {}): Promise<FeedSyncResult> {
 	const maxEntriesPerFeed = parsePositiveInteger(options.maxEntriesPerFeed, DEFAULT_MAX_ENTRIES_PER_FEED);
+	const maxNewItemsPerRun = parsePositiveInteger(options.maxNewItemsPerRun, DEFAULT_MAX_NEW_ITEMS_PER_RUN);
 	const fetchedAt = new Date().toISOString();
 
 	const [subscriptions, existingTags] = await Promise.all([fetchActiveFeedSubscriptions(), fetchTopTagNames()]);
 
 	const { candidates, feedsPolled, requestsUsed } = await discoverCandidates(subscriptions, maxEntriesPerFeed);
 
+	// discoverCandidatesが返す候補は既に「新規（未収集）」のみだが、購読フィードのバックログや
+	// 購読数の増加で件数が急増しても1回の実行でsubrequest上限を超えないよう、実際に処理する件数を
+	// maxNewItemsPerRun件までに絞る。超過分は本文取得自体を省略してスキップし、次回実行時に
+	// 既存URL判定に引っかからず自然に再度候補となる（記事が失われるわけではない）。
+	const candidatesToProcess = candidates.slice(0, maxNewItemsPerRun);
+	const deferredCandidates = candidates.slice(maxNewItemsPerRun);
+
 	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
 	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
 	const pendingTagEntries: ItemTagSyncEntry[] = [];
 
-	const itemResults = await mapWithConcurrency(candidates, IMPORT_CONCURRENCY, (candidate) =>
+	const processedResults = await mapWithConcurrency(candidatesToProcess, IMPORT_CONCURRENCY, (candidate) =>
 		processFeedCandidate(candidate, fetchedAt, existingTags, pendingTagEntries),
 	);
 	await syncNewItemTagsBatch(pendingTagEntries);
+	const deferredResults: ImportItemOutcome[] = deferredCandidates.map((candidate) => ({
+		id: null,
+		action: 'skipped',
+		externalUrl: candidate.url,
+		title: candidate.title,
+		reason: 'exceeded max new items per run',
+	}));
+	const itemResults = [...processedResults, ...deferredResults];
 
 	let inserted = 0;
 	let updated = 0;

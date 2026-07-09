@@ -62,6 +62,7 @@ export interface ArxivSyncOptions {
 	query?: string;
 	maxResults?: number;
 	start?: number;
+	maxNewItemsPerRun?: number;
 }
 
 export interface ArxivSyncResult {
@@ -88,7 +89,12 @@ function normalizeQuery(query?: string): string {
 // 検索語（query）は収集内容の質に直結するため、env では管理せずコード（DEFAULT_QUERY）に一本化する。
 export interface ArxivEnvDefaults {
 	ARXIV_MAX_RESULTS?: string | number;
+	ARXIV_MAX_NEW_PER_RUN?: string | number;
 }
+
+// 新着論文1件の処理（AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行あたり
+// この件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
 
 export function resolveArxivSyncOptions(env: ArxivEnvDefaults, overrides: ArxivSyncOptions = {}): Required<ArxivSyncOptions> {
 	return {
@@ -96,6 +102,13 @@ export function resolveArxivSyncOptions(env: ArxivEnvDefaults, overrides: ArxivS
 		maxResults: parsePositiveInteger(overrides.maxResults, parsePositiveInteger(env.ARXIV_MAX_RESULTS, DEFAULT_MAX_RESULTS)),
 		// start=0（先頭から取得）が既定のため、0以上の整数を明示的に渡された場合だけ上書きする。
 		start: Number.isInteger(overrides.start) && (overrides.start as number) >= 0 ? (overrides.start as number) : 0,
+		// 新着論文が急増した日（例: 大きな学会の投稿ラッシュ）でも1回の実行でsubrequest上限を
+		// 超えないよう、実際にAIレビュー・DB書き込みを行う新規件数に上限を設ける。超過分は
+		// 次回実行に持ち越される（既存URL判定に残るため論文が失われることはない）。
+		maxNewItemsPerRun: parsePositiveInteger(
+			overrides.maxNewItemsPerRun,
+			parsePositiveInteger(env.ARXIV_MAX_NEW_PER_RUN, DEFAULT_MAX_NEW_ITEMS_PER_RUN),
+		),
 	};
 }
 
@@ -187,6 +200,7 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 	const query = normalizeQuery(options.query);
 	const maxResults = parsePositiveInteger(options.maxResults, DEFAULT_MAX_RESULTS);
 	const start = Number.isInteger(options.start) && (options.start as number) >= 0 ? (options.start as number) : 0;
+	const maxNewItemsPerRun = parsePositiveInteger(options.maxNewItemsPerRun, DEFAULT_MAX_NEW_ITEMS_PER_RUN);
 	const fetchedAt = new Date().toISOString();
 
 	const [entries, source, existingTags] = await Promise.all([
@@ -204,6 +218,12 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 	// 方針のため、判定は既存かどうかのみ。cronのsubrequest数・OpenAI課金を抑える）。
 	const existingUrls = await findExistingExternalUrls(entries.map((entry) => canonicalizeAbsUrl(entry.id)));
 
+	// 新着論文が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数を
+	// maxNewItemsPerRun件までに絞る。超えた分は次回実行時に既存URL判定に引っかからず自然に
+	// 再度候補となる（論文が失われるわけではない）。
+	const newEntries = entries.filter((entry) => !existingUrls.has(canonicalizeAbsUrl(entry.id)));
+	const entriesToProcess = new Set(newEntries.slice(0, maxNewItemsPerRun).map((entry) => canonicalizeAbsUrl(entry.id)));
+
 	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
 	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
 	const pendingTagEntries: ItemTagSyncEntry[] = [];
@@ -218,6 +238,16 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 				externalUrl,
 				title: entry.title,
 				reason: 'already collected',
+			});
+		}
+
+		if (!entriesToProcess.has(externalUrl)) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl,
+				title: entry.title,
+				reason: 'exceeded max new items per run',
 			});
 		}
 

@@ -38,6 +38,7 @@ export interface BlogSyncOptions {
 	count?: number;
 	offset?: number;
 	pages?: number;
+	maxNewItemsPerRun?: number;
 }
 
 export interface BlogSyncResult {
@@ -59,6 +60,7 @@ export interface BlogSyncResult {
 export interface BlogEnvDefaults {
 	BRAVE_COUNT?: string | number;
 	BLOG_PAGES?: string | number;
+	BLOG_MAX_NEW_PER_RUN?: string | number;
 }
 
 // Brave Search の無料枠は月1000件（≒1日30件）が上限。cron は1日1回のため、
@@ -66,6 +68,11 @@ export interface BlogEnvDefaults {
 // また Brave の offset は「ページ番号」で最大9（=10ページ目まで）という API 制約がある。
 const DEFAULT_PAGES = 5;
 const BRAVE_MAX_PAGE_OFFSET = 9;
+// 新着記事1件の処理（本文取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行
+// あたりこの件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。発見段階の
+// Brave Search呼び出し自体（最大30件）が既に固定コストとしてかかるため、他インポーターより
+// 控えめにする。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 6;
 
 export function resolveBlogSyncOptions(env: BlogEnvDefaults, overrides: BlogSyncOptions = {}): Required<BlogSyncOptions> {
 	return {
@@ -73,6 +80,12 @@ export function resolveBlogSyncOptions(env: BlogEnvDefaults, overrides: BlogSync
 		count: parsePositiveInteger(overrides.count, parsePositiveInteger(env.BRAVE_COUNT, 20)),
 		offset: parseOptionalPositiveInteger(overrides.offset) ?? 0,
 		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.BLOG_PAGES, DEFAULT_PAGES)),
+		// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数に
+		// 上限を設ける。超過分は次回実行に持ち越される（既存URL判定に残るため記事が失われることはない）。
+		maxNewItemsPerRun: parsePositiveInteger(
+			overrides.maxNewItemsPerRun,
+			parsePositiveInteger(env.BLOG_MAX_NEW_PER_RUN, DEFAULT_MAX_NEW_ITEMS_PER_RUN),
+		),
 	};
 }
 
@@ -461,6 +474,7 @@ export async function syncBlogCollection(options: BlogSyncOptions = {}): Promise
 	const count = parsePositiveInteger(options.count, 20);
 	const offset = parseOptionalPositiveInteger(options.offset) ?? 0;
 	const pages = parsePositiveInteger(options.pages, DEFAULT_PAGES);
+	const maxNewItemsPerRun = parsePositiveInteger(options.maxNewItemsPerRun, DEFAULT_MAX_NEW_ITEMS_PER_RUN);
 	const fetchedAt = new Date().toISOString();
 
 	const [{ candidates, requestsUsed }, existingTags] = await Promise.all([
@@ -473,18 +487,31 @@ export async function syncBlogCollection(options: BlogSyncOptions = {}): Promise
 	const existingUrls = await findExistingExternalUrls(candidates.map((candidate) => candidate.url));
 	const newCandidates = candidates.filter((candidate) => !existingUrls.has(candidate.url));
 
+	// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数を
+	// maxNewItemsPerRun件までに絞る。超過分は本文取得自体を省略してスキップし、次回実行時に
+	// 既存URL判定に引っかからず自然に再度候補となる（記事が失われるわけではない）。
+	const candidatesToProcess = newCandidates.slice(0, maxNewItemsPerRun);
+	const deferredCandidates = newCandidates.slice(maxNewItemsPerRun);
+
 	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
 	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
 	const pendingTagEntries: ItemTagSyncEntry[] = [];
 
-	const processedResults = await mapWithConcurrency(newCandidates, IMPORT_CONCURRENCY, (candidate) =>
+	const processedResults = await mapWithConcurrency(candidatesToProcess, IMPORT_CONCURRENCY, (candidate) =>
 		processBlogCandidate(candidate, fetchedAt, existingTags, pendingTagEntries),
 	);
 	await syncNewItemTagsBatch(pendingTagEntries);
 	const skippedKnownResults: ImportItemOutcome[] = candidates
 		.filter((candidate) => existingUrls.has(candidate.url))
 		.map((candidate) => ({ id: null, action: 'skipped', externalUrl: candidate.url, title: candidate.title, reason: 'already collected' }));
-	const itemResults = [...processedResults, ...skippedKnownResults];
+	const deferredResults: ImportItemOutcome[] = deferredCandidates.map((candidate) => ({
+		id: null,
+		action: 'skipped',
+		externalUrl: candidate.url,
+		title: candidate.title,
+		reason: 'exceeded max new items per run',
+	}));
+	const itemResults = [...processedResults, ...skippedKnownResults, ...deferredResults];
 
 	let inserted = 0;
 	let updated = 0;

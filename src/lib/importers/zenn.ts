@@ -59,6 +59,7 @@ interface ZennArticleDetail {
 export interface ZennSyncOptions {
 	topic?: string;
 	pages?: number;
+	maxNewItemsPerRun?: number;
 }
 
 export interface ZennSyncResult {
@@ -87,12 +88,24 @@ function splitTopics(topic: string): string[] {
 // 対象トピック（topic）は収集内容の質に直結するため、env では管理せずコード（DEFAULT_TOPIC）に一本化する。
 export interface ZennEnvDefaults {
 	ZENN_PAGES?: string | number;
+	ZENN_MAX_NEW_PER_RUN?: string | number;
 }
+
+// 新着記事1件の処理（詳細取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行あたり
+// この件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。Zennは詳細取得
+// （1候補1fetch）が他インポーターより1回多いため、Qiita/arXivより控えめにする。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 8;
 
 export function resolveZennSyncOptions(env: ZennEnvDefaults, overrides: ZennSyncOptions = {}): Required<ZennSyncOptions> {
 	return {
 		topic: overrides.topic?.trim() || DEFAULT_TOPIC,
 		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.ZENN_PAGES, 1)),
+		// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数に
+		// 上限を設ける。超過分は次回実行に持ち越される（既存URL判定に残るため記事が失われることはない）。
+		maxNewItemsPerRun: parsePositiveInteger(
+			overrides.maxNewItemsPerRun,
+			parsePositiveInteger(env.ZENN_MAX_NEW_PER_RUN, DEFAULT_MAX_NEW_ITEMS_PER_RUN),
+		),
 	};
 }
 
@@ -301,6 +314,7 @@ async function reviewAndUpsertZennArticle(
 export async function syncZennCollection(options: ZennSyncOptions = {}): Promise<ZennSyncResult> {
 	const topic = normalizeTopic(options.topic);
 	const pages = parsePositiveInteger(options.pages, 1);
+	const maxNewItemsPerRun = parsePositiveInteger(options.maxNewItemsPerRun, DEFAULT_MAX_NEW_ITEMS_PER_RUN);
 	const fetchedAt = new Date().toISOString();
 
 	const [listArticles, source, existingTags] = await Promise.all([
@@ -321,7 +335,13 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 	const existingUrls = await findExistingExternalUrls(listArticles.map((article) => pathToUrl(article.path)));
 	const newArticles = listArticles.filter((article) => !existingUrls.has(pathToUrl(article.path)));
 
-	const detailResults = await mapWithConcurrency(newArticles, IMPORT_CONCURRENCY, (article) => fetchZennDetailSafely(article.slug));
+	// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、詳細取得以降の処理を行う
+	// 新規件数をmaxNewItemsPerRun件までに絞る。超過分は詳細取得自体を省略してスキップし、
+	// 次回実行時に既存URL判定に引っかからず自然に再度候補となる（記事が失われるわけではない）。
+	const articlesToProcess = newArticles.slice(0, maxNewItemsPerRun);
+	const deferredArticles = newArticles.slice(maxNewItemsPerRun);
+
+	const detailResults = await mapWithConcurrency(articlesToProcess, IMPORT_CONCURRENCY, (article) => fetchZennDetailSafely(article.slug));
 
 	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
 	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
@@ -353,7 +373,15 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 			reason: 'already collected',
 		}));
 
-	const itemResults = [...processedResults, ...skippedKnownResults];
+	const deferredResults: ImportItemOutcome[] = deferredArticles.map((article) => ({
+		id: null,
+		action: 'skipped',
+		externalUrl: pathToUrl(article.path),
+		title: article.slug,
+		reason: 'exceeded max new items per run',
+	}));
+
+	const itemResults = [...processedResults, ...skippedKnownResults, ...deferredResults];
 
 	let inserted = 0;
 	let updated = 0;
