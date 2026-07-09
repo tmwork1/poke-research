@@ -709,12 +709,36 @@ const websiteJsonLd = JSON.stringify({
 		.tab-nav {
 			width: 100%;
 			gap: 0;
+			flex-wrap: nowrap;
 		}
 
 		/* 4タブ + アイコン + 文言が狭い画面幅で1行に収まりきらないため、
 		   文言・文字サイズ・アイコンサイズはそのままに余白のみ詰めて折り返しを防ぐ。 */
 		.nav-tab {
 			padding: 8px 4px;
+		}
+
+		/* 各タブが内容幅のままだと、画面が広いスマホでは余白が右に余って
+		   タブ全体が左寄せに見える。4分割で均等割りにする。
+		   flex: 1 1 0(0からの伸長)で分配すると、.nav-tab にはpaddingがあり
+		   .mypage-tab-wrapには無いため、box-sizing: border-boxにしてもpadding分だけ
+		   幅が下限として残ってしまいずれる。flex-basisを25%の固定値にすることで
+		   paddingの有無に関係なく4等分の幅を直接指定する。 */
+		.tab-nav > .nav-tab,
+		.tab-nav > .mypage-tab-wrap {
+			flex: 0 0 25%;
+			min-width: 0;
+			box-sizing: border-box;
+		}
+
+		.tab-nav > .nav-tab {
+			justify-content: center;
+		}
+
+		.mypage-tab-wrap > .nav-tab {
+			justify-content: center;
+			width: 100%;
+			box-sizing: border-box;
 		}
 	}
 </style>
