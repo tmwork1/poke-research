@@ -47,6 +47,15 @@ const sourceType = item.source?.type ?? 'blog';
 const sourceDomain = extractDomain(item.external_url);
 const sourceLabel = sourceType === 'blog' ? (sourceDomain ?? item.source?.name ?? null) : (item.source?.name ?? null);
 
+// 論文は共著者が10名を超えることがあり、全員を並べるとカード幅をはみ出すため、
+// 表示は先頭3名までに丸めて残りを「ほかN名」でまとめる（全員はtitle属性のツールチップで見せる）。
+const MAX_VISIBLE_AUTHORS = 3;
+const authorsList = item.authors ?? [];
+const visibleAuthorsLabel =
+	authorsList.length > MAX_VISIBLE_AUTHORS
+		? `${authorsList.slice(0, MAX_VISIBLE_AUTHORS).join(', ')} ほか${authorsList.length - MAX_VISIBLE_AUTHORS}名`
+		: authorsList.join(', ');
+
 // 元記事の公開日から一定期間以上経って更新されている場合のみ「更新あり」を出す（取り込み時刻の揺れをノイズとして拾わないため）。
 const publishedAtValue = item.published_at ?? item.created_at;
 const updatedAtValue = item.updated_at;
@@ -118,8 +127,8 @@ const showUpdatedBadge = Boolean(
 			{showUpdatedBadge ? (
 				<span class="updated-badge" title={`更新日: ${formatDateLabel(updatedAtValue)}`}>更新あり</span>
 			) : null}
-			{item.authors && item.authors.length > 0 ? (
-				<span class="byline">{item.authors.join(', ')}</span>
+			{authorsList.length > 0 ? (
+				<span class="byline" title={authorsList.length > MAX_VISIBLE_AUTHORS ? authorsList.join(', ') : undefined}>{visibleAuthorsLabel}</span>
 			) : null}
 			{sourceLabel ? (
 				<span class="source-chip" data-source-type={sourceType}>{sourceLabel}</span>
@@ -282,14 +291,19 @@ const showUpdatedBadge = Boolean(
 		flex-wrap: wrap;
 		gap: 10px;
 		margin-top: 4px;
+		min-width: 0;
 	}
 
 	.footer-meta {
-		flex: none;
+		flex: 1 1 auto;
+		min-width: 0;
+		margin-left: auto;
 		display: flex;
 		align-items: baseline;
+		justify-content: flex-end;
 		flex-wrap: wrap;
 		gap: 8px;
+		text-align: right;
 	}
 
 	.card-date {
@@ -300,6 +314,8 @@ const showUpdatedBadge = Boolean(
 	}
 
 	.byline {
+		min-width: 0;
+		overflow-wrap: break-word;
 		font-size: 0.82rem;
 		color: var(--text-muted);
 	}
