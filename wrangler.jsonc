@@ -50,7 +50,7 @@
 		// note（非公式API）は 2026-07-09 頃から 403 Access denied を返すようになり、cronの
 		// 自動実行対象から外した（コード・手動起動用API（/api/import/note）は残したまま）。
 		// ブログ（Brave Search）は発見段階のキーワード検索が新規/既存の判定より前にかかる固定コストで、
-		// 差分検知でも削減できない。また検索キーワード（POKEMON_KEYWORDS）は今後も増減しうるため、
+		// 差分検知でも削減できない。また検索キーワード（BLOG_KEYWORDS）は今後も増減しうるため、
 		// 1日の発火回数・キーワード数をcron側にハードコードしたくない。そこで "0 1,5,9,13,17,21 * * *"
 		// （4時間おきに1日6回）の専用エントリに分離し（BLOG_CRON、src/worker.ts）、発火のたびに
 		// resolveBlogKeywordIndex（src/lib/importers/blog.ts）が発火時刻からキーワードを1つだけ選んで

@@ -17,7 +17,7 @@ import {
 	type ImportItemOutcome,
 	type ItemTagSyncEntry,
 } from './common';
-import { EXCLUDED_BLOG_DOMAINS, isExcludedBlogDomain, KNOWN_BLOG_PLATFORMS, OTHER_BLOG_SOURCE, POKEMON_KEYWORDS } from './keywords';
+import { BLOG_KEYWORDS, EXCLUDED_BLOG_DOMAINS, isExcludedBlogDomain, KNOWN_BLOG_PLATFORMS, OTHER_BLOG_SOURCE } from './keywords';
 import { topic } from '../../config/topic.config.mjs';
 
 const DEFAULT_KIND = 'article';
@@ -56,15 +56,15 @@ export interface BlogSyncResult {
 }
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
-// 検索語（POKEMON_KEYWORDS）は収集内容の質に直結するため、env では管理せずコードに一本化する。
+// 検索語（BLOG_KEYWORDS）は収集内容の質に直結するため、env では管理せずコードに一本化する。
 export interface BlogEnvDefaults {
 	BRAVE_COUNT?: string | number;
 	BLOG_PAGES?: string | number;
 	BLOG_MAX_NEW_PER_RUN?: string | number;
 }
 
-// Brave Search の無料枠は月1000件（≒1日30件）が上限。既定は「クエリ数(POKEMON_KEYWORDS=6) ×
-// pages ≒ 30件/日」に収まるよう pages=5 とする（query省略時＝手動での全キーワード一括実行時の
+// Brave Search の無料枠は月1000件（≒1日30件）が上限。既定は「クエリ数(BLOG_KEYWORDS=2) ×
+// pages ≒ 10件/日」に収まるよう pages=5 とする（query省略時＝手動での全キーワード一括実行時の
 // 既定値）。cronからは resolveBlogKeywordIndex で選んだ1キーワードだけを query に渡して1日複数回
 // 発火するため、1回あたりのBrave呼び出し数はさらに少ない（詳細はsrc/worker.tsのBLOG_CRON）。
 // また Brave の offset は「ページ番号」で最大9（=10ページ目まで）という API 制約がある。
@@ -476,7 +476,7 @@ async function processBlogCandidate(
 }
 
 export async function syncBlogCollection(options: BlogSyncOptions = {}): Promise<BlogSyncResult> {
-	const queries = options.query?.trim() ? [options.query.trim()] : [...POKEMON_KEYWORDS];
+	const queries = options.query?.trim() ? [options.query.trim()] : [...BLOG_KEYWORDS];
 	const count = parsePositiveInteger(options.count, 20);
 	const offset = parseOptionalPositiveInteger(options.offset) ?? 0;
 	const pages = parsePositiveInteger(options.pages, DEFAULT_PAGES);

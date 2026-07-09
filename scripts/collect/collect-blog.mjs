@@ -1,5 +1,5 @@
 // query は収集内容の質に直結するため既定値を持たない。明示的に指定した時だけ上書きする
-// （未指定なら API 側の POKEMON_KEYWORDS = src/lib/importers/keywords.ts の共通リストが使われる）。
+// （未指定なら API 側の BLOG_KEYWORDS = src/lib/importers/keywords.ts の Brave専用リストが使われる）。
 const importUrl = process.env.BLOG_IMPORT_URL || 'http://localhost:4321/api/import/blog';
 const query = process.env.BLOG_QUERY?.trim() || undefined;
 const count = Number(process.env.BRAVE_COUNT || '20');

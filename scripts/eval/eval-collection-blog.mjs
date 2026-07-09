@@ -1,9 +1,9 @@
 // M5: Brave Search（個人ブログ収集）の収集クエリ精度の最適化フロー用スクリプト。
 // eval-collection.mjs の Qiita/Zenn/note 版と同じ考え方で、AIレビュー・本文抽出にかける前の
-// Brave Search の生の検索結果（タイトル・URL）を POKEMON_KEYWORDS ごとに出力する。
+// Brave Search の生の検索結果（タイトル・URL）を BLOG_KEYWORDS ごとに出力する。
 // OpenAI もHTML本文取得も行わない。Claude Code がこの出力を読み、ポケモンのプログラミング・
 // 開発と無関係な記事（ゴミ）がどれだけ混ざっているかを自分で判定し、割合が高ければ
-// src/lib/importers/keywords.ts の POKEMON_KEYWORDS/EXCLUDED_BLOG_DOMAINS/FILTERED_BLOG_DOMAINS
+// src/lib/importers/keywords.ts の BLOG_KEYWORDS/EXCLUDED_BLOG_DOMAINS/FILTERED_BLOG_DOMAINS
 // を見直して再実行する、というループの土台として使う。
 //
 // 注意（実装上の重複について）: src/lib/brave.ts・src/lib/importers/{blog,keywords}.ts の一部は
@@ -17,7 +17,7 @@ import { topic } from '../../src/config/topic.config.mjs';
 
 const BRAVE_WEB_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 
-const POKEMON_KEYWORDS = topic.collection.searchKeywords;
+const BLOG_KEYWORDS = topic.collection.blogSearchKeywords;
 
 // src/lib/importers/keywords.ts の EXCLUDED_BLOG_DOMAINS（クエリの -site: と結果フィルタの両方で使う）。
 // 先頭の共通ドメインはトピックに依らないためここでも直書きし、トピック固有分だけ config から取る。
@@ -83,7 +83,7 @@ async function main() {
 	const count = Number(process.env.BLOG_EVAL_COUNT || '20');
 	const pages = Number(process.env.BLOG_EVAL_PAGES || '1');
 	const onlyKeyword = process.env.BLOG_EVAL_KEYWORD?.trim();
-	const keywords = onlyKeyword ? [onlyKeyword] : POKEMON_KEYWORDS;
+	const keywords = onlyKeyword ? [onlyKeyword] : BLOG_KEYWORDS;
 
 	console.log('AIレビュー・本文抽出前の生のBrave Search結果（タイトル・URLのみ）。ポケモンの');
 	console.log('プログラミング・開発と無関係な記事（ゴミ）がどれだけ混ざっているか、除外ドメインの');
