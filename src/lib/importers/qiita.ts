@@ -89,8 +89,10 @@ export interface QiitaEnvDefaults {
 	QIITA_MAX_NEW_PER_RUN?: string | number;
 }
 
-// 新着記事1件の処理（AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行あたり
-// この件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。
+// 新規記事1件あたりのsubrequestはOpenAIレビュー1回＋item upsert1回（assumeNewで既存チェックの
+// selectを省略）の計2件。既存URL判定・source upsert・タグバッチ処理・import_runs記録などの
+// 固定コストと合わせ、10件処理時のワーストケースは実測で約25 subrequests程度（上限50/呼び出しに
+// 対し安全マージンあり。詳細はdocs/progress/2026-07-09.md「MAX_NEW_PER_RUNの再調整要否を検討」）。
 const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
 
 export function resolveQiitaSyncOptions(env: QiitaEnvDefaults, overrides: QiitaSyncOptions = {}): Required<QiitaSyncOptions> {

@@ -60,10 +60,10 @@ export interface FeedEnvDefaults {
 	FEED_MAX_NEW_PER_RUN?: string | number;
 }
 
-// 新着記事1件の処理（本文取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行
-// あたりこの件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。フィード購読数は
-// 今後も増え続ける（blog/hatenaが記事採用時に自動登録するため）ため、購読数に関わらずこの上限で
-// 頭打ちにする。
+// 購読フィード数（blog/hatenaの記事採用時に自動登録され、今後も増え続ける）に比例する
+// 発見段階の固定コストが大きく、10件処理時のワーストケースは実測で約45 subrequests程度と
+// 上限50/呼び出しにかなり近い。購読数が今後さらに増えても、この値で頭打ちにして上限超過を防ぐ
+// （詳細はdocs/progress/2026-07-09.md「MAX_NEW_PER_RUNの再調整要否を検討」）。
 const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。

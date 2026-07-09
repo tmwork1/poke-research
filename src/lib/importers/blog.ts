@@ -70,10 +70,11 @@ export interface BlogEnvDefaults {
 // また Brave の offset は「ページ番号」で最大9（=10ページ目まで）という API 制約がある。
 const DEFAULT_PAGES = 5;
 const BRAVE_MAX_PAGE_OFFSET = 9;
-// 新着記事1件の処理（本文取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行
-// あたりこの件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。発見段階の
-// Brave Search呼び出し自体（最大30件）が既に固定コストとしてかかるため、他インポーターより
-// 控えめにする。
+// 実運用の.env設定（BLOG_PAGES=15、コード既定の5ではない）では、発見段階のBrave Search呼び出し
+// だけで固定コスト約20〜23 subrequests、新規記事1件あたりはfetch＋レビュー＋source upsert＋
+// item upsert（assumeNew非対応）で約5〜6 subrequests。安全に収まる新規処理件数は4〜6件程度と
+// 試算しており、6は既にこのレンジの上限寄り（2026-07-09にユーザーへ試算値を提示のうえ、
+// 6のまま維持と確定済み。詳細はdocs/progress/2026-07-09.md「MAX_NEW_PER_RUNの再調整要否を検討」）。
 const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 6;
 
 export function resolveBlogSyncOptions(env: BlogEnvDefaults, overrides: BlogSyncOptions = {}): Required<BlogSyncOptions> {

@@ -91,9 +91,10 @@ export interface ZennEnvDefaults {
 	ZENN_MAX_NEW_PER_RUN?: string | number;
 }
 
-// 新着記事1件の処理（詳細取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行あたり
-// この件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。Zennは詳細取得
-// （1候補1fetch）が他インポーターより1回多いため、Qiita/arXivより控えめにする。
+// 新規記事1件あたりのsubrequestは詳細取得1回＋OpenAIレビュー1回＋item upsert1回の計3件
+// （Qiita/arXivと異なりassumeNew非対応のため既存チェックのselectも残る）。固定コストと
+// 合わせ、8件処理時のワーストケースは実測で約29 subrequests程度のため、Qiita/arXivより
+// 控えめにする（詳細はdocs/progress/2026-07-09.md「MAX_NEW_PER_RUNの再調整要否を検討」）。
 const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 8;
 
 export function resolveZennSyncOptions(env: ZennEnvDefaults, overrides: ZennSyncOptions = {}): Required<ZennSyncOptions> {
