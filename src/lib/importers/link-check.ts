@@ -32,10 +32,12 @@ const DEFAULT_TIMEOUT_MS = 8_000;
 // 都度調整せずに済むが、Cloudflareのsubrequest上限（無料/標準プランで50/呼び出し）を
 // probe fetch（1件1fetch）だけで超えないよう、この安全上限で頭打ちにする（超えて増える分は
 // 一巡にかかる日数が伸びるだけで、subrequest超過にはならない）。
-// この呼び出しは日次まとめ通知（DB集計1回＋Webhook送信1回、fetchDailyDigestItems/
-// sendDailyDigest）と同一Worker呼び出しに統合されている（LINK_CHECK_AND_DIGEST_CRON、
-// src/worker.ts）ため、統合前の40から35へ引き下げ、まとめ通知分の余裕を確保してある。
-const SAFE_MAX_BATCH_LIMIT = 35;
+// 以前は日次まとめ通知（DB集計1回＋Webhook送信1回、fetchDailyDigestItems/sendDailyDigest）と
+// 同一Worker呼び出しに統合されており（LINK_CHECK_AND_DIGEST_CRON）、まとめ通知分の余裕を確保
+// するため40から35へ引き下げていたが、両者を日次収集ジョブ群と同じ時間分割スロット
+// （DAILY_SLOT_JOBS、src/worker.ts）に分離し、それぞれ独立したWorker呼び出しになったため、
+// リンク切れ確認が扱えるリクエスト数を最大化する目的で40へ戻した。
+const SAFE_MAX_BATCH_LIMIT = 40;
 const MIN_BATCH_LIMIT = 10;
 const BATCH_LIMIT_MARGIN = 5;
 
