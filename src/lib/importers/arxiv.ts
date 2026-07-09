@@ -41,7 +41,17 @@ const IMPORT_CONCURRENCY = 4;
 // searchKeywords のうち英数字のみのもの（pokemon/pokeapi 等）を all: フィールドで束ねる
 // （ai-review-prompt.mjs の englishSynonym 抽出と同じ絞り込みロジック）。
 const ARXIV_KEYWORDS = POKEMON_KEYWORDS.filter((keyword) => /^[a-z0-9]+$/i.test(keyword));
-const DEFAULT_QUERY = ARXIV_KEYWORDS.map((keyword) => `all:${keyword}`).join(' OR ');
+// arXivの検索インデックスはアクセント記号のfoldingを行わないため、"pokemon"では
+// "Pokémon"表記（アクセント付きé）のみを使う論文がヒットしない（実例:
+// arXiv:2504.04395 "Human-Level Competitive Pokémon via..."。all:pokemonでは0件、
+// all:pokémonでは別途32件ヒットを確認）。pokemonを含むキーワードに限り、アクセント付き
+// 表記も OR で束ねて取りこぼしを防ぐ。
+const ARXIV_ACCENTED_VARIANTS: Record<string, string> = { pokemon: 'pokémon' };
+const ARXIV_QUERY_TERMS = ARXIV_KEYWORDS.flatMap((keyword) => {
+	const accented = ARXIV_ACCENTED_VARIANTS[keyword.toLowerCase()];
+	return accented ? [keyword, accented] : [keyword];
+});
+const DEFAULT_QUERY = ARXIV_QUERY_TERMS.map((keyword) => `all:${keyword}`).join(' OR ');
 
 export interface ArxivSyncOptions {
 	query?: string;
