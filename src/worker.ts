@@ -3,7 +3,7 @@
 import { handle } from '@astrojs/cloudflare/handler';
 import { env } from 'cloudflare:workers';
 
-import { type DailySourceBreakdown, sendDailyDigest, sendMaintenanceReport, sendOperationalAlert } from './lib/notify';
+import { sendDailyDigest, sendMaintenanceReport, sendOperationalAlert } from './lib/notify';
 import { fetchDailyDigestItems, type ImportItemOutcome } from './lib/importers/common';
 import { runAndRecord } from './lib/import-runs';
 import { resolveArxivSyncOptions, syncArxivCollection } from './lib/importers/arxiv';
@@ -47,13 +47,7 @@ const DAILY_SLOT_JOBS: Array<{ minute: number; label: string; run: () => Promise
 ];
 // 日次収集ジョブ群のうち、新着記事を生む5ジョブが実際に保存する items.collection_route の値。
 // 日次まとめ通知（runScheduledDailyDigest）がDBから当日分を集計する際の絞り込みに使う。
-const DAILY_COLLECTION_ROUTES: Array<{ route: string; label: string }> = [
-	{ route: 'feed-importer', label: 'フィード' },
-	{ route: 'qiita-importer', label: 'Qiita' },
-	{ route: 'zenn-importer', label: 'Zenn' },
-	{ route: 'arxiv-importer', label: 'arXiv' },
-	{ route: 'hatena-bookmark-importer', label: 'はてな' },
-];
+const DAILY_COLLECTION_ROUTES = ['feed-importer', 'qiita-importer', 'zenn-importer', 'arxiv-importer', 'hatena-bookmark-importer'];
 // 日次収集ジョブ群がスロットごとに別々のWorker呼び出しに分かれたため、まとめ通知は
 // メモリ上で結果を受け渡せない。全スロット（0:00〜0:20 UTC）完了後の 0:40 UTC に専用の
 // Cron Trigger を発火させ、DBから当日分を集計してDiscordへまとめて送る。
@@ -124,22 +118,15 @@ async function runScheduledDailyDigest(scheduledTime: number): Promise<void> {
 	try {
 		const sinceDate = new Date(scheduledTime);
 		sinceDate.setUTCHours(0, 0, 0, 0);
-		const rows = await fetchDailyDigestItems(
-			sinceDate.toISOString(),
-			DAILY_COLLECTION_ROUTES.map((r) => r.route),
-		);
-		const breakdown: DailySourceBreakdown[] = DAILY_COLLECTION_ROUTES.map(({ route, label }) => ({
-			label,
-			count: rows.filter((row) => row.collectionRoute === route).length,
-		}));
+		const rows = await fetchDailyDigestItems(sinceDate.toISOString(), DAILY_COLLECTION_ROUTES);
 		await sendDailyDigest(
 			env,
 			rows.map((row) => ({
 				title: row.title,
 				externalUrl: row.externalUrl,
 				sourceName: row.sourceName ?? topic.site.name,
+				kind: row.kind,
 			})),
-			breakdown,
 		);
 	} catch (error) {
 		console.error('[cron:daily-digest] digest failed', error);
