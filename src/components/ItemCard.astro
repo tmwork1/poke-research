@@ -332,13 +332,15 @@ const showUpdatedBadge = Boolean(
 
 	/* ソース種別ごとの色チップ。透明度ベースの背景にすることで、ライト/ダーク両方の背景色に馴染ませる。 */
 	.source-chip {
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
+		max-width: 100%;
 		padding: 1px 8px;
 		border-radius: 999px;
 		font-size: 0.75rem;
 		font-weight: 600;
 		line-height: 1.6;
-		white-space: nowrap;
+		overflow-wrap: break-word;
 		background: rgba(120, 120, 120, 0.15);
 		color: var(--text-muted);
 	}
