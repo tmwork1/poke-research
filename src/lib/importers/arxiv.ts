@@ -15,7 +15,7 @@
 // 空けることを求めているが、本インポーターは1回の収集で1リクエストのみ（ページング無し）の
 // ため、qiita.ts のような複数ページ取得時の待機処理は不要（深刻な連続アクセスにならない）。
 import { reviewImportArticle } from './article-ai';
-import { parseArxivFeed, type ArxivFeedEntry } from './arxiv-feed';
+import { canonicalizeArxivAbsUrl, parseArxivFeed, type ArxivFeedEntry } from './arxiv-feed';
 import {
 	fetchTopTagNames,
 	findExistingExternalUrls,
@@ -123,17 +123,6 @@ function extractArxivId(entryId: string): string {
 	return match ? match[1] : entryId;
 }
 
-function canonicalizeAbsUrl(entryId: string): string {
-	// スキームをhttpsに揃え、末尾のバージョン番号（vN）を取り除く。arXivは論文が改訂される
-	// たびにIDのバージョンが上がる（例: v1 -> v2）ため、バージョン込みのURLをそのまま
-	// external_url にすると改訂のたびに別記事として重複登録されてしまう。バージョン番号を
-	// 除いた URL を external_url の UNIQUE 制約（migrations/002）に載せることで、
-	// 改訂後も同一論文として upsert され続ける（version 列には entry.updated を使うため、
-	// 改訂内容自体は version の変化で検知できる）。
-	const withHttps = entryId.replace(/^http:\/\//, 'https://');
-	return withHttps.replace(/v\d+$/, '');
-}
-
 function createAiBodyExcerpt(entry: ArxivFeedEntry): string {
 	// アブストラクトはHTML記事本文と比べて短いため切り詰めが必要になることは稀だが、
 	// OpenAI 送信用のコスト・応答安定性のため他インポーター同様に上限を設ける。
@@ -222,20 +211,20 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 
 	// 既に収集済みの候補は、AIレビュー・DB書き込みを行わずスキップする（記事内容の変更は追跡しない
 	// 方針のため、判定は既存かどうかのみ。cronのsubrequest数・OpenAI課金を抑える）。
-	const existingUrls = await findExistingExternalUrls(entries.map((entry) => canonicalizeAbsUrl(entry.id)));
+	const existingUrls = await findExistingExternalUrls(entries.map((entry) => canonicalizeArxivAbsUrl(entry.id)));
 
 	// 新着論文が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数を
 	// maxNewItemsPerRun件までに絞る。超えた分は次回実行時に既存URL判定に引っかからず自然に
 	// 再度候補となる（論文が失われるわけではない）。
-	const newEntries = entries.filter((entry) => !existingUrls.has(canonicalizeAbsUrl(entry.id)));
-	const entriesToProcess = new Set(newEntries.slice(0, maxNewItemsPerRun).map((entry) => canonicalizeAbsUrl(entry.id)));
+	const newEntries = entries.filter((entry) => !existingUrls.has(canonicalizeArxivAbsUrl(entry.id)));
+	const entriesToProcess = new Set(newEntries.slice(0, maxNewItemsPerRun).map((entry) => canonicalizeArxivAbsUrl(entry.id)));
 
 	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
 	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
 	const pendingTagEntries: ItemTagSyncEntry[] = [];
 
 	const itemResults = await mapWithConcurrency(entries, IMPORT_CONCURRENCY, (entry) => {
-		const externalUrl = canonicalizeAbsUrl(entry.id);
+		const externalUrl = canonicalizeArxivAbsUrl(entry.id);
 
 		if (existingUrls.has(externalUrl)) {
 			return Promise.resolve<ImportItemOutcome>({
