@@ -660,6 +660,10 @@ const showUpdatedBadge = Boolean(
 		clearTimeout(closePopoverTimer);
 	}
 
+	// 右端・下端に近いタグでは、素の rect.left/rect.bottom をそのまま使うと
+	// ポップオーバーが画面外にはみ出すため、ビューポート内に収まるよう位置を補正する。
+	const POPOVER_VIEWPORT_MARGIN_PX = 8;
+
 	function openTagPopover(tag: HTMLElement, explanation: string) {
 		closeTagPopover();
 		const rect = tag.getBoundingClientRect();
@@ -670,8 +674,15 @@ const showUpdatedBadge = Boolean(
 		popover.addEventListener('mouseenter', cancelClosePopover);
 		popover.addEventListener('mouseleave', scheduleClosePopover);
 		document.body.appendChild(popover);
-		popover.style.top = `${rect.bottom + 6}px`;
-		popover.style.left = `${rect.left}px`;
+
+		const margin = POPOVER_VIEWPORT_MARGIN_PX;
+		const maxLeft = window.innerWidth - popover.offsetWidth - margin;
+		popover.style.left = `${Math.max(margin, Math.min(rect.left, maxLeft))}px`;
+
+		const spaceBelow = window.innerHeight - rect.bottom;
+		const showAbove = spaceBelow < popover.offsetHeight + margin && rect.top > popover.offsetHeight + margin;
+		popover.style.top = showAbove ? `${rect.top - popover.offsetHeight - 6}px` : `${rect.bottom + 6}px`;
+
 		tag.setAttribute('aria-expanded', 'true');
 		activeTagPopover = { el: popover, tag };
 	}
