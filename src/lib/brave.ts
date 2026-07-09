@@ -1,11 +1,5 @@
 // Brave Search API（Web Search）を呼ぶための最小クライアント。
-// src/lib/openai.ts と同じ形で Cloudflare env と process.env の両方から設定を読み込む。
-import { env } from 'cloudflare:workers';
-
-type EnvRecord = Record<string, string | undefined>;
-
-const runtimeEnv = (globalThis as typeof globalThis & { process?: { env: EnvRecord } }).process?.env ?? {};
-const cloudflareEnv = env as unknown as EnvRecord;
+import { readEnv } from '../config/env';
 
 export const BRAVE_WEB_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 
@@ -14,8 +8,7 @@ export interface BraveConfig {
 }
 
 export function getBraveConfig(): BraveConfig {
-	const apiKey = cloudflareEnv.BRAVE_API_KEY?.trim() || runtimeEnv.BRAVE_API_KEY?.trim() || '';
-	return { apiKey };
+	return { apiKey: readEnv('BRAVE_API_KEY') };
 }
 
 export interface BraveWebResult {

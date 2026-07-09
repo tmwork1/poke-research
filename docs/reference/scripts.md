@@ -57,7 +57,7 @@
 **実行のきっかけ**: レビュー・クリーンアップのトリガーは実質2つ。
 
 - **収集後**（backfill や新ソース追加の後）: 重複・新タグは収集が作るため、`detect-duplicate-items`（`eval:all` に含まれる）の結果確認と `backfill-tag-explanations` を行う。
-- **AI取り込みプロンプト（`src/lib/importers/article-ai.ts`、実体は `src/config/ai-review-prompt.mjs`）や要約基準の変更後**: 既存記事が旧基準のまま残るため `retag-existing-items` の要否を検討する。全件再適用の前に、まず修正の狙いとなった問題事例だけを `--id=<id> --dry-run` で少数再テストし、意図通り判定が変わるか確認する（棄却済み記事は `ai_accepted=true` の記事のみを対象とする `retag-existing-items` では拾えないため、使い捨てスクリプトで別途確認する）。
+- **AI取り込みプロンプト（`src/lib/importers/article-ai.ts`、実体は `src/lib/importers/ai-review-prompt.mjs`）や要約基準の変更後**: 既存記事が旧基準のまま残るため `retag-existing-items` の要否を検討する。全件再適用の前に、まず修正の狙いとなった問題事例だけを `--id=<id> --dry-run` で少数再テストし、意図通り判定が変わるか確認する（棄却済み記事は `ai_accepted=true` の記事のみを対象とする `retag-existing-items` では拾えないため、使い捨てスクリプトで別途確認する）。
 
 `merge-item` は `detect-duplicate-items` の出力で重複itemが見えたとき、著者・内容を確認して同一記事と判断できたペアにのみ使う（タイトルが似ているだけで内容が別の記事は統合対象外）。同様に `merge-source` は `detect-duplicate-sources` の出力で重複sourceが見えたときに使う。`merge-tag`（表記ゆれの統合）・`rename-tag`（冗長・冗長な接頭辞の短縮など単純リネーム）・`delete-tag`（検索価値の低い不適切タグの削除）は上記2つとは別に、`eval:all` の `eval:tags` 出力でノイズタグ・表記ゆれ・短縮の余地が見えたときに使い分ける。`eval-annotations`・`eval-broken-links` は上記2トリガーとは独立に、annotations件数が増えてきたときや月次の目視確認のタイミングで都度実行する。
 

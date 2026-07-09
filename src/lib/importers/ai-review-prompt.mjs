@@ -14,7 +14,7 @@
 // 小型モデルの規則追従率が高いという判断による。
 
 /**
- * @param {import('./topic.config.mjs').topic} topic
+ * @param {import('../../config/topic.config.mjs').topic} topic
  * @param {'article' | 'paper'} [kind]
  */
 export function buildSystemPrompt(topic, kind = 'article') {

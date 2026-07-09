@@ -2,7 +2,7 @@
 // JSON 形式の応答を前提にして、後続の DB 保存処理を安定させる。
 import { getOpenAIConfig, OPENAI_CHAT_COMPLETIONS_URL } from '../openai';
 import { topic } from '../../config/topic.config.mjs';
-import { buildSystemPrompt } from '../../config/ai-review-prompt.mjs';
+import { buildSystemPrompt } from './ai-review-prompt.mjs';
 
 const MAX_AI_TAGS = 5;
 
