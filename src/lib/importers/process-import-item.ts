@@ -44,20 +44,20 @@ export function shouldPreserveAcceptedItem(existingAiAccepted: boolean | undefin
 export interface AiRecheckColumns {
 	ai_recheck_accepted: boolean;
 	ai_recheck_model: string;
-	ai_recheck_prompt_version: string;
+	ai_recheck_prompt_hash: string;
 	ai_recheck_reason: string;
 	ai_recheck_confidence: number | null;
 	ai_rechecked_at: string;
 }
 
 export function buildAiRecheckColumns(
-	review: { accepted: boolean; model: string; promptVersion: string; reason: string; confidence: number | null },
+	review: { accepted: boolean; model: string; promptHash: string; reason: string; confidence: number | null },
 	recheckedAtIso: string,
 ): AiRecheckColumns {
 	return {
 		ai_recheck_accepted: review.accepted,
 		ai_recheck_model: review.model,
-		ai_recheck_prompt_version: review.promptVersion,
+		ai_recheck_prompt_hash: review.promptHash,
 		ai_recheck_reason: review.reason,
 		ai_recheck_confidence: review.confidence,
 		ai_rechecked_at: recheckedAtIso,
@@ -68,26 +68,26 @@ export function buildAiRecheckColumns(
  * items.ai_review_* 列（migrations/025）の値。ai_recheck_* とは異なり、items.metadata->'ai' と
  * 同じタイミング（＝ ai_accepted/summary/tags が実際に書き込まれる時）にだけ更新される
  * 「今公開されている内容を生んだ判定」のフラット列（ai_accepted 列が accepted だけを
- * metadata.ai.accepted から昇格させているのと同じ発想を、model/prompt_version/reason/confidence
+ * metadata.ai.accepted から昇格させているのと同じ発想を、model/prompt_hash/reason/confidence
  * にも広げたもの）。これが無いと「公開中の判定 vs 直近の再チェック」をSQLで比較する際、片方が
- * jsonb抽出（metadata->'ai'->>'prompt_version'）になり構造が非対称になる問題があった
+ * jsonb抽出（metadata->'ai'->>'prompt_hash'）になり構造が非対称になる問題があった
  * （docs/issue/items-schema-scalability.md 参照）。
  */
 export interface AiReviewColumns {
 	ai_review_model: string;
-	ai_review_prompt_version: string;
+	ai_review_prompt_hash: string;
 	ai_review_reason: string;
 	ai_review_confidence: number | null;
 	ai_reviewed_at: string;
 }
 
 export function buildAiReviewColumns(
-	review: { model: string; promptVersion: string; reason: string; confidence: number | null },
+	review: { model: string; promptHash: string; reason: string; confidence: number | null },
 	reviewedAtIso: string,
 ): AiReviewColumns {
 	return {
 		ai_review_model: review.model,
-		ai_review_prompt_version: review.promptVersion,
+		ai_review_prompt_hash: review.promptHash,
 		ai_review_reason: review.reason,
 		ai_review_confidence: review.confidence,
 		ai_reviewed_at: reviewedAtIso,

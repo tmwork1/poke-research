@@ -366,7 +366,7 @@ function createItemMetadata(
 		},
 		ai: {
 			model: review.model,
-			prompt_version: review.promptVersion,
+			prompt_hash: review.promptHash,
 			accepted: review.accepted,
 			reason: review.reason,
 			confidence: review.confidence ?? null,
@@ -456,7 +456,7 @@ async function processBlogCandidate(
 						aiAccepted: review.accepted,
 						language: review.language,
 						aiRecheckModel: review.model,
-						aiRecheckPromptVersion: review.promptVersion,
+						aiRecheckPromptHash: review.promptHash,
 						aiRecheckReason: review.reason,
 						aiRecheckConfidence: review.confidence ?? null,
 					},

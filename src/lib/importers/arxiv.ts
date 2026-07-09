@@ -170,7 +170,7 @@ function createItemMetadata(entry: ArxivFeedEntry, query: string, fetchedAt: str
 		},
 		ai: {
 			model: aiReview.model,
-			prompt_version: aiReview.promptVersion,
+			prompt_hash: aiReview.promptHash,
 			accepted: aiReview.accepted,
 			reason: aiReview.reason,
 			confidence: aiReview.confidence ?? null,
@@ -289,7 +289,7 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 						aiAccepted: review.accepted,
 						language: review.language,
 						aiRecheckModel: review.model,
-						aiRecheckPromptVersion: review.promptVersion,
+						aiRecheckPromptHash: review.promptHash,
 						aiRecheckReason: review.reason,
 						aiRecheckConfidence: review.confidence ?? null,
 					},

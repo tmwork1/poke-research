@@ -213,7 +213,7 @@ function createItemMetadata(detail: NoteDetail, query: string, fetchedAt: string
 		},
 		ai: {
 			model: aiReview.model,
-			prompt_version: aiReview.promptVersion,
+			prompt_hash: aiReview.promptHash,
 			accepted: aiReview.accepted,
 			reason: aiReview.reason,
 			confidence: aiReview.confidence ?? null,
@@ -265,7 +265,7 @@ async function processNoteKey(key: string, sourceId: number, query: string, fetc
 						aiAccepted: review.accepted,
 						language: review.language,
 						aiRecheckModel: review.model,
-						aiRecheckPromptVersion: review.promptVersion,
+						aiRecheckPromptHash: review.promptHash,
 						aiRecheckReason: review.reason,
 						aiRecheckConfidence: review.confidence ?? null,
 					},

@@ -232,7 +232,7 @@ function createItemMetadata(detail: ZennArticleDetail, topic: string, fetchedAt:
 		},
 		ai: {
 			model: aiReview.model,
-			prompt_version: aiReview.promptVersion,
+			prompt_hash: aiReview.promptHash,
 			accepted: aiReview.accepted,
 			reason: aiReview.reason,
 			confidence: aiReview.confidence ?? null,
@@ -302,7 +302,7 @@ async function reviewAndUpsertZennArticle(
 					aiAccepted: review.accepted,
 					language: review.language,
 					aiRecheckModel: review.model,
-					aiRecheckPromptVersion: review.promptVersion,
+					aiRecheckPromptHash: review.promptHash,
 					aiRecheckReason: review.reason,
 					aiRecheckConfidence: review.confidence ?? null,
 				},

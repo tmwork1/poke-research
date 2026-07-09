@@ -285,7 +285,7 @@ export interface ItemUpsertPayload {
 	 * （shouldPreserveAcceptedItem で ai_accepted 自体の更新が握りつぶされた場合も対象）。
 	 */
 	aiRecheckModel: string;
-	aiRecheckPromptVersion: string;
+	aiRecheckPromptHash: string;
 	aiRecheckReason: string;
 	aiRecheckConfidence: number | null;
 }
@@ -318,7 +318,7 @@ export async function upsertItemByExternalUrl(
 		{
 			accepted: payload.aiAccepted,
 			model: payload.aiRecheckModel,
-			promptVersion: payload.aiRecheckPromptVersion,
+			promptHash: payload.aiRecheckPromptHash,
 			reason: payload.aiRecheckReason,
 			confidence: payload.aiRecheckConfidence,
 		},
@@ -356,7 +356,7 @@ export async function upsertItemByExternalUrl(
 	const aiReviewColumns = buildAiReviewColumns(
 		{
 			model: payload.aiRecheckModel,
-			promptVersion: payload.aiRecheckPromptVersion,
+			promptHash: payload.aiRecheckPromptHash,
 			reason: payload.aiRecheckReason,
 			confidence: payload.aiRecheckConfidence,
 		},
