@@ -64,10 +64,10 @@ export interface FeedEnvDefaults {
 // 発見段階の固定コストに加え、新規記事1件あたりfetch＋既存チェック（assumeNew非対応）＋
 // OpenAIレビュー＋item upsertの計4 subrequestsを2026-07-09に実測で確認した。固定コスト
 // （新規0件時）は実測21で、新規記事が1件以上あるときだけ発生するタグ同期バッチの初回コスト
-// （2件程度）を合わせると、10件処理時のワーストケースは約63 subrequests程度となり、
-// 上限50/呼び出しを超えうることが判明した（要対応検討。購読数が今後さらに増えると悪化する。
-// 詳細はdocs/issue/cron-subrequest-limit.md参照）。
-const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
+// （2件程度）を合わせると、上限50/呼び出しに収まる新規件数は (50-21-2)/4 ≒ 6.7 件までとなる。
+// 旧値の10件では最大約63 subrequestsとなり上限を超えうることが判明したため、
+// 安全マージンを見て6件に引き下げた（詳細はdocs/issue/cron-subrequest-limit.md参照）。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 6;
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
 export function resolveFeedSyncOptions(env: FeedEnvDefaults, overrides: FeedSyncOptions = {}): Required<FeedSyncOptions> {
