@@ -228,6 +228,7 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 						updatedAt: entry.updated,
 						metadata: createItemMetadata(entry, query, fetchedAt, review),
 						version: entry.updated ?? entry.id,
+						collectionRoute: 'arxiv-importer',
 						body: truncateBodyForStorage(entry.summary),
 						aiAccepted: review.accepted,
 						language: review.language,

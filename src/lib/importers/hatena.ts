@@ -264,6 +264,7 @@ async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: str
 						updatedAt: extracted.modifiedAt,
 						metadata: createItemMetadata(extracted, hostname, candidate, fetchedAt, review),
 						version: bodyHash,
+						collectionRoute: 'hatena-bookmark-importer',
 						body: truncateBodyForStorage(extracted.bodyText),
 						aiAccepted: review.accepted,
 						language: review.language,
