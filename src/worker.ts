@@ -8,8 +8,10 @@ import { fetchItemSourceNames, type ImportItemOutcome } from './lib/importers/co
 import { runAndRecord } from './lib/import-runs';
 import { resolveArxivSyncOptions, syncArxivCollection } from './lib/importers/arxiv';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
+import { resolveBlogKeywordIndex } from './lib/importers/blog-rotation';
 import { resolveFeedSyncOptions, syncFeedCollection } from './lib/importers/feed';
 import { resolveHatenaSyncOptions, syncHatenaCollection } from './lib/importers/hatena';
+import { POKEMON_KEYWORDS } from './lib/importers/keywords';
 import { checkLinks, resolveLinkCheckOptions } from './lib/importers/link-check';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
 import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
@@ -26,14 +28,32 @@ const WEEKLY_REVIEW_CRON = '30 20 * * 1';
 // フィードポーリングは以前は独立した Cron Trigger エントリだったが、必要なのは
 // 「blog/hatenaの当日収集より先に消化する」という順序の担保だけだったため、単一発火の
 // 先頭ジョブとして統合し、Cron Trigger エントリを1つ節約した。
+// リンク切れ検出・ブログ（Brave Search）は下記の理由で個別の専用エントリに分離済みのため、
+// この日次バンドルには含まれない（フィード/Qiita/Zenn/はてな/arXivの5ジョブ）。
 const DAILY_CRON = '0 0 * * *';
+// リンク切れ検出は「新着」の概念がなく、対象URLへのprobe fetch自体が1件1fetchで
+// 差分検知による削減ができない（docs/issue/cron-subrequest-limit.md参照）。日次収集ジョブ群と
+// 同一呼び出しに束ねると、双方の subrequest が合算されCloudflareの上限（50/呼び出し）を
+// 超えやすいため、別の発火時刻を持つ専用の Cron Trigger に分離する（アカウント上限5件のうち
+// まだ余裕があるため追加できる）。
+const LINK_CHECK_CRON = '30 0 * * *';
+// ブログ（Brave Search）は発見段階のキーワード検索が新規/既存の判定より前にかかる固定コストで、
+// 差分検知でも削減できない。さらに検索キーワード（POKEMON_KEYWORDS）は今後も増減しうるため、
+// 「1日に何回・何キーワードずつ」をcron側にハードコードしたくない。そこで専用エントリを
+// 1日6回（4時間おき）発火させ、resolveBlogKeywordIndex で発火時刻からキーワードを1つだけ選んで
+// 実行する（詳細はsrc/lib/importers/blog-rotation.ts）。キーワード数が変わっても、一巡に要する
+// 日数が伸び縮みするだけでコード変更は不要。
+const BLOG_CRON = '0 1,5,9,13,17,21 * * *';
+// BLOG_CRON の発火間隔（4時間）と一致させる。resolveBlogKeywordIndex の通し番号（tick）が
+// 発火のたびにちょうど1ずつ進むようにするための値。
+const BLOG_ROTATION_SLOT_MS = 4 * 60 * 60 * 1000;
 // 新着記事を生む収集ジョブだけを label 付きで登録する（リンク切れ検出は「新着」の概念が
-// ないため対象外とし、runDailyJobsSequentially 内で個別に実行する）。
+// ないため対象外、ブログは専用エントリに分離済みのため、いずれも runDailyJobsSequentially
+// には含めず個別に呼ぶ）。
 const DAILY_COLLECTION_JOBS: Array<{ label: string; run: () => Promise<ImportItemOutcome[]> }> = [
 	{ label: 'フィード', run: runScheduledFeedImport },
 	{ label: 'Qiita', run: runScheduledQiitaImport },
 	{ label: 'Zenn', run: runScheduledZennImport },
-	{ label: 'ブログ', run: runScheduledBlogImport },
 	{ label: 'はてな', run: runScheduledHatenaImport },
 	{ label: 'arXiv', run: runScheduledArxivImport },
 ];
@@ -51,14 +71,22 @@ export default {
 			ctx.waitUntil(runDailyJobsSequentially());
 			return;
 		}
+		if (controller.cron === LINK_CHECK_CRON) {
+			ctx.waitUntil(runScheduledLinkCheck());
+			return;
+		}
+		if (controller.cron === BLOG_CRON) {
+			ctx.waitUntil(runScheduledBlogImport(controller.scheduledTime));
+			return;
+		}
 		console.error('[cron] unrecognized cron expression', { cron: controller.cron });
 	},
 } satisfies ExportedHandler<Env>;
 
 // 日次ジョブを1回の scheduled 起動の中で順にawaitする。各ジョブは自身の中で
 // try/catch と sendOperationalAlert を完結させているため、ここでは単純に直列実行するだけでよい。
-// リンク切れ検出だけは「新着」の概念がないため DAILY_COLLECTION_JOBS に含めず、元の実行順
-// （blogの後・はてなの前）を保ったまま個別に呼ぶ。
+// リンク切れ検出は「新着」の概念がなく、probe fetchの subrequest 数も抑えられないため
+// DAILY_COLLECTION_JOBS には含めず、LINK_CHECK_CRON の専用発火から個別に呼ぶ。
 async function runDailyJobsSequentially(): Promise<void> {
 	const allNewItems: Array<ImportItemOutcome & { id: number }> = [];
 	const breakdown: DailySourceBreakdown[] = [];
@@ -68,10 +96,6 @@ async function runDailyJobsSequentially(): Promise<void> {
 		const newItems = items.filter((item): item is ImportItemOutcome & { id: number } => item.action === 'inserted' && item.id !== null);
 		breakdown.push({ label: job.label, count: newItems.length });
 		allNewItems.push(...newItems);
-
-		if (job.label === 'ブログ') {
-			await runScheduledLinkCheck();
-		}
 	}
 
 	await notifyDailyDigest(allNewItems, breakdown);
@@ -159,12 +183,16 @@ async function runScheduledZennImport(): Promise<ImportItemOutcome[]> {
 // 403 Access denied を返すようになったため 2026-07-09 に削除した。src/lib/importers/note.ts と
 // POST /api/import/note（src/pages/api/import/note.ts）は変更しておらず、手動起動は引き続き可能。
 
-async function runScheduledBlogImport(): Promise<ImportItemOutcome[]> {
+async function runScheduledBlogImport(scheduledTime: number): Promise<ImportItemOutcome[]> {
 	// 他インポーター同様、記事単位の失敗は syncBlogCollection 内で skipped として吸収される。
 	// 失敗時は次回 cron 実行を待つか、POST /api/import/blog を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
+	// 発火のたびに全キーワードをまとめて検索すると発見段階だけで固定コストが大きいため
+	// （docs/issue/cron-subrequest-limit.md参照）、resolveBlogKeywordIndex で1キーワードだけ選ぶ。
+	const keyword = POKEMON_KEYWORDS[resolveBlogKeywordIndex(scheduledTime, BLOG_ROTATION_SLOT_MS, POKEMON_KEYWORDS.length)];
 	try {
-		const result = await runAndRecord('blog', 'cron', () => syncBlogCollection(resolveBlogSyncOptions(env)));
+		const result = await runAndRecord('blog', 'cron', () => syncBlogCollection(resolveBlogSyncOptions(env, { query: keyword })));
 		console.log('[cron:blog] sync completed', {
+			keyword,
 			queries: result.queries,
 			pages: result.pages,
 			requestsUsed: result.requestsUsed,

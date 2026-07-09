@@ -7,10 +7,12 @@ import {
 	mapWithConcurrency,
 	processImportItem,
 	stripHtml,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
@@ -57,6 +59,7 @@ export interface QiitaSyncOptions {
 	pages?: number;
 	perPage?: number;
 	token?: string;
+	maxNewItemsPerRun?: number;
 }
 
 export interface QiitaSyncResult {
@@ -83,14 +86,28 @@ export interface QiitaEnvDefaults {
 	QIITA_PAGES?: string | number;
 	QIITA_PER_PAGE?: string | number;
 	QIITA_TOKEN?: string;
+	QIITA_MAX_NEW_PER_RUN?: string | number;
 }
+
+// 新着記事1件の処理（AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行あたり
+// この件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
 
 export function resolveQiitaSyncOptions(env: QiitaEnvDefaults, overrides: QiitaSyncOptions = {}): Required<QiitaSyncOptions> {
 	return {
 		query: overrides.query?.trim() || DEFAULT_QUERY,
 		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.QIITA_PAGES, 1)),
-		perPage: parsePositiveInteger(overrides.perPage, parsePositiveInteger(env.QIITA_PER_PAGE, 20)),
+		// 既存記事はAIレビュー・DB書き込みをスキップするため実質的な負荷は新着記事数に比例するが、
+		// 初回投入日・急増日のsubrequest数の頭打ちとして既定値は控えめにする（旧20→10）。
+		perPage: parsePositiveInteger(overrides.perPage, parsePositiveInteger(env.QIITA_PER_PAGE, 10)),
 		token: overrides.token?.trim() || env.QIITA_TOKEN?.trim() || '',
+		// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、実際にAIレビュー・
+		// DB書き込みを行う新規件数に上限を設ける。超過分は次回実行に持ち越される（既存URL判定に
+		// 残るため記事が失われることはない）。
+		maxNewItemsPerRun: parsePositiveInteger(
+			overrides.maxNewItemsPerRun,
+			parsePositiveInteger(env.QIITA_MAX_NEW_PER_RUN, DEFAULT_MAX_NEW_ITEMS_PER_RUN),
+		),
 	};
 }
 
@@ -246,6 +263,7 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 	const query = normalizeQuery(options.query);
 	const pages = parsePositiveInteger(options.pages, 1);
 	const perPage = parsePositiveInteger(options.perPage, 20);
+	const maxNewItemsPerRun = parsePositiveInteger(options.maxNewItemsPerRun, DEFAULT_MAX_NEW_ITEMS_PER_RUN);
 	const fetchedAt = new Date().toISOString();
 
 	const [items, source, existingTags] = await Promise.all([
@@ -259,8 +277,42 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 		fetchTopTagNames(),
 	]);
 
-	const itemResults = await mapWithConcurrency(items, IMPORT_CONCURRENCY, (item) =>
-		processImportItem(
+	// 既に収集済みの候補は、AIレビュー・DB書き込みを行わずスキップする（記事内容の変更は追跡しない
+	// 方針のため、判定は既存かどうかのみ。cronのsubrequest数・OpenAI課金を抑える）。
+	const existingUrls = await findExistingExternalUrls(items.map((item) => item.url));
+
+	// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数を
+	// maxNewItemsPerRun件までに絞る。超えた分は「既存」ではなく「今回は未処理」としてスキップし、
+	// 次回実行時に既存URL判定に引っかからず自然に再度候補となる（記事が失われるわけではない）。
+	const newItems = items.filter((item) => !existingUrls.has(item.url));
+	const itemsToProcess = new Set(newItems.slice(0, maxNewItemsPerRun).map((item) => item.url));
+
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
+	const itemResults = await mapWithConcurrency(items, IMPORT_CONCURRENCY, (item) => {
+		if (existingUrls.has(item.url)) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl: item.url,
+				title: item.title,
+				reason: 'already collected',
+			});
+		}
+
+		if (!itemsToProcess.has(item.url)) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl: item.url,
+				title: item.title,
+				reason: 'exceeded max new items per run',
+			});
+		}
+
+		return processImportItem(
 			item.url,
 			item.title,
 			() =>
@@ -276,8 +328,9 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 					updatedAt: item.updated_at,
 					bodyExcerpt: createAiBodyExcerpt(item),
 				}),
-			(review) =>
-				upsertItemByExternalUrl(
+			(review) => {
+				const tags = review.tags.length > 0 ? review.tags : extractTags(item);
+				return upsertItemByExternalUrl(
 					{
 						sourceId: source.id,
 						externalUrl: item.url,
@@ -294,12 +347,21 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 						aiAccepted: review.accepted,
 						language: review.language,
 					},
-					review.tags.length > 0 ? review.tags : extractTags(item),
+					tags,
 					undefined,
-					{ syncTags: review.accepted },
-				),
-		),
-	);
+					// 直前に existingUrls でこの候補が新規であることを確認済みのため、
+					// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。タグ同期は
+					// ここでは行わず（syncTags: false）、下の pendingTagEntries でまとめて行う。
+					{ syncTags: false, assumeNew: true },
+				).then((result) => {
+					if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags });
+					return result;
+				});
+			},
+		);
+	});
+
+	await syncNewItemTagsBatch(pendingTagEntries);
 
 	let inserted = 0;
 	let updated = 0;

@@ -4,13 +4,16 @@
 import { reviewImportArticle } from './article-ai';
 import {
 	fetchTopTagNames,
+	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
 	stripHtml,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { ZENN_TOPICS } from './keywords';
 import { parsePositiveInteger } from '../params';
@@ -28,6 +31,9 @@ const IMPORT_CONCURRENCY = 2;
 
 interface ZennListArticle {
 	slug: string;
+	// 一覧APIの時点で記事パス（＝URL）が分かるため、詳細取得(fetchZennArticleDetail)なしに
+	// 既収集判定ができる（記事内容の変更は追跡しない方針のため、判定はURLの既存有無のみでよい）。
+	path: string;
 }
 
 interface ZennListResponse {
@@ -53,6 +59,7 @@ interface ZennArticleDetail {
 export interface ZennSyncOptions {
 	topic?: string;
 	pages?: number;
+	maxNewItemsPerRun?: number;
 }
 
 export interface ZennSyncResult {
@@ -81,12 +88,24 @@ function splitTopics(topic: string): string[] {
 // 対象トピック（topic）は収集内容の質に直結するため、env では管理せずコード（DEFAULT_TOPIC）に一本化する。
 export interface ZennEnvDefaults {
 	ZENN_PAGES?: string | number;
+	ZENN_MAX_NEW_PER_RUN?: string | number;
 }
+
+// 新着記事1件の処理（詳細取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行あたり
+// この件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。Zennは詳細取得
+// （1候補1fetch）が他インポーターより1回多いため、Qiita/arXivより控えめにする。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 8;
 
 export function resolveZennSyncOptions(env: ZennEnvDefaults, overrides: ZennSyncOptions = {}): Required<ZennSyncOptions> {
 	return {
 		topic: overrides.topic?.trim() || DEFAULT_TOPIC,
 		pages: parsePositiveInteger(overrides.pages, parsePositiveInteger(env.ZENN_PAGES, 1)),
+		// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数に
+		// 上限を設ける。超過分は次回実行に持ち越される（既存URL判定に残るため記事が失われることはない）。
+		maxNewItemsPerRun: parsePositiveInteger(
+			overrides.maxNewItemsPerRun,
+			parsePositiveInteger(env.ZENN_MAX_NEW_PER_RUN, DEFAULT_MAX_NEW_ITEMS_PER_RUN),
+		),
 	};
 }
 
@@ -125,9 +144,9 @@ async function fetchZennArticleDetail(slug: string): Promise<ZennArticleDetail> 
 	return article;
 }
 
-async function fetchZennSlugs(topics: string[], pages: number): Promise<string[]> {
+async function fetchZennListArticles(topics: string[], pages: number): Promise<ZennListArticle[]> {
 	// 複数トピック・複数ページ取得時に同一記事が再登場しても、1 件だけ残す。
-	const slugs: string[] = [];
+	const articlesFound: ZennListArticle[] = [];
 	const seen = new Set<string>();
 
 	for (const topic of topics) {
@@ -138,18 +157,22 @@ async function fetchZennSlugs(topics: string[], pages: number): Promise<string[]
 			for (const article of articles) {
 				if (seen.has(article.slug)) continue;
 				seen.add(article.slug);
-				slugs.push(article.slug);
+				articlesFound.push(article);
 			}
 
 			if (next_page === null) break;
 		}
 	}
 
-	return slugs;
+	return articlesFound;
+}
+
+function pathToUrl(path: string): string {
+	return `https://zenn.dev${path}`;
 }
 
 function articleUrl(detail: ZennArticleDetail): string {
-	return `https://zenn.dev${detail.path}`;
+	return pathToUrl(detail.path);
 }
 
 function createAuthors(detail: ZennArticleDetail): string[] {
@@ -215,69 +238,88 @@ function createItemMetadata(detail: ZennArticleDetail, topic: string, fetchedAt:
 	};
 }
 
-async function processZennSlug(slug: string, sourceId: number, topic: string, fetchedAt: string, existingTags: string[]): Promise<ImportItemOutcome> {
+interface ZennDetailFetchResult {
+	slug: string;
+	detail: ZennArticleDetail | null;
+	error?: string;
+}
+
+async function fetchZennDetailSafely(slug: string): Promise<ZennDetailFetchResult> {
 	// 詳細取得（非公式API）自体が失敗するケースも、記事単位の skipped として吸収する。
 	try {
-		const detail = await fetchZennArticleDetail(slug);
-		const url = articleUrl(detail);
-
-		return await processImportItem(
-			url,
-			detail.title,
-			() =>
-				reviewImportArticle({
-					sourceName: ZENN_SOURCE_NAME,
-					query: topic,
-					title: detail.title,
-					url,
-					authors: createAuthors(detail),
-					sourceTags: extractTags(detail),
-					existingTags,
-					createdAt: detail.published_at,
-					updatedAt: detail.body_updated_at ?? detail.published_at,
-					bodyExcerpt: createAiBodyExcerpt(detail),
-				}),
-			(review) =>
-				upsertItemByExternalUrl(
-					{
-						sourceId,
-						externalUrl: url,
-						kind: DEFAULT_KIND,
-						title: detail.title,
-						authors: createAuthors(detail),
-						summary: review.summary,
-						publishedAt: detail.published_at,
-						updatedAt: detail.body_updated_at ?? detail.published_at,
-						metadata: createItemMetadata(detail, topic, fetchedAt, review),
-						version: detail.body_updated_at ?? detail.published_at,
-						collectionRoute: 'zenn-importer',
-						body: truncateBodyForStorage(extractBodyText(detail)),
-						aiAccepted: review.accepted,
-						language: review.language,
-					},
-					review.tags.length > 0 ? review.tags : extractTags(detail),
-					undefined,
-					{ syncTags: review.accepted },
-				),
-		);
+		return { slug, detail: await fetchZennArticleDetail(slug) };
 	} catch (error) {
-		return {
-			id: null,
-			action: 'skipped',
-			externalUrl: `https://zenn.dev/articles/${slug}`,
-			title: slug,
-			reason: error instanceof Error ? error.message : 'unknown error',
-		};
+		return { slug, detail: null, error: error instanceof Error ? error.message : 'unknown error' };
 	}
+}
+
+async function reviewAndUpsertZennArticle(
+	detail: ZennArticleDetail,
+	sourceId: number,
+	topic: string,
+	fetchedAt: string,
+	existingTags: string[],
+	pendingTagEntries: ItemTagSyncEntry[],
+): Promise<ImportItemOutcome> {
+	const url = articleUrl(detail);
+
+	return processImportItem(
+		url,
+		detail.title,
+		() =>
+			reviewImportArticle({
+				sourceName: ZENN_SOURCE_NAME,
+				query: topic,
+				title: detail.title,
+				url,
+				authors: createAuthors(detail),
+				sourceTags: extractTags(detail),
+				existingTags,
+				createdAt: detail.published_at,
+				updatedAt: detail.body_updated_at ?? detail.published_at,
+				bodyExcerpt: createAiBodyExcerpt(detail),
+			}),
+		(review) => {
+			const tags = review.tags.length > 0 ? review.tags : extractTags(detail);
+			return upsertItemByExternalUrl(
+				{
+					sourceId,
+					externalUrl: url,
+					kind: DEFAULT_KIND,
+					title: detail.title,
+					authors: createAuthors(detail),
+					summary: review.summary,
+					publishedAt: detail.published_at,
+					updatedAt: detail.body_updated_at ?? detail.published_at,
+					metadata: createItemMetadata(detail, topic, fetchedAt, review),
+					version: detail.body_updated_at ?? detail.published_at,
+					collectionRoute: 'zenn-importer',
+					body: truncateBodyForStorage(extractBodyText(detail)),
+					aiAccepted: review.accepted,
+					language: review.language,
+				},
+				tags,
+				undefined,
+				// 直前に existingUrls でこの記事が新規であることを確認済みのため、
+				// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。タグ同期は
+				// ここでは行わず（syncTags: false）、呼び出し元でまとめて行う。
+				{ syncTags: false, assumeNew: true },
+			).then((result) => {
+				if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags });
+				return result;
+			});
+		},
+	);
 }
 
 export async function syncZennCollection(options: ZennSyncOptions = {}): Promise<ZennSyncResult> {
 	const topic = normalizeTopic(options.topic);
 	const pages = parsePositiveInteger(options.pages, 1);
+	const maxNewItemsPerRun = parsePositiveInteger(options.maxNewItemsPerRun, DEFAULT_MAX_NEW_ITEMS_PER_RUN);
 	const fetchedAt = new Date().toISOString();
 
-	const [slugs, source, existingTags] = await Promise.all([
-		fetchZennSlugs(splitTopics(topic), pages),
+	const [listArticles, source, existingTags] = await Promise.all([
+		fetchZennListArticles(splitTopics(topic), pages),
 		upsertSourceByOriginUrl({
 			name: ZENN_SOURCE_NAME,
 			type: 'zenn',
@@ -287,9 +329,60 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 		fetchTopTagNames(),
 	]);
 
-	const itemResults = await mapWithConcurrency(slugs, IMPORT_CONCURRENCY, (slug) =>
-		processZennSlug(slug, source.id, topic, fetchedAt, existingTags),
-	);
+	// 一覧APIの時点で記事パス（＝URL）が分かるため、詳細取得(fetchZennArticleDetail)なしに
+	// まとめて既存かどうかを判定できる（記事内容の変更は追跡しない方針のため、判定は既存有無のみ）。
+	// 既に収集済みの記事は詳細取得自体を省略でき、新規記事だけが対象になる
+	// （cronのsubrequest数・OpenAI課金を抑える）。
+	const existingUrls = await findExistingExternalUrls(listArticles.map((article) => pathToUrl(article.path)));
+	const newArticles = listArticles.filter((article) => !existingUrls.has(pathToUrl(article.path)));
+
+	// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、詳細取得以降の処理を行う
+	// 新規件数をmaxNewItemsPerRun件までに絞る。超過分は詳細取得自体を省略してスキップし、
+	// 次回実行時に既存URL判定に引っかからず自然に再度候補となる（記事が失われるわけではない）。
+	const articlesToProcess = newArticles.slice(0, maxNewItemsPerRun);
+	const deferredArticles = newArticles.slice(maxNewItemsPerRun);
+
+	const detailResults = await mapWithConcurrency(articlesToProcess, IMPORT_CONCURRENCY, (article) => fetchZennDetailSafely(article.slug));
+
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
+	const processedResults = await mapWithConcurrency(detailResults, IMPORT_CONCURRENCY, (result) => {
+		if (!result.detail) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl: `https://zenn.dev/articles/${result.slug}`,
+				title: result.slug,
+				reason: result.error ?? 'unknown error',
+			});
+		}
+
+		return reviewAndUpsertZennArticle(result.detail, source.id, topic, fetchedAt, existingTags, pendingTagEntries);
+	});
+
+	await syncNewItemTagsBatch(pendingTagEntries);
+
+	const skippedKnownResults: ImportItemOutcome[] = listArticles
+		.filter((article) => existingUrls.has(pathToUrl(article.path)))
+		.map((article) => ({
+			id: null,
+			action: 'skipped',
+			externalUrl: pathToUrl(article.path),
+			title: article.slug,
+			reason: 'already collected',
+		}));
+
+	const deferredResults: ImportItemOutcome[] = deferredArticles.map((article) => ({
+		id: null,
+		action: 'skipped',
+		externalUrl: pathToUrl(article.path),
+		title: article.slug,
+		reason: 'exceeded max new items per run',
+	}));
+
+	const itemResults = [...processedResults, ...skippedKnownResults, ...deferredResults];
 
 	let inserted = 0;
 	let updated = 0;
@@ -303,7 +396,7 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 	return {
 		topic,
 		pages,
-		fetched: slugs.length,
+		fetched: listArticles.length,
 		inserted,
 		updated,
 		skipped,

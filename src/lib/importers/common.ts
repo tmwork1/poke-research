@@ -176,6 +176,46 @@ export async function syncItemTags(itemId: number, tagNames: string[], tagLabels
 	}
 }
 
+export interface ItemTagSyncEntry {
+	itemId: number;
+	tags: string[];
+	tagLabels?: Record<string, string>;
+}
+
+/**
+ * cronジョブ向けのバッチタグ同期。ジョブ内で新規挿入されたばかりの記事（＝item_tagsに既存行が
+ * 無いことが前提）をまとめて渡すことで、ensureTags（タグ解決）を記事N件でも1回に、item_tagsの
+ * insertも1回にまとめる（syncItemTagsのように既存行との差分削除は行わない。既存記事は
+ * findExistingExternalUrls等で呼び出し前にスキップされているため、ここに来るのは常に新規行）。
+ */
+export async function syncNewItemTagsBatch(entries: ItemTagSyncEntry[]): Promise<void> {
+	const targets = entries.filter((entry) => entry.tags.length > 0);
+	if (targets.length === 0) return;
+
+	const mergedTagLabels: Record<string, string> = {};
+	for (const entry of targets) {
+		if (entry.tagLabels) Object.assign(mergedTagLabels, entry.tagLabels);
+	}
+	const tagIdMap = await ensureTags(
+		targets.flatMap((entry) => entry.tags),
+		mergedTagLabels,
+	);
+
+	const rows: Array<{ item_id: number; tag_id: number }> = [];
+	for (const entry of targets) {
+		const normalizedTagNames = [...new Set(entry.tags.map(normalizeTagName).filter((tagName) => tagName.length > 0))];
+		for (const tagName of normalizedTagNames) {
+			const tagId = tagIdMap.get(tagName);
+			if (tagId !== undefined) rows.push({ item_id: entry.itemId, tag_id: tagId });
+		}
+	}
+	if (rows.length === 0) return;
+
+	const supabase = await getSupabaseClient();
+	const { error } = await supabase.from('item_tags').insert(rows);
+	if (error && error.code !== '23505') throw error;
+}
+
 export async function fetchTopTagNames(limit = 40): Promise<string[]> {
 	// AIレビューがタグを新規発明しがちな問題を減らすため、使用頻度の高い既存タグを
 	// 事前に取得し、判定プロンプトへの再利用ヒントとして渡す。
@@ -245,6 +285,14 @@ export interface ItemUpsertPayload {
 export interface UpsertItemOptions {
 	/** 棄却記事はタグ同期をスキップし、tags テーブルをノイズで汚さないようにする（既定 true）。 */
 	syncTags?: boolean;
+	/**
+	 * 呼び出し側が事前に findExistingExternalUrls 等で external_url の非存在を確認済みの場合、
+	 * ここでの既存行チェック（select）を省略して1 subrequest 減らす（Qiita/Zenn/arXivは
+	 * 既存候補を呼び出し前にスキップしているため、ここに到達するのは常に新規行）。
+	 * 既存有無が保証できない呼び出し元（blog/hatena/feedは正規化後のURLが事前チェック時と
+	 * 異なりうる）では既定の false のままにする。
+	 */
+	assumeNew?: boolean;
 }
 
 export async function upsertItemByExternalUrl(
@@ -256,22 +304,26 @@ export async function upsertItemByExternalUrl(
 	// action の判定は結果表示用の分類に過ぎず、書き込み自体は external_url の
 	// UNIQUE 制約(migrations/002)を前提にした upsert で原子的に行う。
 	const supabase = await getSupabaseClient();
-	const { data: existingItems, error: selectError } = await supabase
-		.from('items')
-		.select('id, ai_accepted')
-		.eq('external_url', payload.externalUrl)
-		.limit(1);
-	if (selectError) throw selectError;
-	const existing = (existingItems?.[0] ?? null) as { id: number; ai_accepted?: boolean } | null;
-	const action: 'inserted' | 'updated' = existing ? 'updated' : 'inserted';
+	let action: 'inserted' | 'updated' = 'inserted';
 
-	// 一度採用され公開中の記事（既存行 ai_accepted=true）は、収集ジョブの再レビューが棄却に
-	// 反転しても格下げしない（retag-existing-items.mjs の「不採用判定は警告のみ」方針と揃える）。
-	// 境界記事では判定が揺れうるため、ここで上書きを許すと公開記事が収集のたびに一覧から
-	// 見えたり消えたりする。metadata/summary も含め一切書き込まず既存 id を返す
-	// （判定ロジックと詳しい理由は process-import-item.ts の shouldPreserveAcceptedItem を参照）。
-	if (existing && shouldPreserveAcceptedItem(existing.ai_accepted, payload.aiAccepted)) {
-		return { id: existing.id, action: 'skipped' };
+	if (!options.assumeNew) {
+		const { data: existingItems, error: selectError } = await supabase
+			.from('items')
+			.select('id, ai_accepted')
+			.eq('external_url', payload.externalUrl)
+			.limit(1);
+		if (selectError) throw selectError;
+		const existing = (existingItems?.[0] ?? null) as { id: number; ai_accepted?: boolean } | null;
+		action = existing ? 'updated' : 'inserted';
+
+		// 一度採用され公開中の記事（既存行 ai_accepted=true）は、収集ジョブの再レビューが棄却に
+		// 反転しても格下げしない（retag-existing-items.mjs の「不採用判定は警告のみ」方針と揃える）。
+		// 境界記事では判定が揺れうるため、ここで上書きを許すと公開記事が収集のたびに一覧から
+		// 見えたり消えたりする。metadata/summary も含め一切書き込まず既存 id を返す
+		// （判定ロジックと詳しい理由は process-import-item.ts の shouldPreserveAcceptedItem を参照）。
+		if (existing && shouldPreserveAcceptedItem(existing.ai_accepted, payload.aiAccepted)) {
+			return { id: existing.id, action: 'skipped' };
+		}
 	}
 
 	const { data: upserted, error: upsertError } = await supabase
@@ -307,8 +359,11 @@ export async function upsertItemByExternalUrl(
 }
 
 export async function findExistingExternalUrls(externalUrls: string[]): Promise<Set<string>> {
-	// Qiita などソート順が保証されない検索APIで、設定ページ数の最後のページが全て
-	// 既知記事かどうかを判定するために使う（新着記事が後続ページに埋もれていないかの目安）。
+	// 候補記事のURLをまとめて1回のクエリで問い合わせ、既に収集済みのものはAIレビュー・DB書き込みを
+	// 行わずスキップする（cronのsubrequest数・OpenAI課金を抑える）差分検知に各インポーターが使う。
+	// 記事内容の変更は追跡しない方針のため、判定は「既存かどうか」のみで version 比較は行わない。
+	// Qiita などソート順が保証されない検索APIでは、設定ページ数の最後のページが全て既知記事かどうかの
+	// 判定（新着記事が後続ページに埋もれていないかの目安）にも使う。
 	if (externalUrls.length === 0) return new Set();
 	const supabase = await getSupabaseClient();
 	const { data, error } = await supabase.from('items').select('external_url').in('external_url', externalUrls);
@@ -330,15 +385,6 @@ export async function fetchItemSourceNames(itemIds: number[]): Promise<Map<numbe
 		if (source?.name) result.set(row.id, source.name);
 	}
 	return result;
-}
-
-export async function findItemVersionByExternalUrl(externalUrl: string): Promise<string | null> {
-	// Brave Search 経由のブログ収集は fetch/AIレビューのコストが他インポーターより重いため、
-	// 本文ハッシュ(version)が前回と同じなら再レビューを省略する差分検知に使う。
-	const supabase = await getSupabaseClient();
-	const { data, error } = await supabase.from('items').select('version').eq('external_url', externalUrl).limit(1);
-	if (error) throw error;
-	return data?.[0]?.version ?? null;
 }
 
 export interface FeedSubscriptionUpsertPayload {

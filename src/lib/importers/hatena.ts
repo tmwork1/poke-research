@@ -13,14 +13,16 @@ import { reviewImportArticle } from './article-ai';
 import { extractPage, fetchCandidatePage, hashBody, resolveBlogSource, type ExtractedPage } from './blog';
 import {
 	fetchTopTagNames,
-	findItemVersionByExternalUrl,
+	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertFeedSubscription,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { parseHatenaSearchRss } from './hatena-feed';
 import { isExcludedBlogDomain, POKEMON_KEYWORDS } from './keywords';
@@ -44,6 +46,7 @@ const DEFAULT_MAX_CANDIDATES_PER_KEYWORD = 15;
 export interface HatenaSyncOptions {
 	keyword?: string;
 	maxCandidatesPerKeyword?: number;
+	maxNewItemsPerRun?: number;
 }
 
 export interface HatenaSyncResult {
@@ -60,7 +63,12 @@ export interface HatenaSyncResult {
 
 export interface HatenaEnvDefaults {
 	HATENA_MAX_CANDIDATES?: string | number;
+	HATENA_MAX_NEW_PER_RUN?: string | number;
 }
+
+// 新着記事1件の処理（本文取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行
+// あたりこの件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 6;
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
 // 検索語（POKEMON_KEYWORDS）は収集内容の質に直結するため、他インポーター同様 env では管理しない。
@@ -70,6 +78,12 @@ export function resolveHatenaSyncOptions(env: HatenaEnvDefaults, overrides: Hate
 		maxCandidatesPerKeyword: parsePositiveInteger(
 			overrides.maxCandidatesPerKeyword,
 			parsePositiveInteger(env.HATENA_MAX_CANDIDATES, DEFAULT_MAX_CANDIDATES_PER_KEYWORD),
+		),
+		// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数に
+		// 上限を設ける。超過分は次回実行に持ち越される（既存URL判定に残るため記事が失われることはない）。
+		maxNewItemsPerRun: parsePositiveInteger(
+			overrides.maxNewItemsPerRun,
+			parsePositiveInteger(env.HATENA_MAX_NEW_PER_RUN, DEFAULT_MAX_NEW_ITEMS_PER_RUN),
 		),
 	};
 }
@@ -190,7 +204,12 @@ function createItemMetadata(
 	};
 }
 
-async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: string, existingTags: string[]): Promise<ImportItemOutcome> {
+async function processHatenaCandidate(
+	candidate: HatenaCandidate,
+	fetchedAt: string,
+	existingTags: string[],
+	pendingTagEntries: ItemTagSyncEntry[],
+): Promise<ImportItemOutcome> {
 	// 記事単位の失敗（fetch失敗、非HTML、抽出不足など）はここで吸収し、バッチ全体を止めない。
 	try {
 		const response = await fetchCandidatePage(candidate.url, HATENA_USER_AGENT);
@@ -212,11 +231,6 @@ async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: str
 		const title = extracted.title || candidate.title;
 		const authors = extracted.author ? [extracted.author] : [];
 		const bodyHash = await hashBody(extracted.bodyText);
-
-		const existingVersion = await findItemVersionByExternalUrl(externalUrl);
-		if (existingVersion === bodyHash) {
-			return { id: null, action: 'skipped', externalUrl, title, reason: 'unchanged since last collection' };
-		}
 
 		const hostname = new URL(externalUrl).hostname;
 		const aiBodyExcerpt = extracted.bodyText.length > MAX_AI_BODY_CHARS ? extracted.bodyText.slice(0, MAX_AI_BODY_CHARS) : extracted.bodyText;
@@ -252,7 +266,7 @@ async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: str
 					metadata: createSourceMetadata(candidate.keyword, fetchedAt),
 				});
 
-				return upsertItemByExternalUrl(
+				const result = await upsertItemByExternalUrl(
 					{
 						sourceId: source.id,
 						externalUrl,
@@ -271,8 +285,11 @@ async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: str
 					},
 					review.tags,
 					review.tagLabels,
-					{ syncTags: review.accepted },
+					// タグ同期はここでは行わず（syncTags: false）、呼び出し元でまとめて行う。
+					{ syncTags: false },
 				);
+				if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags: review.tags, tagLabels: review.tagLabels });
+				return result;
 			},
 		);
 	} catch (error) {
@@ -289,6 +306,7 @@ async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: str
 export async function syncHatenaCollection(options: HatenaSyncOptions = {}): Promise<HatenaSyncResult> {
 	const keywords = options.keyword?.trim() ? [options.keyword.trim()] : [...POKEMON_KEYWORDS];
 	const maxCandidatesPerKeyword = parsePositiveInteger(options.maxCandidatesPerKeyword, DEFAULT_MAX_CANDIDATES_PER_KEYWORD);
+	const maxNewItemsPerRun = parsePositiveInteger(options.maxNewItemsPerRun, DEFAULT_MAX_NEW_ITEMS_PER_RUN);
 	const fetchedAt = new Date().toISOString();
 
 	const [{ candidates, requestsUsed }, existingTags] = await Promise.all([
@@ -296,9 +314,36 @@ export async function syncHatenaCollection(options: HatenaSyncOptions = {}): Pro
 		fetchTopTagNames(),
 	]);
 
-	const itemResults = await mapWithConcurrency(candidates, IMPORT_CONCURRENCY, (candidate) =>
-		processHatenaCandidate(candidate, fetchedAt, existingTags),
+	// 既に収集済みのURLは、本文取得・AIレビューを行わずスキップする（記事内容の変更は追跡しない
+	// 方針のため、判定はURLの既存有無のみ。cronのsubrequest数・外部fetch回数を抑える）。
+	const existingUrls = await findExistingExternalUrls(candidates.map((candidate) => candidate.url));
+	const newCandidates = candidates.filter((candidate) => !existingUrls.has(candidate.url));
+
+	// 新着記事が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数を
+	// maxNewItemsPerRun件までに絞る。超過分は本文取得自体を省略してスキップし、次回実行時に
+	// 既存URL判定に引っかからず自然に再度候補となる（記事が失われるわけではない）。
+	const candidatesToProcess = newCandidates.slice(0, maxNewItemsPerRun);
+	const deferredCandidates = newCandidates.slice(maxNewItemsPerRun);
+
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
+	const processedResults = await mapWithConcurrency(candidatesToProcess, IMPORT_CONCURRENCY, (candidate) =>
+		processHatenaCandidate(candidate, fetchedAt, existingTags, pendingTagEntries),
 	);
+	await syncNewItemTagsBatch(pendingTagEntries);
+	const skippedKnownResults: ImportItemOutcome[] = candidates
+		.filter((candidate) => existingUrls.has(candidate.url))
+		.map((candidate) => ({ id: null, action: 'skipped', externalUrl: candidate.url, title: candidate.title, reason: 'already collected' }));
+	const deferredResults: ImportItemOutcome[] = deferredCandidates.map((candidate) => ({
+		id: null,
+		action: 'skipped',
+		externalUrl: candidate.url,
+		title: candidate.title,
+		reason: 'exceeded max new items per run',
+	}));
+	const itemResults = [...processedResults, ...skippedKnownResults, ...deferredResults];
 
 	let inserted = 0;
 	let updated = 0;

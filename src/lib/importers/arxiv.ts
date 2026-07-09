@@ -18,12 +18,15 @@ import { reviewImportArticle } from './article-ai';
 import { parseArxivFeed, type ArxivFeedEntry } from './arxiv-feed';
 import {
 	fetchTopTagNames,
+	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
@@ -34,7 +37,9 @@ const ARXIV_SOURCE_NAME = 'arXiv';
 const ARXIV_SOURCE_ORIGIN_URL = 'https://arxiv.org/';
 const DEFAULT_KIND = 'paper';
 const MAX_AI_BODY_CHARS = 4000;
-const DEFAULT_MAX_RESULTS = 50;
+// 既存論文はAIレビュー・DB書き込みをスキップするため実質的な負荷は新着論文数に比例するが、
+// 初回投入日・急増日のsubrequest数の頭打ちとして既定値は控えめにする（旧50→20）。
+const DEFAULT_MAX_RESULTS = 20;
 const IMPORT_CONCURRENCY = 4;
 
 // arXivの検索構文（search_query）は日本語キーワードを扱えないため、topic.config.mjs の
@@ -57,6 +62,7 @@ export interface ArxivSyncOptions {
 	query?: string;
 	maxResults?: number;
 	start?: number;
+	maxNewItemsPerRun?: number;
 }
 
 export interface ArxivSyncResult {
@@ -83,7 +89,12 @@ function normalizeQuery(query?: string): string {
 // 検索語（query）は収集内容の質に直結するため、env では管理せずコード（DEFAULT_QUERY）に一本化する。
 export interface ArxivEnvDefaults {
 	ARXIV_MAX_RESULTS?: string | number;
+	ARXIV_MAX_NEW_PER_RUN?: string | number;
 }
+
+// 新着論文1件の処理（AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行あたり
+// この件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
 
 export function resolveArxivSyncOptions(env: ArxivEnvDefaults, overrides: ArxivSyncOptions = {}): Required<ArxivSyncOptions> {
 	return {
@@ -91,6 +102,13 @@ export function resolveArxivSyncOptions(env: ArxivEnvDefaults, overrides: ArxivS
 		maxResults: parsePositiveInteger(overrides.maxResults, parsePositiveInteger(env.ARXIV_MAX_RESULTS, DEFAULT_MAX_RESULTS)),
 		// start=0（先頭から取得）が既定のため、0以上の整数を明示的に渡された場合だけ上書きする。
 		start: Number.isInteger(overrides.start) && (overrides.start as number) >= 0 ? (overrides.start as number) : 0,
+		// 新着論文が急増した日（例: 大きな学会の投稿ラッシュ）でも1回の実行でsubrequest上限を
+		// 超えないよう、実際にAIレビュー・DB書き込みを行う新規件数に上限を設ける。超過分は
+		// 次回実行に持ち越される（既存URL判定に残るため論文が失われることはない）。
+		maxNewItemsPerRun: parsePositiveInteger(
+			overrides.maxNewItemsPerRun,
+			parsePositiveInteger(env.ARXIV_MAX_NEW_PER_RUN, DEFAULT_MAX_NEW_ITEMS_PER_RUN),
+		),
 	};
 }
 
@@ -182,6 +200,7 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 	const query = normalizeQuery(options.query);
 	const maxResults = parsePositiveInteger(options.maxResults, DEFAULT_MAX_RESULTS);
 	const start = Number.isInteger(options.start) && (options.start as number) >= 0 ? (options.start as number) : 0;
+	const maxNewItemsPerRun = parsePositiveInteger(options.maxNewItemsPerRun, DEFAULT_MAX_NEW_ITEMS_PER_RUN);
 	const fetchedAt = new Date().toISOString();
 
 	const [entries, source, existingTags] = await Promise.all([
@@ -195,8 +214,42 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 		fetchTopTagNames(),
 	]);
 
+	// 既に収集済みの候補は、AIレビュー・DB書き込みを行わずスキップする（記事内容の変更は追跡しない
+	// 方針のため、判定は既存かどうかのみ。cronのsubrequest数・OpenAI課金を抑える）。
+	const existingUrls = await findExistingExternalUrls(entries.map((entry) => canonicalizeAbsUrl(entry.id)));
+
+	// 新着論文が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数を
+	// maxNewItemsPerRun件までに絞る。超えた分は次回実行時に既存URL判定に引っかからず自然に
+	// 再度候補となる（論文が失われるわけではない）。
+	const newEntries = entries.filter((entry) => !existingUrls.has(canonicalizeAbsUrl(entry.id)));
+	const entriesToProcess = new Set(newEntries.slice(0, maxNewItemsPerRun).map((entry) => canonicalizeAbsUrl(entry.id)));
+
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
 	const itemResults = await mapWithConcurrency(entries, IMPORT_CONCURRENCY, (entry) => {
 		const externalUrl = canonicalizeAbsUrl(entry.id);
+
+		if (existingUrls.has(externalUrl)) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl,
+				title: entry.title,
+				reason: 'already collected',
+			});
+		}
+
+		if (!entriesToProcess.has(externalUrl)) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl,
+				title: entry.title,
+				reason: 'exceeded max new items per run',
+			});
+		}
 
 		return processImportItem(
 			externalUrl,
@@ -238,10 +291,18 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 					// （hatena.tsと同じ方針。sourceTagsとしてはAIレビューの判断材料に渡している）。
 					review.tags,
 					undefined,
-					{ syncTags: review.accepted },
-				),
+					// 直前に existingUrls でこの候補が新規であることを確認済みのため、
+					// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。タグ同期は
+					// ここでは行わず（syncTags: false）、下の pendingTagEntries でまとめて行う。
+					{ syncTags: false, assumeNew: true },
+				).then((result) => {
+					if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags: review.tags });
+					return result;
+				}),
 		);
 	});
+
+	await syncNewItemTagsBatch(pendingTagEntries);
 
 	let inserted = 0;
 	let updated = 0;
