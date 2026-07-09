@@ -342,6 +342,7 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 						updatedAt: item.updated_at,
 						metadata: createItemMetadata(item, query, fetchedAt, review),
 						version: item.updated_at,
+						collectionRoute: 'qiita-importer',
 						body: truncateBodyForStorage(extractBodyText(item)),
 						aiAccepted: review.accepted,
 						language: review.language,

@@ -261,6 +261,15 @@ export interface ItemUpsertPayload {
 	updatedAt: string | null;
 	metadata: Record<string, unknown>;
 	version: string;
+	/**
+	 * 実際にこの記事を取り込んだ収集ジョブ（migrations/024）。sources.type はプラットフォーム単位
+	 * （blog/hatena/feedはいずれも'blog'）でしか区別できないため、事後解析（例:
+	 * 「本来Qiitaジョブで見つかるべき記事がBrave Search経由でしか見つかっていない」といった
+	 * 収集精度の傾向分析）向けに、実際の発見経路を専用列として持つ。値は各インポーターの
+	 * metadata.provenance.source と揃える（'qiita-importer'/'zenn-importer'/'arxiv-importer'/
+	 * 'note-importer'/'brave-search-importer'/'hatena-bookmark-importer'/'feed-importer'）。
+	 */
+	collectionRoute: string;
 	/** 検索対象を広げるための本文テキスト（migrations/015）。未取得なら省略可。 */
 	body?: string | null;
 	/** AIが判定した記事本文の主な言語（ISO 639-1の小文字コード。migrations/021）。 */
@@ -331,6 +340,7 @@ export async function upsertItemByExternalUrl(
 				updated_at: payload.updatedAt,
 				metadata: payload.metadata,
 				version: payload.version,
+				collection_route: payload.collectionRoute,
 				body: payload.body ?? null,
 				ai_accepted: payload.aiAccepted,
 				language: payload.language,

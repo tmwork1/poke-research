@@ -252,6 +252,7 @@ async function processFeedCandidate(
 						updatedAt: extracted.modifiedAt,
 						metadata: createItemMetadata(extracted, hostname, candidate, fetchedAt, review),
 						version: bodyHash,
+						collectionRoute: 'feed-importer',
 						body: truncateBodyForStorage(extracted.bodyText),
 						aiAccepted: review.accepted,
 						language: review.language,

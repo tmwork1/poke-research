@@ -259,6 +259,7 @@ async function processNoteKey(key: string, sourceId: number, query: string, fetc
 						updatedAt: null,
 						metadata: createItemMetadata(detail, query, fetchedAt, review),
 						version: detail.publish_at,
+						collectionRoute: 'note-importer',
 						body: truncateBodyForStorage(extractBodyText(detail)),
 						aiAccepted: review.accepted,
 						language: review.language,
