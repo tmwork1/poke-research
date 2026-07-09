@@ -371,20 +371,34 @@ export async function findExistingExternalUrls(externalUrls: string[]): Promise<
 	return new Set((data ?? []).map((row) => row.external_url as string));
 }
 
-export async function fetchItemSourceNames(itemIds: number[]): Promise<Map<number, string>> {
-	// 新着記事のSNS向け通知で「タイトル - ソース名」の下書きを組み立てるために使う。
-	// blog/feed/hatena は記事ごとに実際の掲載元（個人ブログ等）が異なるため、ジョブ名を
-	// 決め打ちにできず、保存済み items.source_id 経由で sources.name を都度引く。
-	if (itemIds.length === 0) return new Map();
+export interface DailyDigestItemRow {
+	title: string;
+	externalUrl: string;
+	collectionRoute: string;
+	sourceName: string | null;
+}
+
+// 日次収集ジョブが複数のWorker呼び出し（時間分割スロット）に分かれたため、まとめ通知は
+// メモリ上の結果を受け渡せない。代わりにこの関数で、指定時刻以降に作成された対象ジョブの
+// itemsをDBから直接集計する（src/worker.ts の日次まとめ通知専用cronが呼ぶ）。
+export async function fetchDailyDigestItems(sinceIso: string, collectionRoutes: string[]): Promise<DailyDigestItemRow[]> {
+	if (collectionRoutes.length === 0) return [];
 	const supabase = await getSupabaseClient();
-	const { data, error } = await supabase.from('items').select('id, source:sources(id, name, type, origin_url)').in('id', itemIds);
+	const { data, error } = await supabase
+		.from('items')
+		.select('title, external_url, collection_route, source:sources(id, name, type, origin_url)')
+		.gte('created_at', sinceIso)
+		.in('collection_route', collectionRoutes);
 	if (error) throw error;
-	const result = new Map<number, string>();
-	for (const row of (data ?? []) as Array<Pick<ItemRow, 'id' | 'source'>>) {
-		const source = normalizeSource(row.source);
-		if (source?.name) result.set(row.id, source.name);
-	}
-	return result;
+	return (data ?? []).map((row) => {
+		const source = normalizeSource((row as Pick<ItemRow, 'source'>).source);
+		return {
+			title: row.title as string,
+			externalUrl: row.external_url as string,
+			collectionRoute: row.collection_route as string,
+			sourceName: source?.name ?? null,
+		};
+	});
 }
 
 export interface FeedSubscriptionUpsertPayload {
