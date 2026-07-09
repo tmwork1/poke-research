@@ -11,8 +11,9 @@
 // 別に一覧表示する。棄却判定は
 // items.metadata->'ai'->>'accepted' = 'false' で行い、ai_accepted 列（マイグレーション
 // 未適用のDBには存在しない）には依存しない。
-import { readFile } from 'fs/promises';
 import { Client } from 'pg';
+import { topic } from '../../src/config/topic.config.mjs';
+import { buildSystemPrompt } from '../../src/config/ai-review-prompt.mjs';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -21,10 +22,8 @@ if (!databaseUrl) {
 }
 
 async function printCurrentPrompt() {
-	const source = await readFile(new URL('../../src/lib/importers/article-ai.ts', import.meta.url), 'utf8');
-	const match = source.match(/content:\s*\n?\s*'([^']*(?:\\'[^']*)*)'/);
-	console.log('=== 現在のシステムプロンプト (src/lib/importers/article-ai.ts) ===');
-	console.log(match ? match[1].replace(/\\'/g, "'") : '(抽出失敗: ファイル構造が変わった可能性)');
+	console.log('=== 現在のシステムプロンプト (src/config/ai-review-prompt.mjs: buildSystemPrompt) ===');
+	console.log(buildSystemPrompt(topic));
 	console.log('');
 }
 

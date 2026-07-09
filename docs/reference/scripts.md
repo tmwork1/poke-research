@@ -36,7 +36,7 @@
 
 ## 3. 評価ループ（試行→評価→修正）
 
-外部AIによる自動採点はせず、各スクリプトは判定材料（生データ）を出力するだけで、Claude Codeがその出力を読んで判定→該当箇所を修正→再実行、というループを回す（`detect-duplicate-items` のみ判定材料に加えてクリーンアップの検出結果そのものが出力）。
+外部AIによる自動採点はせず、各スクリプトは判定材料（生データ）を出力するだけで、Claude Codeがその出力を読んで判定→該当箇所を修正→再実行、というループを回す（`detect-duplicate-items` のみ判定材料に加えてクリーンアップの検出結果そのものが出力）。`eval-filter`（フィルタ精度）のようにAI取り込みプロンプト自体を修正する場合は、プロンプトファイルの再実行だけで満足せず、修正後プロンプトを実際にOpenAIへ送って問題事例の判定が意図通り変わるかを少数再テストしてから、既存記事全体への反映（`retag-existing-items`）を検討する（実例: [docs/optimization/filter-accuracy.md](../optimization/filter-accuracy.md)）。プロンプトやモデル（`OPENAI_MODEL`）を変えて少数再テストする実験は、1回実行するごとに結果を `docs/optimization/` 配下へ逐一記録する（まとめて後で書かない。実験→記録→次の実験を1サイクルとして繰り返す）。記録には accepted/rejected を問わず reason・confidence・language を含める（`retag-existing-items.mjs` は元々 accepted 分岐で reason を出力しないバグがあったため、両分岐で出力するよう修正済み）。
 
 | スクリプト | コマンド | 用途 | 課金 |
 |---|---|---|---|
@@ -48,6 +48,7 @@
 | `scripts/eval/eval-filter.mjs` | `npm run eval:filter` | フィルタ精度: 現在のAI取り込みプロンプトと、収集済み記事（採用分）のtitle/summary/tags/AI採否理由を並べて出す。加えて、AIに棄却された記事（案A、migrations/018で`ai_accepted=false`付きのまま`items`に保存されるようになった記事）も「偽陰性候補」セクションとしてtitle/external_url/棄却理由/AI要約を新しい順に別掲し、誤棄却でないかをレビューできるようにする。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-tags.mjs` | `npm run eval:tags` | タグ精度: タグごとの使用件数とサンプル記事タイトルを出す。使用1件のみのタグ（ノイズ候補）に加え、`tags`と`item_tags`のLEFT JOINで使用0件のタグ（統合後の残骸等）も削除候補として別掲する。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-search.mjs` | `npm run eval:search` | 検索精度: 起動中サーバー（`EVAL_BASE_URL`、既定`http://localhost:4321`）に代表的な検索クエリを投げ、ヒット件数とタイトルを出す。 | なし |
+| `scripts/eval/eval-subrequests.mjs` | `npm run eval:subrequests` | Cloudflare Workers subrequest消費量の実測: 収集6ルート（qiita/zenn/arxiv/hatena/blog/feed）それぞれに`maxNewItemsPerRun=0`→`=1`の順でPOSTし、固定コストと新規1件あたりのコストを実測、既定`maxNewItemsPerRun`でのワーストケースを算出する。事前に`ADMIN_USERNAME`/`ADMIN_PASSWORD`を`.env`に設定し、dev serverを`DEBUG_SUBREQUEST_COUNT=1`付きで起動しておく必要がある（`.dev.vars`に追記してから再起動。`src/middleware.ts`・`src/lib/subrequest-counter.ts`）。管理者APIへの実書き込み・実際の外部APIコストが発生するため`eval:all`には含めない。 | OpenAI（新規1件分×6ルート）+ Brave（blogのみ） |
 
 ## 4. レビュー・クリーンアップ（事後メンテナンス）
 
@@ -56,7 +57,7 @@
 **実行のきっかけ**: レビュー・クリーンアップのトリガーは実質2つ。
 
 - **収集後**（backfill や新ソース追加の後）: 重複・新タグは収集が作るため、`detect-duplicate-items`（`eval:all` に含まれる）の結果確認と `backfill-tag-explanations` を行う。
-- **AI取り込みプロンプト（`src/lib/importers/article-ai.ts`）や要約基準の変更後**: 既存記事が旧基準のまま残るため `retag-existing-items` の要否を検討する。
+- **AI取り込みプロンプト（`src/lib/importers/article-ai.ts`、実体は `src/config/ai-review-prompt.mjs`）や要約基準の変更後**: 既存記事が旧基準のまま残るため `retag-existing-items` の要否を検討する。全件再適用の前に、まず修正の狙いとなった問題事例だけを `--id=<id> --dry-run` で少数再テストし、意図通り判定が変わるか確認する（棄却済み記事は `ai_accepted=true` の記事のみを対象とする `retag-existing-items` では拾えないため、使い捨てスクリプトで別途確認する）。
 
 `merge-item` は `detect-duplicate-items` の出力で重複itemが見えたとき、著者・内容を確認して同一記事と判断できたペアにのみ使う（タイトルが似ているだけで内容が別の記事は統合対象外）。同様に `merge-source` は `detect-duplicate-sources` の出力で重複sourceが見えたときに使う。`merge-tag`（表記ゆれの統合）・`rename-tag`（冗長・冗長な接頭辞の短縮など単純リネーム）・`delete-tag`（検索価値の低い不適切タグの削除）は上記2つとは別に、`eval:all` の `eval:tags` 出力でノイズタグ・表記ゆれ・短縮の余地が見えたときに使い分ける。`eval-annotations`・`eval-broken-links` は上記2トリガーとは独立に、annotations件数が増えてきたときや月次の目視確認のタイミングで都度実行する。
 

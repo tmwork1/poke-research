@@ -60,11 +60,14 @@ export interface FeedEnvDefaults {
 	FEED_MAX_NEW_PER_RUN?: string | number;
 }
 
-// 新着記事1件の処理（本文取得・AIレビュー・DB書き込み）にかかるsubrequest数から、1回の実行
-// あたりこの件数までなら単独でCloudflareのsubrequest上限に収まる、という既定値。フィード購読数は
-// 今後も増え続ける（blog/hatenaが記事採用時に自動登録するため）ため、購読数に関わらずこの上限で
-// 頭打ちにする。
-const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
+// 購読フィード数（blog/hatenaの記事採用時に自動登録され、今後も増え続ける）に比例する
+// 発見段階の固定コストに加え、新規記事1件あたりfetch＋既存チェック（assumeNew非対応）＋
+// OpenAIレビュー＋item upsertの計4 subrequestsを2026-07-09に実測で確認した。固定コスト
+// （新規0件時）は実測21で、新規記事が1件以上あるときだけ発生するタグ同期バッチの初回コスト
+// （2件程度）を合わせると、上限50/呼び出しに収まる新規件数は (50-21-2)/4 ≒ 6.7 件までとなる。
+// 旧値の10件では最大約63 subrequestsとなり上限を超えうることが判明したため、
+// 安全マージンを見て6件に引き下げた（詳細はdocs/issue/cron-subrequest-limit.md参照）。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 6;
 
 // API ルート（手動起動）と cron ジョブ（定期実行）の両方が同じ既定値解決ロジックを使う。
 export function resolveFeedSyncOptions(env: FeedEnvDefaults, overrides: FeedSyncOptions = {}): Required<FeedSyncOptions> {
