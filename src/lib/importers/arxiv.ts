@@ -18,7 +18,7 @@ import { reviewImportArticle } from './article-ai';
 import { parseArxivFeed, type ArxivFeedEntry } from './arxiv-feed';
 import {
 	fetchTopTagNames,
-	findExistingItemVersions,
+	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
 	truncateBodyForStorage,
@@ -196,22 +196,20 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 		fetchTopTagNames(),
 	]);
 
-	// 前回収集時と updated（entry.updated ?? entry.id）が変わっていない候補は、AIレビュー・
-	// DB書き込みを行わずスキップする（cronのsubrequest数・OpenAI課金を抑える差分検知。
-	// blog/hatena/feedの本文ハッシュ版、qiita.tsのupdated_at版と同じ方針）。
-	const existingVersions = await findExistingItemVersions(entries.map((entry) => canonicalizeAbsUrl(entry.id)));
+	// 既に収集済みの候補は、AIレビュー・DB書き込みを行わずスキップする（記事内容の変更は追跡しない
+	// 方針のため、判定は既存かどうかのみ。cronのsubrequest数・OpenAI課金を抑える）。
+	const existingUrls = await findExistingExternalUrls(entries.map((entry) => canonicalizeAbsUrl(entry.id)));
 
 	const itemResults = await mapWithConcurrency(entries, IMPORT_CONCURRENCY, (entry) => {
 		const externalUrl = canonicalizeAbsUrl(entry.id);
-		const version = entry.updated ?? entry.id;
 
-		if (existingVersions.get(externalUrl) === version) {
+		if (existingUrls.has(externalUrl)) {
 			return Promise.resolve<ImportItemOutcome>({
 				id: null,
 				action: 'skipped',
 				externalUrl,
 				title: entry.title,
-				reason: 'unchanged since last collection',
+				reason: 'already collected',
 			});
 		}
 
@@ -244,7 +242,7 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 						publishedAt: entry.published,
 						updatedAt: entry.updated,
 						metadata: createItemMetadata(entry, query, fetchedAt, review),
-						version,
+						version: entry.updated ?? entry.id,
 						body: truncateBodyForStorage(entry.summary),
 						aiAccepted: review.accepted,
 						language: review.language,

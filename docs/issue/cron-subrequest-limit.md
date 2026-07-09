@@ -60,18 +60,31 @@ Supabase呼び出し6〜8回（既存チェック・upsert・タグ照合・item
 20件だけでも120〜180 subrequestsに達し、本番で実際に上限超過が起きていた。
 
 一方、Blog（Brave Search）・はてなブックマーク・RSSフィード追従の3インポーターは既に
-「前回収集時と内容（本文ハッシュ or 更新日時）が同じなら、AIレビュー・DB書き込みを行わずスキップする」
-差分検知を実装済みだった（`findItemVersionByExternalUrl`、`src/lib/importers/common.ts`）。この
-差分検知をQiita/Zenn/arXivにも移植し（バッチ版の`findExistingItemVersions`を新設し、候補記事URLを
-まとめて1回のクエリで問い合わせる）、変更のない記事の無駄な再レビューをなくすことで、cron呼び出し
-あたりのsubrequest数とOpenAI課金の両方を削減した。ローカルSupabaseに対する実行で、既存記事の
-大半が`reason: 'unchanged since last collection'`としてAIレビュー・DB書き込みなしにスキップされる
-ことを確認済み（Qiita 3件中2件、Zenn 48件中44件、arXiv 5件中5件）。
+「既に収集済みの記事は、AIレビュー・DB書き込み（および本文取得）を行わずスキップする」差分検知を
+一部実装済みだった。この考え方を全6インポーター（Qiita/Zenn/arXiv/Blog/はてな/フィード）に統一し、
+**記事内容の変更（本文更新）は追跡しない方針に振り切った**うえで、判定を「既存URLかどうか」だけの
+シンプルなバッチクエリ（`findExistingExternalUrls`、`src/lib/importers/common.ts`）に一本化した。
+
+- **Qiita/arXiv**: API一覧レスポンスの時点でURLが確定するため、`mapWithConcurrency`で回す前に
+  既存URLをまとめて1回のクエリで判定し、既知の候補はAIレビュー・DB書き込みごとスキップする。
+- **Zenn**: 一覧API（`GET /api/articles`）のレスポンスに記事パス（`path`）が含まれることが判明した
+  ため、**詳細取得（`fetchZennArticleDetail`）を行う前に**既存URL判定ができるよう順序を入れ替えた。
+  既に収集済みの記事は詳細取得自体（1候補1回のfetch）を丸ごと省略できる（ローカル検証では
+  48件中44件で詳細取得なしにスキップ）。
+- **Blog（Brave Search）・はてなブックマーク**: 発見（discovery）段階で候補URLをまとめて既存判定し、
+  既知の候補は本文取得（HTML fetch）・本文ハッシュ計算・AIレビューを一切行わずスキップするよう
+  変更した（RSSフィード追従の`feed.ts`が既に採用していた方式に統一）。
+- 本文ハッシュによる差分検知（`findItemVersionByExternalUrl`）は全インポーターから削除した。
+  既存記事の内容が更新されても再取り込みはされなくなる（意図した仕様）。
+
+ローカルSupabaseに対する実行で、既存記事の大半が`reason: 'already collected'`として
+AIレビュー・DB書き込み（Zennは詳細取得も）なしにスキップされることを確認済み
+（Qiita 12件中11件、Zenn 48件中48件、arXiv 5件中5件、Blogは新規候補で正常動作を確認）。
 
 cron構成（`wrangler.jsonc`の1回集約、`src/worker.ts`のジョブ順序・Discord通知）は変更していない。
 
-Cloudflare Workers Paidプラン（$5/月、subrequest上限50→1000）へのアップグレードは、ユーザーが
-Cloudflareダッシュボードで別途判断・実施する事項として今回のスコープ外とした。
+Cloudflare Workers Paidプラン（$5/月、subrequest上限50→1000）へのアップグレードおよびOpenAIレビューの
+複数記事バッチ化は、費用・実装リスクの観点からユーザー判断により見送った。
 
 ## 副次的に判明したリスク（未対応）
 

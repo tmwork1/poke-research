@@ -6,7 +6,7 @@ import { parseOptionalPositiveInteger, parsePositiveInteger } from '../params';
 import { reviewImportArticle } from './article-ai';
 import {
 	fetchTopTagNames,
-	findItemVersionByExternalUrl,
+	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
 	truncateBodyForStorage,
@@ -378,11 +378,6 @@ async function processBlogCandidate(candidate: BlogCandidate, fetchedAt: string,
 		const authors = extracted.author ? [extracted.author] : [];
 		const bodyHash = await hashBody(extracted.bodyText);
 
-		const existingVersion = await findItemVersionByExternalUrl(externalUrl);
-		if (existingVersion === bodyHash) {
-			return { id: null, action: 'skipped', externalUrl, title, reason: 'unchanged since last collection' };
-		}
-
 		const hostname = new URL(externalUrl).hostname;
 		const aiBodyExcerpt = extracted.bodyText.length > MAX_AI_BODY_CHARS ? extracted.bodyText.slice(0, MAX_AI_BODY_CHARS) : extracted.bodyText;
 
@@ -463,9 +458,18 @@ export async function syncBlogCollection(options: BlogSyncOptions = {}): Promise
 		fetchTopTagNames(),
 	]);
 
-	const itemResults = await mapWithConcurrency(candidates, IMPORT_CONCURRENCY, (candidate) =>
+	// 既に収集済みのURLは、本文取得・AIレビューを行わずスキップする（記事内容の変更は追跡しない
+	// 方針のため、判定はURLの既存有無のみ。cronのsubrequest数・外部fetch回数を抑える）。
+	const existingUrls = await findExistingExternalUrls(candidates.map((candidate) => candidate.url));
+	const newCandidates = candidates.filter((candidate) => !existingUrls.has(candidate.url));
+
+	const processedResults = await mapWithConcurrency(newCandidates, IMPORT_CONCURRENCY, (candidate) =>
 		processBlogCandidate(candidate, fetchedAt, existingTags),
 	);
+	const skippedKnownResults: ImportItemOutcome[] = candidates
+		.filter((candidate) => existingUrls.has(candidate.url))
+		.map((candidate) => ({ id: null, action: 'skipped', externalUrl: candidate.url, title: candidate.title, reason: 'already collected' }));
+	const itemResults = [...processedResults, ...skippedKnownResults];
 
 	let inserted = 0;
 	let updated = 0;

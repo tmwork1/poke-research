@@ -4,7 +4,6 @@ import { buildTagLabels, reviewImportArticle } from './article-ai';
 import {
 	fetchTopTagNames,
 	findExistingExternalUrls,
-	findExistingItemVersions,
 	mapWithConcurrency,
 	processImportItem,
 	stripHtml,
@@ -260,18 +259,18 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 		fetchTopTagNames(),
 	]);
 
-	// 前回収集時と updated_at が変わっていない候補は、AIレビュー・DB書き込みを行わずスキップする
-	// （cronのsubrequest数・OpenAI課金を抑える差分検知。blog/hatena/feedの本文ハッシュ版と同じ方針）。
-	const existingVersions = await findExistingItemVersions(items.map((item) => item.url));
+	// 既に収集済みの候補は、AIレビュー・DB書き込みを行わずスキップする（記事内容の変更は追跡しない
+	// 方針のため、判定は既存かどうかのみ。cronのsubrequest数・OpenAI課金を抑える）。
+	const existingUrls = await findExistingExternalUrls(items.map((item) => item.url));
 
 	const itemResults = await mapWithConcurrency(items, IMPORT_CONCURRENCY, (item) => {
-		if (existingVersions.get(item.url) === item.updated_at) {
+		if (existingUrls.has(item.url)) {
 			return Promise.resolve<ImportItemOutcome>({
 				id: null,
 				action: 'skipped',
 				externalUrl: item.url,
 				title: item.title,
-				reason: 'unchanged since last collection',
+				reason: 'already collected',
 			});
 		}
 

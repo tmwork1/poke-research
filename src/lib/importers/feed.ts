@@ -13,7 +13,6 @@ import {
 	fetchActiveFeedSubscriptions,
 	fetchTopTagNames,
 	findExistingExternalUrls,
-	findItemVersionByExternalUrl,
 	mapWithConcurrency,
 	processImportItem,
 	recordFeedFetchOutcome,
@@ -190,11 +189,6 @@ async function processFeedCandidate(candidate: FeedCandidate, fetchedAt: string,
 		const title = extracted.title || candidate.title;
 		const authors = extracted.author ? [extracted.author] : [];
 		const bodyHash = await hashBody(extracted.bodyText);
-
-		const existingVersion = await findItemVersionByExternalUrl(externalUrl);
-		if (existingVersion === bodyHash) {
-			return { id: null, action: 'skipped', externalUrl, title, reason: 'unchanged since last collection' };
-		}
 
 		const hostname = new URL(externalUrl).hostname;
 		const aiBodyExcerpt = extracted.bodyText.length > MAX_AI_BODY_CHARS ? extracted.bodyText.slice(0, MAX_AI_BODY_CHARS) : extracted.bodyText;

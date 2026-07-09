@@ -297,8 +297,11 @@ export async function upsertItemByExternalUrl(
 }
 
 export async function findExistingExternalUrls(externalUrls: string[]): Promise<Set<string>> {
-	// Qiita などソート順が保証されない検索APIで、設定ページ数の最後のページが全て
-	// 既知記事かどうかを判定するために使う（新着記事が後続ページに埋もれていないかの目安）。
+	// 候補記事のURLをまとめて1回のクエリで問い合わせ、既に収集済みのものはAIレビュー・DB書き込みを
+	// 行わずスキップする（cronのsubrequest数・OpenAI課金を抑える）差分検知に各インポーターが使う。
+	// 記事内容の変更は追跡しない方針のため、判定は「既存かどうか」のみで version 比較は行わない。
+	// Qiita などソート順が保証されない検索APIでは、設定ページ数の最後のページが全て既知記事かどうかの
+	// 判定（新着記事が後続ページに埋もれていないかの目安）にも使う。
 	if (externalUrls.length === 0) return new Set();
 	const supabase = await getSupabaseClient();
 	const { data, error } = await supabase.from('items').select('external_url').in('external_url', externalUrls);
@@ -318,31 +321,6 @@ export async function fetchItemSourceNames(itemIds: number[]): Promise<Map<numbe
 	for (const row of (data ?? []) as Array<Pick<ItemRow, 'id' | 'source'>>) {
 		const source = normalizeSource(row.source);
 		if (source?.name) result.set(row.id, source.name);
-	}
-	return result;
-}
-
-export async function findItemVersionByExternalUrl(externalUrl: string): Promise<string | null> {
-	// Brave Search 経由のブログ収集は fetch/AIレビューのコストが他インポーターより重いため、
-	// 本文ハッシュ(version)が前回と同じなら再レビューを省略する差分検知に使う。
-	const supabase = await getSupabaseClient();
-	const { data, error } = await supabase.from('items').select('version').eq('external_url', externalUrl).limit(1);
-	if (error) throw error;
-	return data?.[0]?.version ?? null;
-}
-
-export async function findExistingItemVersions(externalUrls: string[]): Promise<Map<string, string>> {
-	// Qiita/Zenn/arXiv 向け: 候補記事のURLをまとめて1回のクエリで問い合わせ、前回収集時の
-	// version（更新日時等）と一致する候補はAIレビュー・DB書き込みごとスキップする差分検知に使う
-	// （findItemVersionByExternalUrl の1件ずつ版とは異なり、cronのsubrequest数を抑えるため
-	// 候補数に関わらず1クエリで済ませる）。
-	if (externalUrls.length === 0) return new Map();
-	const supabase = await getSupabaseClient();
-	const { data, error } = await supabase.from('items').select('external_url, version').in('external_url', externalUrls);
-	if (error) throw error;
-	const result = new Map<string, string>();
-	for (const row of (data ?? []) as Array<{ external_url: string; version: string | null }>) {
-		if (row.version) result.set(row.external_url, row.version);
 	}
 	return result;
 }

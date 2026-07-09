@@ -4,7 +4,7 @@
 import { reviewImportArticle } from './article-ai';
 import {
 	fetchTopTagNames,
-	findExistingItemVersions,
+	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
 	stripHtml,
@@ -29,6 +29,9 @@ const IMPORT_CONCURRENCY = 2;
 
 interface ZennListArticle {
 	slug: string;
+	// 一覧APIの時点で記事パス（＝URL）が分かるため、詳細取得(fetchZennArticleDetail)なしに
+	// 既収集判定ができる（記事内容の変更は追跡しない方針のため、判定はURLの既存有無のみでよい）。
+	path: string;
 }
 
 interface ZennListResponse {
@@ -126,9 +129,9 @@ async function fetchZennArticleDetail(slug: string): Promise<ZennArticleDetail> 
 	return article;
 }
 
-async function fetchZennSlugs(topics: string[], pages: number): Promise<string[]> {
+async function fetchZennListArticles(topics: string[], pages: number): Promise<ZennListArticle[]> {
 	// 複数トピック・複数ページ取得時に同一記事が再登場しても、1 件だけ残す。
-	const slugs: string[] = [];
+	const articlesFound: ZennListArticle[] = [];
 	const seen = new Set<string>();
 
 	for (const topic of topics) {
@@ -139,18 +142,22 @@ async function fetchZennSlugs(topics: string[], pages: number): Promise<string[]
 			for (const article of articles) {
 				if (seen.has(article.slug)) continue;
 				seen.add(article.slug);
-				slugs.push(article.slug);
+				articlesFound.push(article);
 			}
 
 			if (next_page === null) break;
 		}
 	}
 
-	return slugs;
+	return articlesFound;
+}
+
+function pathToUrl(path: string): string {
+	return `https://zenn.dev${path}`;
 }
 
 function articleUrl(detail: ZennArticleDetail): string {
-	return `https://zenn.dev${detail.path}`;
+	return pathToUrl(detail.path);
 }
 
 function createAuthors(detail: ZennArticleDetail): string[] {
@@ -285,8 +292,8 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 	const pages = parsePositiveInteger(options.pages, 1);
 	const fetchedAt = new Date().toISOString();
 
-	const [slugs, source, existingTags] = await Promise.all([
-		fetchZennSlugs(splitTopics(topic), pages),
+	const [listArticles, source, existingTags] = await Promise.all([
+		fetchZennListArticles(splitTopics(topic), pages),
 		upsertSourceByOriginUrl({
 			name: ZENN_SOURCE_NAME,
 			type: 'zenn',
@@ -296,15 +303,16 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 		fetchTopTagNames(),
 	]);
 
-	// slugだけではURL・更新日時が分からず詳細取得(fetchZennArticleDetail)が必須のため、まず全件の
-	// 詳細を取得してから、前回収集時と body_updated_at が変わっていない記事をまとめて判定する
-	// （cronのsubrequest数・OpenAI課金を抑える差分検知。qiita/arxivと同じ方針だが、詳細取得
-	// 自体は1候補1回のfetchとして残る）。
-	const detailResults = await mapWithConcurrency(slugs, IMPORT_CONCURRENCY, fetchZennDetailSafely);
-	const fetchedDetails = detailResults.flatMap((result) => (result.detail ? [result.detail] : []));
-	const existingVersions = await findExistingItemVersions(fetchedDetails.map((detail) => articleUrl(detail)));
+	// 一覧APIの時点で記事パス（＝URL）が分かるため、詳細取得(fetchZennArticleDetail)なしに
+	// まとめて既存かどうかを判定できる（記事内容の変更は追跡しない方針のため、判定は既存有無のみ）。
+	// 既に収集済みの記事は詳細取得自体を省略でき、新規記事だけが対象になる
+	// （cronのsubrequest数・OpenAI課金を抑える）。
+	const existingUrls = await findExistingExternalUrls(listArticles.map((article) => pathToUrl(article.path)));
+	const newArticles = listArticles.filter((article) => !existingUrls.has(pathToUrl(article.path)));
 
-	const itemResults = await mapWithConcurrency(detailResults, IMPORT_CONCURRENCY, (result) => {
+	const detailResults = await mapWithConcurrency(newArticles, IMPORT_CONCURRENCY, (article) => fetchZennDetailSafely(article.slug));
+
+	const processedResults = await mapWithConcurrency(detailResults, IMPORT_CONCURRENCY, (result) => {
 		if (!result.detail) {
 			return Promise.resolve<ImportItemOutcome>({
 				id: null,
@@ -315,21 +323,20 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 			});
 		}
 
-		const { detail } = result;
-		const url = articleUrl(detail);
-		const version = detail.body_updated_at ?? detail.published_at;
-		if (existingVersions.get(url) === version) {
-			return Promise.resolve<ImportItemOutcome>({
-				id: null,
-				action: 'skipped',
-				externalUrl: url,
-				title: detail.title,
-				reason: 'unchanged since last collection',
-			});
-		}
-
-		return reviewAndUpsertZennArticle(detail, source.id, topic, fetchedAt, existingTags);
+		return reviewAndUpsertZennArticle(result.detail, source.id, topic, fetchedAt, existingTags);
 	});
+
+	const skippedKnownResults: ImportItemOutcome[] = listArticles
+		.filter((article) => existingUrls.has(pathToUrl(article.path)))
+		.map((article) => ({
+			id: null,
+			action: 'skipped',
+			externalUrl: pathToUrl(article.path),
+			title: article.slug,
+			reason: 'already collected',
+		}));
+
+	const itemResults = [...processedResults, ...skippedKnownResults];
 
 	let inserted = 0;
 	let updated = 0;
@@ -343,7 +350,7 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 	return {
 		topic,
 		pages,
-		fetched: slugs.length,
+		fetched: listArticles.length,
 		inserted,
 		updated,
 		skipped,
