@@ -26,6 +26,7 @@
 		"eval:collection": "node ./scripts/eval/eval-collection.mjs",
 		"eval:collection:blog": "node ./scripts/eval/eval-collection-blog.mjs",
 		"eval:collection:hatena": "node ./scripts/eval/eval-collection-hatena.mjs",
+		"eval:recall": "node ./scripts/eval/eval-recall.mjs",
 		"eval:search": "node ./scripts/eval/eval-search.mjs",
 		"eval:filter": "node ./scripts/eval/eval-filter.mjs",
 		"eval:tags": "node ./scripts/eval/eval-tags.mjs",
