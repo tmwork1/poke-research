@@ -22,6 +22,17 @@ export interface ArxivFeedEntry {
 	primaryCategory: string | null;
 }
 
+export function canonicalizeArxivAbsUrl(entryId: string): string {
+	// スキームをhttpsに揃え、末尾のバージョン番号（vN）を取り除く。arXivは論文が改訂される
+	// たびにIDのバージョンが上がる（例: v1 -> v2）ため、バージョン込みのURLをそのまま
+	// external_url にすると改訂のたびに別記事として重複登録されてしまう。バージョン番号を
+	// 除いた URL を external_url の UNIQUE 制約（migrations/002）に載せることで、
+	// 改訂後も同一論文として upsert され続ける（version 列には entry.updated を使うため、
+	// 改訂内容自体は version の変化で検知できる）。
+	const withHttps = entryId.replace(/^http:\/\//, 'https://');
+	return withHttps.replace(/v\d+$/, '');
+}
+
 function stripCData(text: string): string {
 	const match = text.match(/^<!\[CDATA\[([\s\S]*)\]\]>$/);
 	return match ? match[1] : text;
