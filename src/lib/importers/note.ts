@@ -213,6 +213,7 @@ function createItemMetadata(detail: NoteDetail, query: string, fetchedAt: string
 		},
 		ai: {
 			model: aiReview.model,
+			prompt_version: aiReview.promptVersion,
 			accepted: aiReview.accepted,
 			reason: aiReview.reason,
 			confidence: aiReview.confidence ?? null,
@@ -263,6 +264,10 @@ async function processNoteKey(key: string, sourceId: number, query: string, fetc
 						body: truncateBodyForStorage(extractBodyText(detail)),
 						aiAccepted: review.accepted,
 						language: review.language,
+						aiReviewModel: review.model,
+						aiReviewPromptVersion: review.promptVersion,
+						aiReviewReason: review.reason,
+						aiReviewConfidence: review.confidence ?? null,
 					},
 					review.tags.length > 0 ? review.tags : extractTags(detail),
 					undefined,

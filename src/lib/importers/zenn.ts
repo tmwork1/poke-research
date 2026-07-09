@@ -232,6 +232,7 @@ function createItemMetadata(detail: ZennArticleDetail, topic: string, fetchedAt:
 		},
 		ai: {
 			model: aiReview.model,
+			prompt_version: aiReview.promptVersion,
 			accepted: aiReview.accepted,
 			reason: aiReview.reason,
 			confidence: aiReview.confidence ?? null,
@@ -300,6 +301,10 @@ async function reviewAndUpsertZennArticle(
 					body: truncateBodyForStorage(extractBodyText(detail)),
 					aiAccepted: review.accepted,
 					language: review.language,
+					aiReviewModel: review.model,
+					aiReviewPromptVersion: review.promptVersion,
+					aiReviewReason: review.reason,
+					aiReviewConfidence: review.confidence ?? null,
 				},
 				tags,
 				undefined,

@@ -178,6 +178,7 @@ function createItemMetadata(
 		},
 		ai: {
 			model: review.model,
+			prompt_version: review.promptVersion,
 			accepted: review.accepted,
 			reason: review.reason,
 			confidence: review.confidence ?? null,
@@ -259,6 +260,10 @@ async function processFeedCandidate(
 						body: truncateBodyForStorage(extracted.bodyText),
 						aiAccepted: review.accepted,
 						language: review.language,
+						aiReviewModel: review.model,
+						aiReviewPromptVersion: review.promptVersion,
+						aiReviewReason: review.reason,
+						aiReviewConfidence: review.confidence ?? null,
 					},
 					review.tags,
 					review.tagLabels,

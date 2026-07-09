@@ -32,6 +32,34 @@ export function shouldPreserveAcceptedItem(existingAiAccepted: boolean | undefin
 	return existingAiAccepted !== false;
 }
 
+/**
+ * items.ai_last_review_* 列（migrations/025）の値。ai_accepted とは別に、直近の再レビューが
+ * 何を条件に何と判定したかを常に上書き記録する（shouldPreserveAcceptedItem で ai_accepted の
+ * 更新が握りつぶされた場合でも、こちらは常に更新する。common.ts の upsertItemByExternalUrl 参照）。
+ */
+export interface AiReviewColumns {
+	ai_last_review_accepted: boolean;
+	ai_last_review_model: string;
+	ai_last_review_prompt_version: string;
+	ai_last_review_reason: string;
+	ai_last_review_confidence: number | null;
+	ai_last_reviewed_at: string;
+}
+
+export function buildAiReviewColumns(
+	review: { accepted: boolean; model: string; promptVersion: string; reason: string; confidence: number | null },
+	reviewedAtIso: string,
+): AiReviewColumns {
+	return {
+		ai_last_review_accepted: review.accepted,
+		ai_last_review_model: review.model,
+		ai_last_review_prompt_version: review.promptVersion,
+		ai_last_review_reason: review.reason,
+		ai_last_review_confidence: review.confidence,
+		ai_last_reviewed_at: reviewedAtIso,
+	};
+}
+
 export async function processImportItem<TReview extends ImportReviewOutcome>(
 	externalUrl: string,
 	title: string,

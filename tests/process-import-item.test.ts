@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { processImportItem, shouldPreserveAcceptedItem } from '../src/lib/importers/process-import-item.ts';
+import { buildAiReviewColumns, processImportItem, shouldPreserveAcceptedItem } from '../src/lib/importers/process-import-item.ts';
 
 describe('processImportItem', () => {
 	it('採用時は upsert を呼び、action/id を upsert の結果に合わせる', async () => {
@@ -148,5 +148,32 @@ describe('shouldPreserveAcceptedItem', () => {
 		assert.equal(shouldPreserveAcceptedItem(true, true), false);
 		assert.equal(shouldPreserveAcceptedItem(false, true), false);
 		assert.equal(shouldPreserveAcceptedItem(undefined, true), false);
+	});
+});
+
+describe('buildAiReviewColumns', () => {
+	it('レビュー結果を ai_last_review_* 列にマッピングする（ai_accepted 列とは独立）', () => {
+		const columns = buildAiReviewColumns(
+			{ accepted: false, model: 'gpt-5-nano', promptVersion: 'abc123', reason: '主題外', confidence: 0.8 },
+			'2026-07-10T00:00:00.000Z',
+		);
+
+		assert.deepEqual(columns, {
+			ai_last_review_accepted: false,
+			ai_last_review_model: 'gpt-5-nano',
+			ai_last_review_prompt_version: 'abc123',
+			ai_last_review_reason: '主題外',
+			ai_last_review_confidence: 0.8,
+			ai_last_reviewed_at: '2026-07-10T00:00:00.000Z',
+		});
+	});
+
+	it('confidence が無い場合は null をそのまま保持する', () => {
+		const columns = buildAiReviewColumns(
+			{ accepted: true, model: 'gpt-5-nano', promptVersion: 'abc123', reason: '採用', confidence: null },
+			'2026-07-10T00:00:00.000Z',
+		);
+
+		assert.equal(columns.ai_last_review_confidence, null);
 	});
 });

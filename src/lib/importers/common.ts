@@ -1,7 +1,7 @@
 // 複数の収集元（Qiita/Zenn/...）で共通する DB 書き込み・並列実行処理をまとめる。
 // ソース固有のフィールドマッピングは各インポーター側に残し、ここでは汎用部分だけを扱う。
 import { normalizeTagName } from './article-ai';
-import { shouldPreserveAcceptedItem } from './process-import-item';
+import { buildAiReviewColumns, shouldPreserveAcceptedItem } from './process-import-item';
 import { getSupabaseClient } from '../supabase';
 import { normalizeSource, type ItemRow } from '../catalog-normalize';
 
@@ -280,6 +280,14 @@ export interface ItemUpsertPayload {
 	 * accepted になれば true に戻る）。
 	 */
 	aiAccepted: boolean;
+	/**
+	 * 直近レビューの条件・結果（migrations/025）。ai_accepted とは別に常に上書きされる列に書く
+	 * （shouldPreserveAcceptedItem で ai_accepted 自体の更新が握りつぶされた場合も対象）。
+	 */
+	aiReviewModel: string;
+	aiReviewPromptVersion: string;
+	aiReviewReason: string;
+	aiReviewConfidence: number | null;
 }
 
 export interface UpsertItemOptions {
@@ -305,6 +313,17 @@ export async function upsertItemByExternalUrl(
 	// UNIQUE 制約(migrations/002)を前提にした upsert で原子的に行う。
 	const supabase = await getSupabaseClient();
 	let action: 'inserted' | 'updated' = 'inserted';
+	const reviewedAtIso = new Date().toISOString();
+	const aiReviewColumns = buildAiReviewColumns(
+		{
+			accepted: payload.aiAccepted,
+			model: payload.aiReviewModel,
+			promptVersion: payload.aiReviewPromptVersion,
+			reason: payload.aiReviewReason,
+			confidence: payload.aiReviewConfidence,
+		},
+		reviewedAtIso,
+	);
 
 	if (!options.assumeNew) {
 		const { data: existingItems, error: selectError } = await supabase
@@ -319,9 +338,13 @@ export async function upsertItemByExternalUrl(
 		// 一度採用され公開中の記事（既存行 ai_accepted=true）は、収集ジョブの再レビューが棄却に
 		// 反転しても格下げしない（retag-existing-items.mjs の「不採用判定は警告のみ」方針と揃える）。
 		// 境界記事では判定が揺れうるため、ここで上書きを許すと公開記事が収集のたびに一覧から
-		// 見えたり消えたりする。metadata/summary も含め一切書き込まず既存 id を返す
+		// 見えたり消えたりする。ai_accepted/metadata/summary は一切書き込まないが、直近レビュー列
+		// （ai_last_review_*、migrations/025）だけは常に上書きする。これにより「ai_accepted=true
+		// のまま古いプロンプト基準の判定が凍結されている」をSQLで検出できるようにする
 		// （判定ロジックと詳しい理由は process-import-item.ts の shouldPreserveAcceptedItem を参照）。
 		if (existing && shouldPreserveAcceptedItem(existing.ai_accepted, payload.aiAccepted)) {
+			const { error: reviewUpdateError } = await supabase.from('items').update(aiReviewColumns).eq('id', existing.id);
+			if (reviewUpdateError) throw reviewUpdateError;
 			return { id: existing.id, action: 'skipped' };
 		}
 	}
@@ -344,6 +367,7 @@ export async function upsertItemByExternalUrl(
 				body: payload.body ?? null,
 				ai_accepted: payload.aiAccepted,
 				language: payload.language,
+				...aiReviewColumns,
 			},
 			{ onConflict: 'external_url' },
 		)
