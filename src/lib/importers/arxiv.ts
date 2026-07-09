@@ -3,7 +3,7 @@
 //   - items.kind は 'article' ではなく 'paper'（docs/plan/paper.md）。
 //   - 本文（body）は HTML 記事本文ではなくアブストラクト全文をそのまま使う。
 //   - 採否基準・要約文字数は article-ai.ts 経由で kind='paper' を渡し、
-//     src/config/ai-review-prompt.mjs 側で論文向けに出し分ける。
+//     ai-review-prompt.mjs 側で論文向けに出し分ける。
 //
 // 収集クエリはキーワードのみで広く収集し、AIレビューを安全網にする方針を取る
 // （Brave収集・はてなブックマーク収集と同じパターン。docs/plan/paper.md 参照）。

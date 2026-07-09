@@ -10,7 +10,7 @@
 // 前提のためプレーンな Node スクリプトから import できない（他の scripts/db/*.mjs も同じ理由
 // で src/lib を import せず、同等のロジックをスクリプト内に複製している）。そのため本スクリプト
 // でも reviewImportArticle（応答パース）と syncItemTags（タグ差分同期）相当のロジックを
-// このファイル内に複製している。ただし system prompt 自体は src/config/ai-review-prompt.mjs・
+// このファイル内に複製している。ただし system prompt 自体は src/lib/importers/ai-review-prompt.mjs・
 // topic.config.mjs（cloudflare:workers に依存しないプレーンJS）を直接 import して共有するため、
 // トピック設定を変更してもここを個別に直す必要はない。タグ同期ロジックを変更した場合は、
 // src/lib/importers/common.ts と本ファイルの両方を更新すること。
@@ -41,7 +41,7 @@
 //   node --env-file=.env.production scripts/db/retag-existing-items.mjs             # 全件実行（要事前確認）
 import { createClient } from '@supabase/supabase-js';
 import { topic } from '../../src/config/topic.config.mjs';
-import { buildSystemPrompt } from '../../src/config/ai-review-prompt.mjs';
+import { buildSystemPrompt } from '../../src/lib/importers/ai-review-prompt.mjs';
 
 const MAX_AI_TAGS = 5; // src/lib/importers/article-ai.ts の normalizeAiTags と合わせる
 const MAX_AI_BODY_CHARS = 4000; // 各インポーター（qiita/zenn/note/blog）の MAX_AI_BODY_CHARS と合わせる
@@ -82,7 +82,7 @@ const supabase = createClient(url, key, { detectSessionInUrl: false });
 
 // ---------------------------------------------------------------------------
 // 以下、src/lib/importers/article-ai.ts 相当（OpenAI 呼び出し・応答パース）。
-// システムプロンプトは src/config/ai-review-prompt.mjs の buildSystemPrompt を共有する。
+// システムプロンプトは src/lib/importers/ai-review-prompt.mjs の buildSystemPrompt を共有する。
 // ---------------------------------------------------------------------------
 
 const SYSTEM_PROMPT = buildSystemPrompt(topic);

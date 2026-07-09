@@ -13,6 +13,8 @@
 3. `public/favicon.svg`・`og-image.png`/`og-image.svg` を差し替え、必要なら `src/layouts/Layout.astro` の配色（`--accent`・`.brand-r` 等）も調整する。
 4. `npm run build` でエラーが無いことを確認する。
 
+`.env`/`.env.production` はDB接続情報・APIキー・ジョブごとのチューニング値のみでトピック固有の値を含まないため、再配布時に書き換える必要はない。
+
 ## Project Structure
 
 ```text

@@ -9,7 +9,7 @@
 // 要約は論文の内容量に合わせて article より長め（200字程度）にする。
 
 /**
- * @param {import('./topic.config.mjs').topic} topic
+ * @param {import('../../config/topic.config.mjs').topic} topic
  * @param {'article' | 'paper'} [kind]
  */
 export function buildSystemPrompt(topic, kind = 'article') {

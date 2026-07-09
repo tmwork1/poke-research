@@ -1,5 +1,11 @@
 import { topic } from '../../config/topic.config.mjs';
 
+// ============================================================================
+// ここから: topic.config.mjs の値の窓口。トピックを変えるときはここではなく
+// topic.config.mjs を編集する（このファイルはラップして意味のある名前を
+// 付けているだけで、値自体は保持しない）。
+// ============================================================================
+
 // Qiita/note などキーワード検索型のインポーターが共通で使う検索語彙。
 // 新しい略称・愛称（例: 「ポケカ」）を追加・削除したい場合は、各インポーター本体ではなく
 // src/config/topic.config.mjs の collection.searchKeywords を編集する
@@ -18,6 +24,12 @@ export const POKEMON_KEYWORDS = topic.collection.searchKeywords;
 // 中心。10件確認済みだが今回は対象外としている。追加する場合は topic.config.mjs の
 // collection.zennTopics に足すだけでよい）。
 export const ZENN_TOPICS = topic.collection.zennTopics;
+
+// ============================================================================
+// ここから: 収集基盤（ブログ発見）の共通定数。トピックに依らず変更不要。
+// 例外的に EXCLUDED_BLOG_DOMAINS のみ、末尾で topic.config.mjs の
+// collection.extraExcludedBlogDomains（トピック固有の追加除外ドメイン）を合成する。
+// ============================================================================
 
 // Brave Search が対象外サービスや GitHub/YouTube、および検索結果の枠を占有しがちな企業攻略
 // サイトを返さないよう、クエリの -site: と結果フィルタの両方で使う共有リスト。
