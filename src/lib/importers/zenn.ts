@@ -8,10 +8,12 @@ import {
 	mapWithConcurrency,
 	processImportItem,
 	stripHtml,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { ZENN_TOPICS } from './keywords';
 import { parsePositiveInteger } from '../params';
@@ -244,6 +246,7 @@ async function reviewAndUpsertZennArticle(
 	topic: string,
 	fetchedAt: string,
 	existingTags: string[],
+	pendingTagEntries: ItemTagSyncEntry[],
 ): Promise<ImportItemOutcome> {
 	const url = articleUrl(detail);
 
@@ -263,8 +266,9 @@ async function reviewAndUpsertZennArticle(
 				updatedAt: detail.body_updated_at ?? detail.published_at,
 				bodyExcerpt: createAiBodyExcerpt(detail),
 			}),
-		(review) =>
-			upsertItemByExternalUrl(
+		(review) => {
+			const tags = review.tags.length > 0 ? review.tags : extractTags(detail);
+			return upsertItemByExternalUrl(
 				{
 					sourceId,
 					externalUrl: url,
@@ -280,12 +284,17 @@ async function reviewAndUpsertZennArticle(
 					aiAccepted: review.accepted,
 					language: review.language,
 				},
-				review.tags.length > 0 ? review.tags : extractTags(detail),
+				tags,
 				undefined,
 				// 直前に existingUrls でこの記事が新規であることを確認済みのため、
-				// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。
-				{ syncTags: review.accepted, assumeNew: true },
-			),
+				// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。タグ同期は
+				// ここでは行わず（syncTags: false）、呼び出し元でまとめて行う。
+				{ syncTags: false, assumeNew: true },
+			).then((result) => {
+				if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags });
+				return result;
+			});
+		},
 	);
 }
 
@@ -314,6 +323,10 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 
 	const detailResults = await mapWithConcurrency(newArticles, IMPORT_CONCURRENCY, (article) => fetchZennDetailSafely(article.slug));
 
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
 	const processedResults = await mapWithConcurrency(detailResults, IMPORT_CONCURRENCY, (result) => {
 		if (!result.detail) {
 			return Promise.resolve<ImportItemOutcome>({
@@ -325,8 +338,10 @@ export async function syncZennCollection(options: ZennSyncOptions = {}): Promise
 			});
 		}
 
-		return reviewAndUpsertZennArticle(result.detail, source.id, topic, fetchedAt, existingTags);
+		return reviewAndUpsertZennArticle(result.detail, source.id, topic, fetchedAt, existingTags, pendingTagEntries);
 	});
+
+	await syncNewItemTagsBatch(pendingTagEntries);
 
 	const skippedKnownResults: ImportItemOutcome[] = listArticles
 		.filter((article) => existingUrls.has(pathToUrl(article.path)))

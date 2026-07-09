@@ -9,11 +9,13 @@ import {
 	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertFeedSubscription,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { EXCLUDED_BLOG_DOMAINS, isExcludedBlogDomain, KNOWN_BLOG_PLATFORMS, OTHER_BLOG_SOURCE, POKEMON_KEYWORDS } from './keywords';
 import { topic } from '../../config/topic.config.mjs';
@@ -355,7 +357,12 @@ function createItemMetadata(
 	};
 }
 
-async function processBlogCandidate(candidate: BlogCandidate, fetchedAt: string, existingTags: string[]): Promise<ImportItemOutcome> {
+async function processBlogCandidate(
+	candidate: BlogCandidate,
+	fetchedAt: string,
+	existingTags: string[],
+	pendingTagEntries: ItemTagSyncEntry[],
+): Promise<ImportItemOutcome> {
 	// 記事単位の失敗（fetch失敗、非HTML、抽出不足など）はここで吸収し、バッチ全体を止めない。
 	try {
 		const response = await fetchCandidatePage(candidate.url);
@@ -413,7 +420,7 @@ async function processBlogCandidate(candidate: BlogCandidate, fetchedAt: string,
 					metadata: createSourceMetadata(candidate.query, fetchedAt),
 				});
 
-				return upsertItemByExternalUrl(
+				const result = await upsertItemByExternalUrl(
 					{
 						sourceId: source.id,
 						externalUrl,
@@ -431,8 +438,11 @@ async function processBlogCandidate(candidate: BlogCandidate, fetchedAt: string,
 					},
 					review.tags,
 					review.tagLabels,
-					{ syncTags: review.accepted },
+					// タグ同期はここでは行わず（syncTags: false）、呼び出し元でまとめて行う。
+					{ syncTags: false },
 				);
+				if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags: review.tags, tagLabels: review.tagLabels });
+				return result;
 			},
 		);
 	} catch (error) {
@@ -463,9 +473,14 @@ export async function syncBlogCollection(options: BlogSyncOptions = {}): Promise
 	const existingUrls = await findExistingExternalUrls(candidates.map((candidate) => candidate.url));
 	const newCandidates = candidates.filter((candidate) => !existingUrls.has(candidate.url));
 
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
 	const processedResults = await mapWithConcurrency(newCandidates, IMPORT_CONCURRENCY, (candidate) =>
-		processBlogCandidate(candidate, fetchedAt, existingTags),
+		processBlogCandidate(candidate, fetchedAt, existingTags, pendingTagEntries),
 	);
+	await syncNewItemTagsBatch(pendingTagEntries);
 	const skippedKnownResults: ImportItemOutcome[] = candidates
 		.filter((candidate) => existingUrls.has(candidate.url))
 		.map((candidate) => ({ id: null, action: 'skipped', externalUrl: candidate.url, title: candidate.title, reason: 'already collected' }));

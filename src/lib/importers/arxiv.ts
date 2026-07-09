@@ -21,10 +21,12 @@ import {
 	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
@@ -202,6 +204,10 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 	// 方針のため、判定は既存かどうかのみ。cronのsubrequest数・OpenAI課金を抑える）。
 	const existingUrls = await findExistingExternalUrls(entries.map((entry) => canonicalizeAbsUrl(entry.id)));
 
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
 	const itemResults = await mapWithConcurrency(entries, IMPORT_CONCURRENCY, (entry) => {
 		const externalUrl = canonicalizeAbsUrl(entry.id);
 
@@ -255,11 +261,17 @@ export async function syncArxivCollection(options: ArxivSyncOptions = {}): Promi
 					review.tags,
 					undefined,
 					// 直前に existingUrls でこの候補が新規であることを確認済みのため、
-					// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。
-					{ syncTags: review.accepted, assumeNew: true },
-				),
+					// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。タグ同期は
+					// ここでは行わず（syncTags: false）、下の pendingTagEntries でまとめて行う。
+					{ syncTags: false, assumeNew: true },
+				).then((result) => {
+					if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags: review.tags });
+					return result;
+				}),
 		);
 	});
+
+	await syncNewItemTagsBatch(pendingTagEntries);
 
 	let inserted = 0;
 	let updated = 0;

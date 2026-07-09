@@ -16,11 +16,13 @@ import {
 	findExistingExternalUrls,
 	mapWithConcurrency,
 	processImportItem,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertFeedSubscription,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { parseHatenaSearchRss } from './hatena-feed';
 import { isExcludedBlogDomain, POKEMON_KEYWORDS } from './keywords';
@@ -190,7 +192,12 @@ function createItemMetadata(
 	};
 }
 
-async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: string, existingTags: string[]): Promise<ImportItemOutcome> {
+async function processHatenaCandidate(
+	candidate: HatenaCandidate,
+	fetchedAt: string,
+	existingTags: string[],
+	pendingTagEntries: ItemTagSyncEntry[],
+): Promise<ImportItemOutcome> {
 	// 記事単位の失敗（fetch失敗、非HTML、抽出不足など）はここで吸収し、バッチ全体を止めない。
 	try {
 		const response = await fetchCandidatePage(candidate.url, HATENA_USER_AGENT);
@@ -247,7 +254,7 @@ async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: str
 					metadata: createSourceMetadata(candidate.keyword, fetchedAt),
 				});
 
-				return upsertItemByExternalUrl(
+				const result = await upsertItemByExternalUrl(
 					{
 						sourceId: source.id,
 						externalUrl,
@@ -265,8 +272,11 @@ async function processHatenaCandidate(candidate: HatenaCandidate, fetchedAt: str
 					},
 					review.tags,
 					review.tagLabels,
-					{ syncTags: review.accepted },
+					// タグ同期はここでは行わず（syncTags: false）、呼び出し元でまとめて行う。
+					{ syncTags: false },
 				);
+				if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags: review.tags, tagLabels: review.tagLabels });
+				return result;
 			},
 		);
 	} catch (error) {
@@ -295,9 +305,14 @@ export async function syncHatenaCollection(options: HatenaSyncOptions = {}): Pro
 	const existingUrls = await findExistingExternalUrls(candidates.map((candidate) => candidate.url));
 	const newCandidates = candidates.filter((candidate) => !existingUrls.has(candidate.url));
 
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
 	const processedResults = await mapWithConcurrency(newCandidates, IMPORT_CONCURRENCY, (candidate) =>
-		processHatenaCandidate(candidate, fetchedAt, existingTags),
+		processHatenaCandidate(candidate, fetchedAt, existingTags, pendingTagEntries),
 	);
+	await syncNewItemTagsBatch(pendingTagEntries);
 	const skippedKnownResults: ImportItemOutcome[] = candidates
 		.filter((candidate) => existingUrls.has(candidate.url))
 		.map((candidate) => ({ id: null, action: 'skipped', externalUrl: candidate.url, title: candidate.title, reason: 'already collected' }));

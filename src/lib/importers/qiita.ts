@@ -7,10 +7,12 @@ import {
 	mapWithConcurrency,
 	processImportItem,
 	stripHtml,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { POKEMON_KEYWORDS } from './keywords';
 import { parsePositiveInteger } from '../params';
@@ -265,6 +267,10 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 	// 方針のため、判定は既存かどうかのみ。cronのsubrequest数・OpenAI課金を抑える）。
 	const existingUrls = await findExistingExternalUrls(items.map((item) => item.url));
 
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
 	const itemResults = await mapWithConcurrency(items, IMPORT_CONCURRENCY, (item) => {
 		if (existingUrls.has(item.url)) {
 			return Promise.resolve<ImportItemOutcome>({
@@ -292,8 +298,9 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 					updatedAt: item.updated_at,
 					bodyExcerpt: createAiBodyExcerpt(item),
 				}),
-			(review) =>
-				upsertItemByExternalUrl(
+			(review) => {
+				const tags = review.tags.length > 0 ? review.tags : extractTags(item);
+				return upsertItemByExternalUrl(
 					{
 						sourceId: source.id,
 						externalUrl: item.url,
@@ -309,14 +316,21 @@ export async function syncQiitaCollection(options: QiitaSyncOptions = {}): Promi
 						aiAccepted: review.accepted,
 						language: review.language,
 					},
-					review.tags.length > 0 ? review.tags : extractTags(item),
+					tags,
 					undefined,
 					// 直前に existingUrls でこの候補が新規であることを確認済みのため、
-					// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。
-					{ syncTags: review.accepted, assumeNew: true },
-				),
+					// upsertItemByExternalUrl 内の既存行チェック（select）を省略できる。タグ同期は
+					// ここでは行わず（syncTags: false）、下の pendingTagEntries でまとめて行う。
+					{ syncTags: false, assumeNew: true },
+				).then((result) => {
+					if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags });
+					return result;
+				});
+			},
 		);
 	});
+
+	await syncNewItemTagsBatch(pendingTagEntries);
 
 	let inserted = 0;
 	let updated = 0;

@@ -176,6 +176,46 @@ export async function syncItemTags(itemId: number, tagNames: string[], tagLabels
 	}
 }
 
+export interface ItemTagSyncEntry {
+	itemId: number;
+	tags: string[];
+	tagLabels?: Record<string, string>;
+}
+
+/**
+ * cronジョブ向けのバッチタグ同期。ジョブ内で新規挿入されたばかりの記事（＝item_tagsに既存行が
+ * 無いことが前提）をまとめて渡すことで、ensureTags（タグ解決）を記事N件でも1回に、item_tagsの
+ * insertも1回にまとめる（syncItemTagsのように既存行との差分削除は行わない。既存記事は
+ * findExistingExternalUrls等で呼び出し前にスキップされているため、ここに来るのは常に新規行）。
+ */
+export async function syncNewItemTagsBatch(entries: ItemTagSyncEntry[]): Promise<void> {
+	const targets = entries.filter((entry) => entry.tags.length > 0);
+	if (targets.length === 0) return;
+
+	const mergedTagLabels: Record<string, string> = {};
+	for (const entry of targets) {
+		if (entry.tagLabels) Object.assign(mergedTagLabels, entry.tagLabels);
+	}
+	const tagIdMap = await ensureTags(
+		targets.flatMap((entry) => entry.tags),
+		mergedTagLabels,
+	);
+
+	const rows: Array<{ item_id: number; tag_id: number }> = [];
+	for (const entry of targets) {
+		const normalizedTagNames = [...new Set(entry.tags.map(normalizeTagName).filter((tagName) => tagName.length > 0))];
+		for (const tagName of normalizedTagNames) {
+			const tagId = tagIdMap.get(tagName);
+			if (tagId !== undefined) rows.push({ item_id: entry.itemId, tag_id: tagId });
+		}
+	}
+	if (rows.length === 0) return;
+
+	const supabase = await getSupabaseClient();
+	const { error } = await supabase.from('item_tags').insert(rows);
+	if (error && error.code !== '23505') throw error;
+}
+
 export async function fetchTopTagNames(limit = 40): Promise<string[]> {
 	// AIレビューがタグを新規発明しがちな問題を減らすため、使用頻度の高い既存タグを
 	// 事前に取得し、判定プロンプトへの再利用ヒントとして渡す。

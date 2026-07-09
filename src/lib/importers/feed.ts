@@ -16,11 +16,13 @@ import {
 	mapWithConcurrency,
 	processImportItem,
 	recordFeedFetchOutcome,
+	syncNewItemTagsBatch,
 	truncateBodyForStorage,
 	upsertItemByExternalUrl,
 	upsertSourceByOriginUrl,
 	type FeedSubscription,
 	type ImportItemOutcome,
+	type ItemTagSyncEntry,
 } from './common';
 import { parseFeed } from './feed-xml';
 import { topic } from '../../config/topic.config.mjs';
@@ -167,7 +169,12 @@ function createItemMetadata(
 	};
 }
 
-async function processFeedCandidate(candidate: FeedCandidate, fetchedAt: string, existingTags: string[]): Promise<ImportItemOutcome> {
+async function processFeedCandidate(
+	candidate: FeedCandidate,
+	fetchedAt: string,
+	existingTags: string[],
+	pendingTagEntries: ItemTagSyncEntry[],
+): Promise<ImportItemOutcome> {
 	// 記事単位の失敗（fetch失敗、非HTML、抽出不足など）はここで吸収し、バッチ全体を止めない。
 	try {
 		const response = await fetchCandidatePage(candidate.url, FEED_USER_AGENT);
@@ -218,7 +225,7 @@ async function processFeedCandidate(candidate: FeedCandidate, fetchedAt: string,
 					metadata: createSourceMetadata(candidate.feedUrl, fetchedAt),
 				});
 
-				return upsertItemByExternalUrl(
+				const result = await upsertItemByExternalUrl(
 					{
 						sourceId: source.id,
 						externalUrl,
@@ -236,8 +243,11 @@ async function processFeedCandidate(candidate: FeedCandidate, fetchedAt: string,
 					},
 					review.tags,
 					review.tagLabels,
-					{ syncTags: review.accepted },
+					// タグ同期はここでは行わず（syncTags: false）、呼び出し元でまとめて行う。
+					{ syncTags: false },
 				);
+				if (review.accepted) pendingTagEntries.push({ itemId: result.id, tags: review.tags, tagLabels: review.tagLabels });
+				return result;
 			},
 		);
 	} catch (error) {
@@ -259,9 +269,14 @@ export async function syncFeedCollection(options: FeedSyncOptions = {}): Promise
 
 	const { candidates, feedsPolled, requestsUsed } = await discoverCandidates(subscriptions, maxEntriesPerFeed);
 
+	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う
+	// （ensureTags・item_tags insertをジョブ内で記事N件でも固定回数に抑える）。
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+
 	const itemResults = await mapWithConcurrency(candidates, IMPORT_CONCURRENCY, (candidate) =>
-		processFeedCandidate(candidate, fetchedAt, existingTags),
+		processFeedCandidate(candidate, fetchedAt, existingTags, pendingTagEntries),
 	);
+	await syncNewItemTagsBatch(pendingTagEntries);
 
 	let inserted = 0;
 	let updated = 0;
