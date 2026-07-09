@@ -423,7 +423,20 @@ async function main() {
 
       console.log(`#${item.id} "${item.title}": summary/タグを更新${dryRun ? '予定' : ''} -> tags=[${review.tags.join(', ')}] (language: ${review.language}, confidence: ${review.confidence}, reason: ${review.reason})`);
       if (!dryRun) {
-        const { error: updateError } = await supabase.from('items').update({ summary: review.summary }).eq('id', item.id);
+        // ai_review_*（migrations/025）は「公開中の内容を生んだ判定」なので、summaryが実際に
+        // 更新されるこのタイミングでのみ ai_recheck_* と同じ値を書き込む（不採用分岐では
+        // summary/タグ同様、更新しない）。
+        const { error: updateError } = await supabase
+          .from('items')
+          .update({
+            summary: review.summary,
+            ai_review_model: model,
+            ai_review_prompt_version: PROMPT_VERSION,
+            ai_review_reason: review.reason,
+            ai_review_confidence: review.confidence ?? null,
+            ai_reviewed_at: new Date().toISOString(),
+          })
+          .eq('id', item.id);
         if (updateError) throw updateError;
         await syncItemTags(item.id, review.tags, review.tagLabels);
       }

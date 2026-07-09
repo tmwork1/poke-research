@@ -1,7 +1,7 @@
 // 複数の収集元（Qiita/Zenn/...）で共通する DB 書き込み・並列実行処理をまとめる。
 // ソース固有のフィールドマッピングは各インポーター側に残し、ここでは汎用部分だけを扱う。
 import { normalizeTagName } from './article-ai';
-import { buildAiRecheckColumns, shouldPreserveAcceptedItem } from './process-import-item';
+import { buildAiRecheckColumns, buildAiReviewColumns, shouldPreserveAcceptedItem } from './process-import-item';
 import { getSupabaseClient } from '../supabase';
 import { normalizeSource, type ItemRow } from '../catalog-normalize';
 
@@ -349,6 +349,20 @@ export async function upsertItemByExternalUrl(
 		}
 	}
 
+	// ai_review_*（migrations/025）は、ai_accepted/summary/metadata が実際に書き込まれるこの
+	// upsert 経路でのみ更新する（preserve-skip 分岐では更新しない）。これにより「今公開されている
+	// 内容を生んだ判定」を ai_recheck_*（常に最新）と同じフラット列同士でSQL比較できるようにする
+	// （process-import-item.ts の buildAiReviewColumns 参照）。
+	const aiReviewColumns = buildAiReviewColumns(
+		{
+			model: payload.aiRecheckModel,
+			promptVersion: payload.aiRecheckPromptVersion,
+			reason: payload.aiRecheckReason,
+			confidence: payload.aiRecheckConfidence,
+		},
+		recheckedAtIso,
+	);
+
 	const { data: upserted, error: upsertError } = await supabase
 		.from('items')
 		.upsert(
@@ -368,6 +382,7 @@ export async function upsertItemByExternalUrl(
 				ai_accepted: payload.aiAccepted,
 				language: payload.language,
 				...aiRecheckColumns,
+				...aiReviewColumns,
 			},
 			{ onConflict: 'external_url' },
 		)
