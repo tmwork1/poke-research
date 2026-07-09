@@ -49,12 +49,15 @@ const ARXIV_KEYWORDS = POKEMON_KEYWORDS.filter((keyword) => /^[a-z0-9]+$/i.test(
 // arXivの検索インデックスはアクセント記号のfoldingを行わないため、"pokemon"では
 // "Pokémon"表記（アクセント付きé）のみを使う論文がヒットしない（実例:
 // arXiv:2504.04395 "Human-Level Competitive Pokémon via..."。all:pokemonでは0件、
-// all:pokémonでは別途32件ヒットを確認）。pokemonを含むキーワードに限り、アクセント付き
-// 表記も OR で束ねて取りこぼしを防ぐ。
-const ARXIV_ACCENTED_VARIANTS: Record<string, string> = { pokemon: 'pokémon' };
+// all:pokémonでは別途32件ヒットを確認）。また"pokemon"は語（トークン）単位で照合されるため、
+// スペース無しの複合語表記（例: "PokemonGO"）も別トークンとして扱われヒットしない（実例:
+// arXiv:2304.02952 "Gotta Assess 'Em All: ... Facilitated through PokemonGO"。
+// 2026-07-10、scripts/eval/eval-recall.mjs --source=arxiv での再現率チェックで発見）。
+// pokemonを含むキーワードに限り、これらの表記も OR で束ねて取りこぼしを防ぐ。
+const ARXIV_KEYWORD_VARIANTS: Record<string, string[]> = { pokemon: ['pokémon', 'pokemongo'] };
 const ARXIV_QUERY_TERMS = ARXIV_KEYWORDS.flatMap((keyword) => {
-	const accented = ARXIV_ACCENTED_VARIANTS[keyword.toLowerCase()];
-	return accented ? [keyword, accented] : [keyword];
+	const variants = ARXIV_KEYWORD_VARIANTS[keyword.toLowerCase()] ?? [];
+	return [keyword, ...variants];
 });
 const DEFAULT_QUERY = ARXIV_QUERY_TERMS.map((keyword) => `all:${keyword}`).join(' OR ');
 
