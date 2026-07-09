@@ -184,8 +184,12 @@ function toggleSource(sourceId: number) {
 </section>
 
 <style>
+	/* grid-template-columns を省略すると暗黙列が内容の max-content 幅で決まり、
+	   中の折り返し不可な要素（例: 検索欄の「条件をリセット」リンク）分だけ
+	   コンテナ幅を超えて右にはみ出してしまう。1fr を明示してその崩れを防ぐ。 */
 	.catalog {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 24px;
 	}
 
@@ -205,11 +209,13 @@ function toggleSource(sourceId: number) {
 
 	.panel {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 20px;
 	}
 
 	.filters {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 14px;
 	}
 
