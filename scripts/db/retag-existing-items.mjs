@@ -86,7 +86,7 @@ const supabase = createClient(url, key, { detectSessionInUrl: false });
 // ---------------------------------------------------------------------------
 
 const SYSTEM_PROMPT = buildSystemPrompt(topic);
-// items.ai_last_review_prompt_version（migrations/025）に書き込むハッシュ。SYSTEM_PROMPT と同じ
+// items.ai_recheck_prompt_version（migrations/025）に書き込むハッシュ。SYSTEM_PROMPT と同じ
 // kind='article' 前提で計算する（このスクリプト自体が kind を区別せず全アイテムを article 基準で
 // 再評価する既存の制約に合わせている。paper については別途要検討、今回のタスクのスコープ外）。
 const PROMPT_VERSION = await computePromptVersion(topic);
@@ -395,19 +395,19 @@ async function main() {
 
       // language（migrations/021）は主題の採否とは独立した事実情報のため、不採用でも
       // 既存の「公開済みアイテムは自動非公開・削除にしない」方針とは別に書き込む。
-      // ai_last_review_*（migrations/025）も、ai_accepted 自体は書き換えない方針とは無関係に
+      // ai_recheck_*（migrations/025）も、ai_accepted 自体は書き換えない方針とは無関係に
       // 常に上書きする（「今の基準なら本当はどう判定されるか」をSQLで追検証できるようにする）。
       if (!dryRun) {
         const { error: languageError } = await supabase
           .from('items')
           .update({
             language: review.language,
-            ai_last_review_accepted: review.accepted,
-            ai_last_review_model: model,
-            ai_last_review_prompt_version: PROMPT_VERSION,
-            ai_last_review_reason: review.reason,
-            ai_last_review_confidence: review.confidence ?? null,
-            ai_last_reviewed_at: new Date().toISOString(),
+            ai_recheck_accepted: review.accepted,
+            ai_recheck_model: model,
+            ai_recheck_prompt_version: PROMPT_VERSION,
+            ai_recheck_reason: review.reason,
+            ai_recheck_confidence: review.confidence ?? null,
+            ai_rechecked_at: new Date().toISOString(),
           })
           .eq('id', item.id);
         if (languageError) throw languageError;

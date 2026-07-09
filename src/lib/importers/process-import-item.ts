@@ -33,30 +33,34 @@ export function shouldPreserveAcceptedItem(existingAiAccepted: boolean | undefin
 }
 
 /**
- * items.ai_last_review_* 列（migrations/025）の値。ai_accepted とは別に、直近の再レビューが
- * 何を条件に何と判定したかを常に上書き記録する（shouldPreserveAcceptedItem で ai_accepted の
- * 更新が握りつぶされた場合でも、こちらは常に更新する。common.ts の upsertItemByExternalUrl 参照）。
+ * items.ai_recheck_* 列（migrations/025）の値。ai_accepted や items.metadata->'ai'（公開中の
+ * 内容と対になり凍結される詳細ログ）とは別に、直近の再チェックが何を条件に何と判定したかを
+ * 常に上書き記録する（shouldPreserveAcceptedItem で ai_accepted の更新が握りつぶされた場合でも、
+ * こちらは常に更新する。common.ts の upsertItemByExternalUrl 参照）。
+ * 列名に「recheck」を残すのは単なる装飾ではなく、「公開中の内容（ai_accepted/metadata.ai）とは
+ * 意図的に食い違いうる、常に最新化される再チェック結果」であることを示す実質的な区別のため
+ * （docs/issue/items-schema-scalability.md 参照）。
  */
-export interface AiReviewColumns {
-	ai_last_review_accepted: boolean;
-	ai_last_review_model: string;
-	ai_last_review_prompt_version: string;
-	ai_last_review_reason: string;
-	ai_last_review_confidence: number | null;
-	ai_last_reviewed_at: string;
+export interface AiRecheckColumns {
+	ai_recheck_accepted: boolean;
+	ai_recheck_model: string;
+	ai_recheck_prompt_version: string;
+	ai_recheck_reason: string;
+	ai_recheck_confidence: number | null;
+	ai_rechecked_at: string;
 }
 
-export function buildAiReviewColumns(
+export function buildAiRecheckColumns(
 	review: { accepted: boolean; model: string; promptVersion: string; reason: string; confidence: number | null },
-	reviewedAtIso: string,
-): AiReviewColumns {
+	recheckedAtIso: string,
+): AiRecheckColumns {
 	return {
-		ai_last_review_accepted: review.accepted,
-		ai_last_review_model: review.model,
-		ai_last_review_prompt_version: review.promptVersion,
-		ai_last_review_reason: review.reason,
-		ai_last_review_confidence: review.confidence,
-		ai_last_reviewed_at: reviewedAtIso,
+		ai_recheck_accepted: review.accepted,
+		ai_recheck_model: review.model,
+		ai_recheck_prompt_version: review.promptVersion,
+		ai_recheck_reason: review.reason,
+		ai_recheck_confidence: review.confidence,
+		ai_rechecked_at: recheckedAtIso,
 	};
 }
 

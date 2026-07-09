@@ -87,7 +87,7 @@ export function buildSystemPrompt(topic, kind = 'article') {
 	);
 }
 
-// buildSystemPrompt(topic, kind) の出力をハッシュ化し、items.ai_last_review_prompt_version に
+// buildSystemPrompt(topic, kind) の出力をハッシュ化し、items.ai_recheck_prompt_version に
 // 記録する短い識別子を作る（docs/progress/2026-07-10.md: 「ai_accepted=true のまま古いプロンプト
 // 基準の判定が凍結されている記事」をSQLで抽出できるようにする目的）。
 // crypto.subtle は Cloudflare Workers と Node(>=22.15.0、package.json engines) の両方で
