@@ -241,14 +241,13 @@ const showUpdatedBadge = Boolean(
 		color: var(--accent-dark);
 	}
 
+	/* カード一覧は1カラム固定（Qiita風）で高さを揃える必要がないため、行数クランプはせず
+	   要約を全文表示する。画面幅が変わっても文字数と行の折り返し行数の関係が変わるだけで、
+	   固定行数のクランプでは画面サイズによって見切れたり余白が出たりしてしまうため。 */
 	.summary {
 		margin: 0;
 		color: var(--text-muted);
 		line-height: 1.7;
-		display: -webkit-box;
-		-webkit-line-clamp: 3;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
 	}
 
 	mark {
