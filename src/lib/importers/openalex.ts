@@ -15,6 +15,7 @@
 // （分30スロット）へ組み込み済み（docs/issue/cron-subrequest-limit.md参照）。
 // 手動起動用API（POST /api/import/openalex）も引き続き利用できる。
 import { reviewImportArticle } from './article-ai';
+import { computePromptHash } from './ai-review-prompt.mjs';
 import {
 	fetchTopTagNames,
 	findExistingExternalUrls,
@@ -322,4 +323,192 @@ export async function syncOpenAlexCollection(options: OpenAlexSyncOptions = {}):
 		fetchedAt,
 		items: itemResults,
 	};
+}
+
+// 2026-07-10、OpenAlex過去分の手動バックフィル用（一度きり）。ユーザー指示により、この
+// バックフィル分のみOpenAIのAIレビューを使わず、Claude Codeセッション内のHaikuサブエージェントに
+// 直接判定させる（cronの日次収集は今まで通りOpenAI・reviewImportArticleを使う、article-ai.tsは
+// 変更しない）。判定ロジック自体はDB書き込みの正しさに直結するため独自実装せず、既存のDB書き込み
+// パス（upsertItemByExternalUrl・syncNewItemTagsBatch等）をそのまま再利用し、判定結果の
+// 出所（OpenAI呼び出し vs 手動セッション判定）だけを切り替えられるようにしている。
+
+export interface OpenAlexCandidate {
+	externalUrl: string;
+	title: string;
+	authors: string[];
+	abstract: string;
+	openalexId: string;
+	doi: string | null;
+	type: string | null;
+	isOa: boolean | null;
+	citedByCount: number | null;
+	indexedIn: string[];
+	publishedAt: string | null;
+	updatedAt: string | null;
+	version: string;
+}
+
+export interface OpenAlexCandidatesResult {
+	filter: string;
+	maxResults: number;
+	page: number;
+	fetched: number;
+	candidates: OpenAlexCandidate[];
+	sourceId: number;
+	fetchedAt: string;
+}
+
+// AIレビュー（reviewImportArticle）を呼ばず、DB未収録の候補を生データのまま返す
+// （手動セッション判定用。DB書き込みは行わない）。
+export async function fetchOpenAlexCandidates(options: OpenAlexSyncOptions = {}): Promise<OpenAlexCandidatesResult> {
+	const filter = normalizeFilter(options.filter);
+	const maxResults = parsePositiveInteger(options.maxResults, DEFAULT_MAX_RESULTS);
+	const page = Number.isInteger(options.page) && (options.page as number) >= 1 ? (options.page as number) : 1;
+	const fetchedAt = new Date().toISOString();
+
+	const { apiKey } = getOpenAlexConfig();
+	if (!apiKey) {
+		throw new Error('OPENALEX_API_KEY is required to sync OpenAlex works');
+	}
+
+	const [works, source] = await Promise.all([
+		fetchOpenAlexWorks(filter, maxResults, apiKey, page),
+		upsertSourceByOriginUrl({
+			name: OPENALEX_SOURCE_NAME,
+			type: 'openalex',
+			originUrl: OPENALEX_SOURCE_ORIGIN_URL,
+			metadata: createSourceMetadata(filter, fetchedAt, maxResults, page),
+		}),
+	]);
+
+	const existingUrls = await findExistingExternalUrls(works.map((work) => selectExternalUrl(work)));
+	const newWorks = works.filter((work) => !existingUrls.has(selectExternalUrl(work)));
+
+	const candidates: OpenAlexCandidate[] = newWorks.map((work) => ({
+		externalUrl: selectExternalUrl(work),
+		title: resolveTitle(work),
+		authors: extractAuthors(work),
+		abstract: reconstructAbstract(work.abstract_inverted_index),
+		openalexId: work.id,
+		doi: work.doi ?? null,
+		type: work.type ?? null,
+		isOa: work.open_access?.is_oa ?? null,
+		citedByCount: work.cited_by_count ?? null,
+		indexedIn: work.indexed_in ?? [],
+		publishedAt: work.publication_date ?? null,
+		updatedAt: work.updated_date ?? null,
+		version: work.updated_date ?? work.id,
+	}));
+
+	return { filter, maxResults, page, fetched: works.length, candidates, sourceId: source.id, fetchedAt };
+}
+
+export interface OpenAlexManualReview extends OpenAlexCandidate {
+	accepted: boolean;
+	summary: string;
+	tags: string[];
+	reason: string;
+	confidence?: number;
+	language: string;
+}
+
+// 手動セッション判定であることをDB上で識別できるよう、モデル名に明記する
+// （items.ai_recheck_model・ai_review_model、docs/progress/2026-07-10.md参照）。
+export const MANUAL_SESSION_REVIEW_MODEL = 'claude-haiku-4-5-20251001 (manual session review, no API)';
+
+export interface ApplyOpenAlexReviewsResult {
+	sourceId: number;
+	inserted: number;
+	updated: number;
+	skipped: number;
+	items: ImportItemOutcome[];
+}
+
+// Haikuサブエージェントが判定した結果を受け取り、既存の本番DB書き込みパスでそのまま保存する。
+// reviewImportArticle（OpenAI）を経由しない点以外はsyncOpenAlexCollectionの後半と同じ処理。
+export async function applyOpenAlexReviews(filter: string, reviews: OpenAlexManualReview[]): Promise<ApplyOpenAlexReviewsResult> {
+	const fetchedAt = new Date().toISOString();
+	const source = await upsertSourceByOriginUrl({
+		name: OPENALEX_SOURCE_NAME,
+		type: 'openalex',
+		originUrl: OPENALEX_SOURCE_ORIGIN_URL,
+		metadata: createSourceMetadata(filter, fetchedAt, reviews.length, 0),
+	});
+	// システムプロンプト自体はOpenAIレビューと同一のもの（ai-review-prompt.mjsのbuildSystemPrompt）を
+	// サブエージェントへの指示に使うため、prompt_hashも同じ関数で計算し比較可能にする。
+	const promptHash = await computePromptHash(topic, DEFAULT_KIND);
+
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+	const items: ImportItemOutcome[] = [];
+
+	for (const entry of reviews) {
+		const metadata = {
+			service: 'openalex',
+			openalex: {
+				openalex_id: entry.openalexId,
+				doi: entry.doi,
+				type: entry.type,
+				is_oa: entry.isOa,
+				cited_by_count: entry.citedByCount,
+				indexed_in: entry.indexedIn,
+			},
+			provenance: {
+				source: 'openalex-importer-manual-backfill',
+				query: filter,
+				fetched_at: fetchedAt,
+				openalex_id: entry.openalexId,
+				openalex_updated_at: entry.updatedAt,
+			},
+			ai: {
+				model: MANUAL_SESSION_REVIEW_MODEL,
+				prompt_hash: promptHash,
+				accepted: entry.accepted,
+				reason: entry.reason,
+				confidence: entry.confidence ?? null,
+				summary: entry.summary,
+				tags: entry.tags,
+			},
+		};
+
+		const result = await upsertItemByExternalUrl(
+			{
+				sourceId: source.id,
+				externalUrl: entry.externalUrl,
+				kind: DEFAULT_KIND,
+				title: entry.title,
+				authors: entry.authors,
+				summary: entry.summary,
+				publishedAt: entry.publishedAt,
+				updatedAt: entry.updatedAt,
+				metadata,
+				version: entry.version,
+				collectionRoute: 'openalex-importer',
+				body: truncateBodyForStorage(entry.abstract),
+				aiAccepted: entry.accepted,
+				language: entry.language,
+				aiRecheckModel: MANUAL_SESSION_REVIEW_MODEL,
+				aiRecheckPromptHash: promptHash,
+				aiRecheckReason: entry.reason,
+				aiRecheckConfidence: entry.confidence ?? null,
+			},
+			entry.tags,
+			undefined,
+			{ syncTags: false, assumeNew: true },
+		);
+		if (entry.accepted) pendingTagEntries.push({ itemId: result.id, tags: entry.tags });
+		items.push({ id: result.id, action: result.action, externalUrl: entry.externalUrl, title: entry.title, reason: entry.accepted ? undefined : entry.reason });
+	}
+
+	await syncNewItemTagsBatch(pendingTagEntries);
+
+	let inserted = 0;
+	let updated = 0;
+	let skipped = 0;
+	for (const result of items) {
+		if (result.action === 'inserted') inserted += 1;
+		else if (result.action === 'updated') updated += 1;
+		else skipped += 1;
+	}
+
+	return { sourceId: source.id, inserted, updated, skipped, items };
 }
