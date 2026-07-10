@@ -123,13 +123,16 @@ async function runDailySlotJob(slot: { run: (scheduledTime: number) => Promise<u
 // DAILY_CRON の分59スロット（runScheduledDailyDigest）から呼ばれる。日次収集ジョブ群
 // （DAILY_CRON）がスロットごとに別々のWorker呼び出しに分かれたため、各ジョブの結果をメモリで
 // 受け渡せない。全収集スロット・リンク切れ検出（15:00〜15:25 UTC）完了後、前段ジョブの遅延に
-// 対する余裕を限界まで確保した発火時刻（15:59 UTC）を利用し、当日 0:00 UTC 以降に作成された
-// 対象ジョブの items をDBから直接集計してDiscordへ1件のDigestとして知らせる。合計0件でもcronが
-// 正常に実行されたことの確認シグナルとして必ず送信する（sendDailyDigest側の仕様）。
+// 対する余裕を限界まで確保した発火時刻（15:59 UTC）を利用し、当日の日次ジョブ開始時刻
+// （15:00 UTC = 0:00 JST）以降に作成された対象ジョブの items をDBから直接集計してDiscordへ
+// 1件のDigestとして知らせる。カレンダー日（0:00 UTC）基準にすると、日次cron開始前に手動API
+// 経由で取り込んだ記事まで「日次ジョブの新着」として誤って含んでしまうため、基準は
+// 日次ジョブ自体の開始時刻に揃える。合計0件でもcronが正常に実行されたことの確認シグナルとして
+// 必ず送信する（sendDailyDigest側の仕様）。
 async function runScheduledDailyDigest(scheduledTime: number): Promise<void> {
 	try {
 		const sinceDate = new Date(scheduledTime);
-		sinceDate.setUTCHours(0, 0, 0, 0);
+		sinceDate.setUTCMinutes(0, 0, 0);
 		const rows = await fetchDailyDigestItems(sinceDate.toISOString(), DAILY_COLLECTION_ROUTES);
 		await sendDailyDigest(
 			env,
@@ -139,6 +142,7 @@ async function runScheduledDailyDigest(scheduledTime: number): Promise<void> {
 				sourceName: row.sourceName ?? topic.site.name,
 				kind: row.kind,
 			})),
+			sinceDate,
 		);
 	} catch (error) {
 		console.error('[cron:daily-digest] digest failed', error);

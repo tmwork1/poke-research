@@ -62,10 +62,14 @@ function buildXPostDraft(items: NewItemDigestEntry[]): string {
 // （「cronが動いた」ことの確認シグナルとして機能させる）。
 // items は呼び出し側（fetchDailyDigestItems）であらかじめ ai_accepted=true のみに
 // 絞り込まれている前提（棄却記事は通知に含めない）。
-export async function sendDailyDigest(env: AlertEnv, items: NewItemDigestEntry[]): Promise<void> {
+export async function sendDailyDigest(env: AlertEnv, items: NewItemDigestEntry[], jobDate: Date): Promise<void> {
 	const articleCount = items.filter((item) => item.kind !== 'paper').length;
 	const paperCount = items.filter((item) => item.kind === 'paper').length;
-	const header = `【${topic.site.slug}】更新のお知らせ\n記事 ${articleCount} 件 / 論文 ${paperCount} 件`;
+	// jobDateはUTC基準（呼び出し側の日次ジョブ開始時刻）のため、表示用にJST（UTC+9）へ変換する。
+	const jst = new Date(jobDate.getTime() + 9 * 60 * 60 * 1000);
+	const mm = String(jst.getUTCMonth() + 1).padStart(2, '0');
+	const dd = String(jst.getUTCDate()).padStart(2, '0');
+	const header = `【${topic.site.displayName}】${mm}/${dd} 更新\n記事 ${articleCount} 件 / 論文 ${paperCount} 件`;
 	if (items.length === 0) {
 		await postToWebhook(env, header);
 		return;

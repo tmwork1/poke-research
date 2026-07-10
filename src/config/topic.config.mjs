@@ -7,6 +7,8 @@
 export const topic = {
 	site: {
 		name: 'PokeResearch',
+		// Discord通知など、スペース区切りの表記が自然な人向け表示に使う（nameは詰め表記のため別枠）。
+		displayName: 'Poke Research',
 		// notify のプレフィックスや User-Agent、内部専用ホスト名など、機械可読な識別子に使う。
 		slug: 'poke-research',
 		// Layout.astro のロゴをこの3つに分けて表示し、accent部分だけ強調色にする。
