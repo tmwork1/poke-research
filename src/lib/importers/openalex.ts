@@ -11,8 +11,9 @@
 //
 // 収集クエリはキーワードのみで広く収集し、AIレビューを安全網にする方針を取る（arXivと同じ）。
 //
-// cronには組み込まず、手動起動（POST /api/import/openalex）のみとする。まず数回分の収集内容を
-// 確認してから、worker.ts の DAILY_SLOT_JOBS へスロット追加するかを別途判断する。
+// 2026-07-10、手動起動での動作確認・subrequest実測を経て worker.ts の DAILY_SLOT_JOBS
+// （分30スロット）へ組み込み済み（docs/issue/cron-subrequest-limit.md参照）。
+// 手動起動用API（POST /api/import/openalex）も引き続き利用できる。
 import { reviewImportArticle } from './article-ai';
 import {
 	fetchTopTagNames,
@@ -82,9 +83,15 @@ export interface OpenAlexEnvDefaults {
 	OPENALEX_MAX_NEW_PER_RUN?: string | number;
 }
 
-// arXiv同様、新規論文1件あたりのsubrequestはOpenAIレビュー1回＋item upsert1回の計2件と見込み、
-// 初回投入日・急増日のsubrequest数の頭打ちとして控えめな既定値にする（実測しながら後日調整）。
-const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 10;
+// 2026-07-10、ローカルでCloudflare Workers subrequest数を実測して確定（DEBUG_SUBREQUEST_COUNT、
+// docs/issue/cron-subrequest-limit.md参照）。固定コスト5、新規1件あたり3（OpenAIレビュー1＋
+// item upsert1＋ai_prompt_hashes記録1、assumeNew）。arxiv.tsの「新規1件あたり2」という
+// 見積りはai_prompt_hashesテーブル（migrations/026、PR #65）追加前のqiitaからの類推のままで
+// 更新されておらず、実際はarxiv.ts等の既存インポーターも同じ+1が乗っているはずだが、そちらの
+// 再測定は本対応のスコープ外とする。新規12件が全件新規だった場合のワーストケースは
+// 5+12×3+2（タグ同期バッチ概算）=43で、Cloudflareの1回あたり上限50に対しqiita/zenn/arxiv
+// （27〜33）と同程度の安全マージンを残せる値として12を採用した（cron統合に伴い10から引き上げ）。
+const DEFAULT_MAX_NEW_ITEMS_PER_RUN = 12;
 
 export function resolveOpenAlexSyncOptions(env: OpenAlexEnvDefaults, overrides: OpenAlexSyncOptions = {}): Required<OpenAlexSyncOptions> {
 	return {

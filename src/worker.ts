@@ -7,6 +7,7 @@ import { sendDailyDigest, sendMaintenanceReport, sendOperationalAlert } from './
 import { fetchDailyDigestItems, type ImportItemOutcome } from './lib/importers/common';
 import { runAndRecord } from './lib/import-runs';
 import { resolveArxivSyncOptions, syncArxivCollection } from './lib/importers/arxiv';
+import { resolveOpenAlexSyncOptions, syncOpenAlexCollection } from './lib/importers/openalex';
 import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
 import { resolveBlogKeywordIndex } from './lib/importers/blog-rotation';
 import { resolveFeedSyncOptions, syncFeedCollection } from './lib/importers/feed';
@@ -20,12 +21,12 @@ import { topic } from './config/topic.config.mjs';
 
 // wrangler.jsonc の triggers.crons と対応させ、どちらの収集ジョブを起動するか振り分ける。
 const WEEKLY_REVIEW_CRON = '30 11 * * 1';
-// 日次収集ジョブ群（フィード/Qiita/Zenn/はてな/arXiv/リンク切れ検出/日次まとめ通知の7ジョブ、
-// noteは403のため対象外）は、Cloudflare アカウントの Cron Trigger 登録数上限（現行プランで5件）
-// のため個別エントリを確保できず、1つの Cron Trigger 文字列 "0,5,10,15,20,25,59 15 * * *"
-// （収集5ジョブ・リンク切れ検出は15:00〜15:25 UTCを5分刻み、日次まとめ通知だけは前段ジョブの
-// 遅延に対する余裕を限界まで確保するため同じ時内の分の最大値15:59 UTCに離して発火）に
-// 束ねている。controller.cron はどのスロットでも
+// 日次収集ジョブ群（フィード/Qiita/Zenn/はてな/arXiv/OpenAlex/リンク切れ検出/日次まとめ通知の
+// 8ジョブ、noteは403のため対象外）は、Cloudflare アカウントの Cron Trigger 登録数上限
+// （現行プランで5件）のため個別エントリを確保できず、1つの Cron Trigger 文字列
+// "0,5,10,15,20,25,30,59 15 * * *"（収集6ジョブ・リンク切れ検出は15:00〜15:30 UTCを5分刻み、
+// 日次まとめ通知だけは前段ジョブの遅延に対する余裕を限界まで確保するため同じ時内の分の最大値
+// 15:59 UTCに離して発火）に束ねている。controller.cron はどのスロットでも
 // 同一文字列になるため、controller.scheduledTime の分（UTC）から実行するジョブを判定する
 // （DAILY_SLOT_JOBS）。
 // 2026-07-09判明の subrequest 上限問題（docs/issue/cron-subrequest-limit.md）以降、
@@ -37,9 +38,12 @@ const WEEKLY_REVIEW_CRON = '30 11 * * 1';
 // はてなブックマークはWeb横断のブックマーク検索のため、フィードが既に収集済みの同一URLを
 // 再発見しやすい。既存URL判定（findExistingExternalUrls）は既に収集済みのURLを早期スキップ
 // するため、収集5ジョブの最後にはてなを置くことで、その時点までに他ジョブが収集済みのURLが
-// はてなの判定でも無駄なくスキップされる。リンク切れ検出・日次まとめ通知は収集5ジョブの結果に
-// 依存する（まとめ通知は当日分の収集結果をDBから集計する）ため、その後段のスロットに置く。
-const DAILY_CRON = '0,5,10,15,20,25,59 15 * * *';
+// はてなの判定でも無駄なくスキップされる。OpenAlexはarXiv由来と判定できたworkをarXiv importer
+// と同じ正規化URLで保存するため（openalex-parse.ts の selectExternalUrl）、arXivの後段
+// （リンク切れ検出の後）に置くことで、既にarXivが収集済みのURLをOpenAlex側でも無駄なく
+// スキップできるようにする。リンク切れ検出・日次まとめ通知は収集ジョブの結果に依存する
+// （まとめ通知は当日分の収集結果をDBから集計する）ため、その後段のスロットに置く。
+const DAILY_CRON = '0,5,10,15,20,25,30,59 15 * * *';
 // note は非公式APIが403 Access deniedを返すようになったため自動実行対象から外している
 // （コード・手動起動用API（/api/import/note）は残したまま、cronからの呼び出しのみ停止）。
 //
@@ -58,11 +62,19 @@ const DAILY_SLOT_JOBS: Array<{ minute: number; label: string; run: (scheduledTim
 	{ minute: 15, label: 'arXiv', run: runScheduledArxivImport },
 	{ minute: 20, label: 'はてな', run: runScheduledHatenaImport },
 	{ minute: 25, label: 'リンク切れ検出', run: runScheduledLinkCheck },
+	{ minute: 30, label: 'OpenAlex', run: runScheduledOpenAlexImport },
 	{ minute: 59, label: '日次まとめ通知', run: runScheduledDailyDigest },
 ];
-// 日次収集ジョブ群のうち、新着記事を生む5ジョブが実際に保存する items.collection_route の値。
+// 日次収集ジョブ群のうち、新着記事・論文を生む6ジョブが実際に保存する items.collection_route の値。
 // 日次まとめ通知（runScheduledDailyDigest）がDBから当日分を集計する際の絞り込みに使う。
-const DAILY_COLLECTION_ROUTES = ['feed-importer', 'qiita-importer', 'zenn-importer', 'arxiv-importer', 'hatena-bookmark-importer'];
+const DAILY_COLLECTION_ROUTES = [
+	'feed-importer',
+	'qiita-importer',
+	'zenn-importer',
+	'arxiv-importer',
+	'hatena-bookmark-importer',
+	'openalex-importer',
+];
 // ブログ（Brave Search）は発見段階のキーワード検索が新規/既存の判定より前にかかる固定コストで、
 // 差分検知でも削減できない。さらに検索キーワード（BLOG_KEYWORDS）は今後も増減しうるため、
 // 「1日に何回・何キーワードずつ」をcron側にハードコードしたくない。そこで専用エントリを
@@ -303,6 +315,26 @@ async function runScheduledArxivImport(): Promise<ImportItemOutcome[]> {
 	} catch (error) {
 		console.error('[cron:arxiv] sync failed', error);
 		await sendOperationalAlert(env, 'arXiv 収集ジョブが失敗しました', error);
+		return [];
+	}
+}
+
+async function runScheduledOpenAlexImport(): Promise<ImportItemOutcome[]> {
+	// 他インポーター同様、論文単位の失敗は syncOpenAlexCollection 内で skipped として吸収される。
+	// 失敗時は次回 cron 実行を待つか、POST /api/import/openalex を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
+	try {
+		const result = await runAndRecord('openalex', 'cron', () => syncOpenAlexCollection(resolveOpenAlexSyncOptions(env)));
+		console.log('[cron:openalex] sync completed', {
+			filter: result.filter,
+			fetched: result.fetched,
+			inserted: result.inserted,
+			updated: result.updated,
+			skipped: result.skipped,
+		});
+		return result.items;
+	} catch (error) {
+		console.error('[cron:openalex] sync failed', error);
+		await sendOperationalAlert(env, 'OpenAlex 収集ジョブが失敗しました', error);
 		return [];
 	}
 }

@@ -1,7 +1,8 @@
 // OpenAlex 論文収集ジョブを API 経由で起動するエンドポイント。
 // 既定の検索条件はコード（src/lib/importers/openalex.ts の DEFAULT_FILTER）で管理し、
 // POST では明示的な上書きのみ受け付ける（arxiv.ts の API ルートと同じ方針）。
-// cronには組み込まず、手動起動のみとする（docs/plan/paper.md 参照）。
+// cron（src/worker.ts の DAILY_SLOT_JOBS）からも定期実行されるが、このAPIは手動起動・
+// 動作確認用として引き続き利用できる。
 import { env } from 'cloudflare:workers';
 
 import { badRequest, jsonResponse, methodNotAllowed, readJsonBody } from '../_shared';
