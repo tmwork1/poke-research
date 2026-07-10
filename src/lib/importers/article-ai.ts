@@ -74,10 +74,11 @@ function normalizeAiTags(tags: string[]): { tags: string[]; tagLabels: Record<st
 	return { tags: normalized, tagLabels };
 }
 
-function createOpenAIRequest(input: ImportArticleReviewInput, model: string) {
+function createOpenAIRequest(input: ImportArticleReviewInput, model: string, reasoningEffort: string) {
 	// レスポンスは JSON 固定にして、後続のパースを安定させる。
 	return {
 		model,
+		reasoning_effort: reasoningEffort,
 		response_format: { type: 'json_object' },
 		messages: [
 			{
@@ -113,14 +114,24 @@ function parseAiResponse(content: string): Omit<ImportArticleReview, 'model' | '
 		.replace(/```\s*$/i, '');
 	const parsed = JSON.parse(normalized) as Partial<ImportArticleReview> & { accepted?: boolean; accept?: boolean; reason?: string };
 	// 古い応答形式の accept も吸収して、移行中でも壊れないようにする。
-	const accepted = typeof parsed.accepted === 'boolean' ? parsed.accepted : parsed.accept;
+	let accepted = typeof parsed.accepted === 'boolean' ? parsed.accepted : parsed.accept;
 	if (typeof accepted !== 'boolean') {
 		throw new Error('OpenAI response missing accepted flag');
 	}
 
 	const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
-	const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : '';
+	let reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : '';
 	const language = typeof parsed.language === 'string' ? parsed.language.trim().toLowerCase() : '';
+
+	// ai-review-prompt.mjs の STEP 1・STEP 2 は「以降のSTEPに関わらず accepted を false にする」と
+	// 指示した上でreasonにこの文言を書かせている。accepted=true と矛盾する応答が来た場合は
+	// STEP側の判定を優先して強制的に false へ倒す（過去に reason へ「ツールの提供ページ」等と
+	// 棄却理由を書きながら accepted=true を返す事例があった、docs/optimization/openai-production-config-review.md）。
+	const REJECT_CONTRADICTION_PATTERNS = [/対象言語外/, /リンク集・目次ページ/];
+	if (accepted && REJECT_CONTRADICTION_PATTERNS.some((pattern) => pattern.test(reason))) {
+		accepted = false;
+		reason = `[reasonとacceptedの矛盾を検知したため自動棄却] ${reason}`;
+	}
 	const { tags, tagLabels } = Array.isArray(parsed.tags)
 		? normalizeAiTags(parsed.tags.filter((tag): tag is string => typeof tag === 'string'))
 		: { tags: [], tagLabels: {} };
@@ -142,7 +153,7 @@ function parseAiResponse(content: string): Omit<ImportArticleReview, 'model' | '
 }
 
 export async function reviewImportArticle(input: ImportArticleReviewInput): Promise<ImportArticleReview> {
-	const { apiKey, model } = getOpenAIConfig();
+	const { apiKey, model, reasoningEffort } = getOpenAIConfig();
 	if (!apiKey) {
 		// API キーがない場合は、誤った無通信のまま進めず明示的に失敗させる。
 		throw new Error('OPENAI_API_KEY is required to review imported articles');
@@ -154,7 +165,7 @@ export async function reviewImportArticle(input: ImportArticleReviewInput): Prom
 			Authorization: `Bearer ${apiKey}`,
 			'Content-Type': 'application/json',
 		},
-		body: JSON.stringify(createOpenAIRequest(input, model)),
+		body: JSON.stringify(createOpenAIRequest(input, model, reasoningEffort)),
 	});
 
 	if (!response.ok) {
