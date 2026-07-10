@@ -52,14 +52,14 @@
 
 ## 4. レビュー・クリーンアップ（事後メンテナンス）
 
-収集済みデータの重複・表記ゆれ・古い判定結果を後から手直しするための、都度手動実行するスクリプト。
+収集済みデータの重複・表記ゆれ・古い判定結果を後から手直しするための、都度手動実行するスクリプト。いずれもローカル専用でcronからは呼ばれない。以前はタグ統合提案・タグ解説生成・既存記事の再判定の3タスクをOpenAI呼び出しで自動化していたが、ローカル専用ゆえの課金節約のため、判定はClaude Code（件数が多い場合はサブエージェント）が直接行う方針に変更した。各タスクは「判定材料を出すだけの読み取り専用スクリプト」と「判定結果を受け取ってDBへ書き込むだけのスクリプト」に分かれており、書き込み系スクリプトはOpenAIを一切呼ばない。
 
 **実行のきっかけ**: レビュー・クリーンアップのトリガーは実質2つ。
 
-- **収集後**（backfill や新ソース追加の後）: 重複・新タグは収集が作るため、`detect-duplicate-items`（`eval:all` に含まれる）の結果確認と `backfill-tag-explanations` を行う。
-- **AI取り込みプロンプト（`src/lib/importers/article-ai.ts`、実体は `src/lib/importers/ai-review-prompt.mjs`）や要約基準の変更後**: 既存記事が旧基準のまま残るため `retag-existing-items` の要否を検討する。全件再適用の前に、まず修正の狙いとなった問題事例だけを `--id=<id> --dry-run` で少数再テストし、意図通り判定が変わるか確認する（棄却済み記事は `ai_accepted=true` の記事のみを対象とする `retag-existing-items` では拾えないため、使い捨てスクリプトで別途確認する）。
+- **収集後**（backfill や新ソース追加の後）: 重複・新タグは収集が作るため、`detect-duplicate-items`（`eval:all` に含まれる）の結果確認と、`list-unexplained-tags` の出力をClaude Codeが読んでの解説生成（`apply-tag-explanation`）を行う。
+- **AI取り込みプロンプト（`src/lib/importers/article-ai.ts`、実体は `src/lib/importers/ai-review-prompt.mjs`）や要約基準の変更後**: 既存記事が旧基準のまま残るため、`list-retag-targets` の出力をClaude Codeが `buildSystemPrompt()` の基準（STEP1〜5）に沿って判定し、`apply-item-review` で書き込む要否を検討する。全件反映の前に、まず修正の狙いとなった問題事例だけを `--id=<id>` で少数再テストし、意図通り判定が変わるか確認する（棄却済み記事は `ai_accepted=true` の記事のみを対象とする `list-retag-targets` では拾えないため、使い捨てスクリプトで別途確認する）。
 
-`merge-item` は `detect-duplicate-items` の出力で重複itemが見えたとき、著者・内容を確認して同一記事と判断できたペアにのみ使う（タイトルが似ているだけで内容が別の記事は統合対象外）。同様に `merge-source` は `detect-duplicate-sources` の出力で重複sourceが見えたときに使う。`merge-tag`（表記ゆれの統合）・`rename-tag`（冗長・冗長な接頭辞の短縮など単純リネーム）・`delete-tag`（検索価値の低い不適切タグの削除）は上記2つとは別に、`eval:all` の `eval:tags` 出力でノイズタグ・表記ゆれ・短縮の余地が見えたときに使い分ける。`eval-annotations`・`eval-broken-links` は上記2トリガーとは独立に、annotations件数が増えてきたときや月次の目視確認のタイミングで都度実行する。
+`merge-item` は `detect-duplicate-items` の出力で重複itemが見えたとき、著者・内容を確認して同一記事と判断できたペアにのみ使う（タイトルが似ているだけで内容が別の記事は統合対象外）。同様に `merge-source` は `detect-duplicate-sources` の出力で重複sourceが見えたときに使う。`merge-tag`（表記ゆれの統合）・`rename-tag`（冗長・冗長な接頭辞の短縮など単純リネーム）・`delete-tag`（検索価値の低い不適切タグの削除）は上記2つとは別に、`eval:all` の `eval:tags`（Claude Codeがこの出力を読み、リネーム/統合/削除を直接判断する。以前はこの判断を`optimize-tags.mjs`がOpenAIへ委ねていたが、`eval:tags`だけで判定材料が揃うため廃止した）出力でノイズタグ・表記ゆれ・短縮の余地が見えたときに使い分ける。`eval-annotations`・`eval-broken-links` は上記2トリガーとは独立に、annotations件数が増えてきたときや月次の目視確認のタイミングで都度実行する。
 
 | スクリプト | コマンド | 用途 | 課金 |
 |---|---|---|---|
@@ -70,10 +70,11 @@
 | `scripts/db/merge-tag.mjs <from> <to>` | `node scripts/db/merge-tag.mjs ポケモンカート ポケモンカード` | 誤字・表記ゆれタグを正しいタグへ統合する（`item_tags`付け替え→`from`削除）。冪等。`--dry-run`は未対応（実行すると即座に本番へ反映される点に注意）。本番実行前にユーザー確認必須。 | なし |
 | `scripts/db/rename-tag.mjs <from> <to>` | `node scripts/db/rename-tag.mjs ポケモン図鑑 図鑑` | 統合ではなく単純リネーム（`tags.name`を書き換えるだけ）。to タグが既に存在する場合は同義語統合とみなし merge-tag.mjs を案内して終了する。冪等。`--dry-run`で変更予定の表示のみ行える。本番実行前にユーザー確認必須。 | なし |
 | `scripts/db/delete-tag.mjs <tag>` | `node scripts/db/delete-tag.mjs テスト` | 検索価値の低い・不適切なタグを`item_tags`ごと削除する。冪等。`--dry-run`で削除予定件数の表示のみ行える。本番実行前にユーザー確認必須。 | なし |
-| `scripts/db/backfill-tag-explanations.mjs` | `npm run db:backfill-tag-explanations` | `explained_at`未設定のタグへ、AIによる平易な解説をまとめて生成する。冪等（生成済みはスキップ）。OpenAI課金に注意。 | OpenAI（未解説タグの件数分） |
-| `scripts/db/retag-existing-items.mjs` | `npm run db:retag-existing-items -- [--dry-run] [--id=] [--limit=] [--service=]` | 既存アイテムへ現行のAI取り込みプロンプトを再適用し、summary/タグを最新基準で更新し直す。`items.language`（migrations/021、記事本文の主な言語）と`items.ai_recheck_*`（migrations/025、直近再チェックのモデル名・プロンプトハッシュ・採否・理由・確信度・日時）は採否に関わらず常に更新する（`ai_accepted`自体は書き換えない）。`items.ai_review_*`（migrations/025、公開中の内容を生んだ判定）はsummary/タグと同時に採用時のみ更新する。不採用判定（言語がja/en以外と判定された場合を含む）になった場合はsummary/タグを自動削除せず警告のみ。全件実行はOpenAI課金が大きいので事前確認。 | OpenAI（既定は全件、`--limit`等で抑制。`--dry-run`でも呼び出しあり） |
-| `scripts/db/delete-non-ja-en-items.mjs` | `node --env-file=.env.production scripts/db/delete-non-ja-en-items.mjs [--dry-run]` | `items.language`（migrations/021）が日本語・英語のいずれでもないと判定済み（`retag-existing-items.mjs`でバックフィル済み）のitemを削除する。language未判定（NULL）の行は対象外。`--dry-run`で削除予定一覧の表示のみ行える。本番実行前にユーザー確認必須。 | なし（判定済みのlanguage列を読むだけ） |
-| `scripts/db/optimize-tags.mjs` | `node --env-file=.env scripts/db/optimize-tags.mjs` | タグ台帳全体（名前・使用件数・サンプル記事タイトル）を1回のOpenAI呼び出しに渡し、大文字小文字・冗長接頭辞の短縮化・不適切タグ削除・表記ゆれ統合の提案と、適用用の`rename-tag`/`merge-tag`/`delete-tag`コマンド例を出力する。読み取り専用（DBは書き換えない）。提案は無条件に適用せず必ず内容を確認すること。 | OpenAI（タグ数に応じた1リクエスト） |
+| `scripts/db/list-unexplained-tags.mjs` | `node --env-file=.env.production scripts/db/list-unexplained-tags.mjs` | `explained_at`未設定のタグを`id, name`で一覧表示する読み取り専用スクリプト。Claude Codeがこの出力を読み、専門用語かどうか・解説文面を判定した上で`apply-tag-explanation.mjs`で書き込む。 | なし |
+| `scripts/db/apply-tag-explanation.mjs <tag> (--explanation="..." \| --not-difficult) [--dry-run]` | `node scripts/db/apply-tag-explanation.mjs パーティ構築 --explanation="..."` | 指定タグ1件に`is_difficult`/`explanation`/`explained_at`を書き込む。冪等（`explained_at`を毎回更新するため再実行で上書き）。`--dry-run`で書き込み内容の表示のみ行える。本番実行前にユーザー確認必須。 | なし |
+| `scripts/db/list-retag-targets.mjs [--id=] [--limit=] [--service=]` | `node --env-file=.env.production scripts/db/list-retag-targets.mjs --limit=20` | 既存アイテム（`ai_accepted=true`）のtitle/URL/著者/現在タグ/本文抜粋（`body`列優先、無ければ`summary`へフォールバック）をJSONで出力する読み取り専用スクリプト。Claude Code（件数が多い場合はサブエージェントに分散）が`src/lib/importers/ai-review-prompt.mjs`の`buildSystemPrompt()`が定める基準（STEP1〜5）に沿って判定し、`apply-item-review.mjs`で書き込む。 | なし |
+| `scripts/db/apply-item-review.mjs --id= --accepted= --language= --reason= [--confidence=] [--summary= --tags=] [--model=] [--dry-run]` | `node scripts/db/apply-item-review.mjs --id=123 --accepted=true --language=ja --reason="..." --summary="..." --tags="a,b"` | `list-retag-targets.mjs`で取得した1アイテムの判定結果を書き込む。`items.language`と`items.ai_recheck_*`（migrations/025）は`accepted`に関わらず常に更新する（`ai_accepted`自体は書き換えない）。`items.ai_review_*`（migrations/025）はsummary/タグと同時に採用時のみ更新する。不採用判定になった場合はsummary/タグを自動削除せず警告のみ。`ai_review_prompt_hash`/`ai_recheck_prompt_hash`には引き続き`computePromptHash(topic)`を書き込み、どの採否基準バージョンで判定したかを追跡できる。`--model`は判定者識別子（既定`claude-code`、サブエージェント使用時は実際のモデル名を渡す）。本番実行前にユーザー確認必須。 | なし |
+| `scripts/db/delete-non-ja-en-items.mjs` | `node --env-file=.env.production scripts/db/delete-non-ja-en-items.mjs [--dry-run]` | `items.language`（migrations/021）が日本語・英語のいずれでもないと判定済み（`apply-item-review.mjs`でバックフィル済み）のitemを削除する。language未判定（NULL）の行は対象外。`--dry-run`で削除予定一覧の表示のみ行える。本番実行前にユーザー確認必須。 | なし（判定済みのlanguage列を読むだけ） |
 | `scripts/eval/eval-annotations.mjs` | `npm run eval:annotations` | annotations（`GET/POST /api/annotations`）の内容を記事タイトルと紐付けて一覧出力する読み取り専用スクリプト。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-broken-links.mjs` | `npm run eval:broken-links` | `link_status='broken'`のitemを`link_broken_since`の古い順に一覧出力する。`eval:all`とは別に月次程度で目視確認する運用を想定。`DATABASE_URL`必須。 | なし |
 
