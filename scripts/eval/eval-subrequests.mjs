@@ -36,6 +36,7 @@ const ROUTES = [
 	{ name: 'qiita', path: '/api/import/qiita', defaultMaxNew: 10, body: () => ({}) },
 	{ name: 'zenn', path: '/api/import/zenn', defaultMaxNew: 8, body: () => ({}) },
 	{ name: 'arxiv', path: '/api/import/arxiv', defaultMaxNew: 10, body: () => ({}) },
+	{ name: 'openalex', path: '/api/import/openalex', defaultMaxNew: 10, body: () => ({}) },
 	{ name: 'hatena', path: '/api/import/hatena', defaultMaxNew: 6, body: () => ({}) },
 	// 実運用のcron（src/worker.ts）はキーワードローテーションで1語だけを渡すため、それに合わせる。
 	// pages は上書きせず .env の BLOG_PAGES（未設定ならコード既定5）をそのまま使う。

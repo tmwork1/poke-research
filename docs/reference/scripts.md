@@ -48,7 +48,7 @@
 | `scripts/eval/eval-filter.mjs` | `npm run eval:filter` | フィルタ精度: 現在のAI取り込みプロンプトと、収集済み記事（採用分）のtitle/summary/tags/AI採否理由を並べて出す。加えて、AIに棄却された記事（案A、migrations/018で`ai_accepted=false`付きのまま`items`に保存されるようになった記事）も「偽陰性候補」セクションとしてtitle/external_url/棄却理由/AI要約を新しい順に別掲し、誤棄却でないかをレビューできるようにする。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-tags.mjs` | `npm run eval:tags` | タグ精度: タグごとの使用件数とサンプル記事タイトルを出す。使用1件のみのタグ（ノイズ候補）に加え、`tags`と`item_tags`のLEFT JOINで使用0件のタグ（統合後の残骸等）も削除候補として別掲する。`DATABASE_URL`必須。 | なし |
 | `scripts/eval/eval-search.mjs` | `npm run eval:search` | 検索精度: 起動中サーバー（`EVAL_BASE_URL`、既定`http://localhost:4321`）に代表的な検索クエリを投げ、ヒット件数とタイトルを出す。 | なし |
-| `scripts/eval/eval-subrequests.mjs` | `npm run eval:subrequests` | Cloudflare Workers subrequest消費量の実測: 収集6ルート（qiita/zenn/arxiv/hatena/blog/feed）それぞれに`maxNewItemsPerRun=0`→`=1`の順でPOSTし、固定コストと新規1件あたりのコストを実測、既定`maxNewItemsPerRun`でのワーストケースを算出する。事前に`ADMIN_USERNAME`/`ADMIN_PASSWORD`を`.env`に設定し、dev serverを`DEBUG_SUBREQUEST_COUNT=1`付きで起動しておく必要がある（`.dev.vars`に追記してから再起動。`src/middleware.ts`・`src/lib/subrequest-counter.ts`）。管理者APIへの実書き込み・実際の外部APIコストが発生するため`eval:all`には含めない。 | OpenAI（新規1件分×6ルート）+ Brave（blogのみ） |
+| `scripts/eval/eval-subrequests.mjs` | `npm run eval:subrequests` | Cloudflare Workers subrequest消費量の実測: 収集7ルート（qiita/zenn/arxiv/openalex/hatena/blog/feed）それぞれに`maxNewItemsPerRun=0`→`=1`の順でPOSTし、固定コストと新規1件あたりのコストを実測、既定`maxNewItemsPerRun`でのワーストケースを算出する。事前に`ADMIN_USERNAME`/`ADMIN_PASSWORD`を`.env`に設定し、dev serverを`DEBUG_SUBREQUEST_COUNT=1`付きで起動しておく必要がある（`.dev.vars`に追記してから再起動。`src/middleware.ts`・`src/lib/subrequest-counter.ts`）。管理者APIへの実書き込み・実際の外部APIコストが発生するため`eval:all`には含めない。 | OpenAI（新規1件分×7ルート）+ Brave（blogのみ） |
 
 ## 4. レビュー・クリーンアップ（事後メンテナンス）
 
