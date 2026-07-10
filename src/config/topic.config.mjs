@@ -49,6 +49,8 @@ export const topic = {
 		subGenreExamples: ['カードゲーム', '対戦・育成', '図鑑データ'],
 		// 記事ではなくツールの提供ページそのものを指す例（accepted=falseにする対象の例示）。
 		toolPageExamples: ['ダメージ計算ツール', '育成支援ツール'],
+		// 違法または利用規約違反となる行為の実装解説の例（accepted=falseにする対象の例示）。
+		illegalContentExamples: ['ROM改造・改変ROMの配布', 'チートツールの作成・配布'],
 		// タグにすべきでないゲーム内固有名詞（わざ名・ゲームタイトル等）の例。
 		properNounExamples: ['ハイドロポンプ', 'ダイヤモンドパール'],
 		// 表記揺れ・打ち間違いに注意を促すための正しい表記と間違えやすい表記の例。
