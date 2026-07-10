@@ -38,9 +38,8 @@ describe('isExcludedBlogDomain', () => {
 });
 
 describe('POKEMON_KEYWORDS', () => {
-	it('ダメージ計算はツールページではなく実装記事へ絞り込むため「実装」を伴う', () => {
-		assert.ok(POKEMON_KEYWORDS.includes('ダメージ計算 実装' as (typeof POKEMON_KEYWORDS)[number]));
-		assert.ok(!POKEMON_KEYWORDS.includes('ダメージ計算' as (typeof POKEMON_KEYWORDS)[number]));
+	it('無関係な技術記事・論文のノイズ源と判明した「pokeapi」は含まない（2026-07-10除外）', () => {
+		assert.ok(!POKEMON_KEYWORDS.includes('pokeapi' as (typeof POKEMON_KEYWORDS)[number]));
 	});
 });
 
