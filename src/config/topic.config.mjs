@@ -26,7 +26,11 @@ export const topic = {
 		// Qiita/note/arXiv/はてなブックマークなどキーワード検索型インポーターが使う検索語彙。
 		// Brave Search（blog.ts）は語数に比例して課金対象のAPI呼び出し（job）が増えるため、
 		// ここには含めず collection.blogSearchKeywords で別管理する。
-		searchKeywords: ['ポケモン', 'ポケカ', 'ポケットモンスター', 'pokemon', 'pokeapi', 'ダメージ計算 実装'],
+		// 2026-07-10: 'pokeapi' はOpenAlex初期投入の実データ確認で、ポケモンと無関係な論文
+		// （PokeAPIという固有名詞ではなく "poke" + "api" のような偶発一致等）を増やすノイズ源と
+		// 判明したため除外した（ユーザー指示）。Qiita/Zenn/note/arXiv/はてなブックマーク・OpenAlex
+		// など searchKeywords を共有する全ソースに影響する。
+		searchKeywords: ['ポケモン', 'ポケカ', 'pokemon'],
 		// Zenn のトピックタグ絞り込み（日本語不可、英数字のみ）。
 		zennTopics: ['pokemon'],
 		// Brave Search のブログ収集専用の検索語彙。searchKeywords とは独立して増減できる

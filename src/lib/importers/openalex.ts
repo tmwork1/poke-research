@@ -48,7 +48,8 @@ const DEFAULT_MAX_RESULTS = 20;
 const IMPORT_CONCURRENCY = 4;
 
 // OpenAlexのfilter構文は日本語キーワードを扱えないため、topic.config.mjs の searchKeywords の
-// うち英数字のみのもの（pokemon/pokeapi 等）を束ねる（arxiv.ts の ARXIV_KEYWORDS と同じ絞り込み）。
+// うち英数字のみのもの（pokemon 等。'pokeapi'は2026-07-10にノイズ源として除外済み、
+// keywords.ts参照）を束ねる（arxiv.ts の ARXIV_KEYWORDS と同じ絞り込み）。
 const OPENALEX_KEYWORDS = POKEMON_KEYWORDS.filter((keyword) => /^[a-z0-9]+$/i.test(keyword));
 const DEFAULT_FILTER = buildOpenAlexFilter(OPENALEX_KEYWORDS);
 
@@ -56,11 +57,16 @@ export interface OpenAlexSyncOptions {
 	filter?: string;
 	maxResults?: number;
 	maxNewItemsPerRun?: number;
+	// OpenAlexの基本ページング（page=1始まり、10,000件まで対応）。日次収集は既定値1
+	// （最新発行日順の先頭maxResults件）のみを見るが、arXiv同様の一度きりの過去分初期投入
+	// （ローカルで手動起動を繰り返す）では2以降を指定して遡って取得する（arxiv.tsのstartと同用途）。
+	page?: number;
 }
 
 export interface OpenAlexSyncResult {
 	filter: string;
 	maxResults: number;
+	page: number;
 	fetched: number;
 	inserted: number;
 	updated: number;
@@ -101,6 +107,7 @@ export function resolveOpenAlexSyncOptions(env: OpenAlexEnvDefaults, overrides: 
 			overrides.maxNewItemsPerRun,
 			parsePositiveInteger(env.OPENALEX_MAX_NEW_PER_RUN, DEFAULT_MAX_NEW_ITEMS_PER_RUN),
 		),
+		page: Number.isInteger(overrides.page) && (overrides.page as number) >= 1 ? (overrides.page as number) : 1,
 	};
 }
 
@@ -109,7 +116,7 @@ function createAiBodyExcerpt(abstract: string): string {
 	return abstract.length > MAX_AI_BODY_CHARS ? abstract.slice(0, MAX_AI_BODY_CHARS) : abstract;
 }
 
-function createSourceMetadata(filter: string, fetchedAt: string, maxResults: number) {
+function createSourceMetadata(filter: string, fetchedAt: string, maxResults: number, page: number) {
 	return {
 		service: 'openalex',
 		api_url: OPENALEX_API_URL,
@@ -117,6 +124,7 @@ function createSourceMetadata(filter: string, fetchedAt: string, maxResults: num
 		collection: {
 			filter,
 			max_results: maxResults,
+			page,
 			fetched_at: fetchedAt,
 		},
 	};
@@ -156,11 +164,12 @@ interface OpenAlexWorksResponse {
 	results?: OpenAlexWork[];
 }
 
-async function fetchOpenAlexWorks(filter: string, maxResults: number, apiKey: string): Promise<OpenAlexWork[]> {
+async function fetchOpenAlexWorks(filter: string, maxResults: number, apiKey: string, page: number): Promise<OpenAlexWork[]> {
 	const url = new URL(OPENALEX_API_URL);
 	url.searchParams.set('filter', filter);
 	url.searchParams.set('sort', 'publication_date:desc');
 	url.searchParams.set('per_page', String(maxResults));
+	url.searchParams.set('page', String(page));
 	url.searchParams.set('api_key', apiKey);
 
 	const response = await fetch(url, {
@@ -179,6 +188,7 @@ export async function syncOpenAlexCollection(options: OpenAlexSyncOptions = {}):
 	const filter = normalizeFilter(options.filter);
 	const maxResults = parsePositiveInteger(options.maxResults, DEFAULT_MAX_RESULTS);
 	const maxNewItemsPerRun = parsePositiveInteger(options.maxNewItemsPerRun, DEFAULT_MAX_NEW_ITEMS_PER_RUN);
+	const page = Number.isInteger(options.page) && (options.page as number) >= 1 ? (options.page as number) : 1;
 	const fetchedAt = new Date().toISOString();
 
 	const { apiKey } = getOpenAlexConfig();
@@ -188,12 +198,12 @@ export async function syncOpenAlexCollection(options: OpenAlexSyncOptions = {}):
 	}
 
 	const [works, source, existingTags] = await Promise.all([
-		fetchOpenAlexWorks(filter, maxResults, apiKey),
+		fetchOpenAlexWorks(filter, maxResults, apiKey, page),
 		upsertSourceByOriginUrl({
 			name: OPENALEX_SOURCE_NAME,
 			type: 'openalex',
 			originUrl: OPENALEX_SOURCE_ORIGIN_URL,
-			metadata: createSourceMetadata(filter, fetchedAt, maxResults),
+			metadata: createSourceMetadata(filter, fetchedAt, maxResults, page),
 		}),
 		fetchTopTagNames(),
 	]);
@@ -303,6 +313,7 @@ export async function syncOpenAlexCollection(options: OpenAlexSyncOptions = {}):
 	return {
 		filter,
 		maxResults,
+		page,
 		fetched: works.length,
 		inserted,
 		updated,

@@ -14,6 +14,7 @@ export const prerender = false;
 interface OpenAlexImportRequest {
 	filter?: string;
 	maxResults?: number;
+	page?: number;
 }
 
 export async function GET() {
@@ -23,6 +24,7 @@ export async function GET() {
 			provider: 'openalex',
 			filter: defaults.filter,
 			maxResults: defaults.maxResults,
+			page: defaults.page,
 		},
 	});
 }

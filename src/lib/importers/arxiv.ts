@@ -43,7 +43,8 @@ const DEFAULT_MAX_RESULTS = 20;
 const IMPORT_CONCURRENCY = 4;
 
 // arXivの検索構文（search_query）は日本語キーワードを扱えないため、topic.config.mjs の
-// searchKeywords のうち英数字のみのもの（pokemon/pokeapi 等）を all: フィールドで束ねる
+// searchKeywords のうち英数字のみのもの（pokemon 等。'pokeapi'は2026-07-10にノイズ源として
+// 除外済み、keywords.ts参照）を all: フィールドで束ねる
 // （ai-review-prompt.mjs の englishSynonym 抽出と同じ絞り込みロジック）。
 const ARXIV_KEYWORDS = POKEMON_KEYWORDS.filter((keyword) => /^[a-z0-9]+$/i.test(keyword));
 // arXivの検索インデックスはアクセント記号のfoldingを行わないため、"pokemon"では

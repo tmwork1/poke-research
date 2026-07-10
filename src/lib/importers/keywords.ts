@@ -12,11 +12,15 @@ import { topic } from '../../config/topic.config.mjs';
 // src/config/topic.config.mjs の collection.searchKeywords を編集する
 // （Zenn はトピックタグでの絞り込みのため対象外）。
 // 「ポケモン」は部分一致で「ポケモンGO」「ポケモンカード」等も拾うため、それらは重ねて持たない。
-// 「pokemon」「pokeapi」は英語タイトル・API名のみの記事を、「ダメージ計算 実装」はポケモン名を
+// 「pokemon」は英語タイトルのみの記事を、「ダメージ計算 実装」はポケモン名を
 // タイトルに含まない対戦ツール系の実装記事を拾う。単に「ダメージ計算」だけだと、記事ではなく
 // ダメージ計算ツールそのもの（yakkun.com/gamewith.jp のツールページ等）が大量にヒットし、
 // AI レビューがツールページを記事として誤って accepted=true にしてしまう事例が本番で発生した
 // ため、「実装」を足してツールの解説記事に絞り込む。
+// 「pokeapi」は2026-07-10にキーワードから除外した。はてなブックマーク（2026-07-07実測、
+// docs/progress/2026-07-07.md）・Brave検索（docs/optimization/arxiv-paper-topic-scope.md）・
+// OpenAlex（本ファイルの変更経緯、docs/progress/2026-07-10.md）のいずれでも、この単語単独では
+// 無関係な技術記事・論文ばかりがヒットし、AIレビューでもノイズ源になっていたと判明したため。
 export const POKEMON_KEYWORDS = topic.collection.searchKeywords;
 
 // Brave Search のブログ収集専用の検索語彙。Brave は語数に比例して課金対象のAPI呼び出し（job）が
