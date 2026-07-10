@@ -12,8 +12,6 @@
 		"migrate": "node ./scripts/db/run-migrations.mjs",
 		"db:detect-duplicate-items": "node ./scripts/db/detect-duplicate-items.mjs",
 		"db:detect-duplicate-sources": "node ./scripts/db/detect-duplicate-sources.mjs",
-		"db:backfill-tag-explanations": "node ./scripts/db/backfill-tag-explanations.mjs",
-		"db:retag-existing-items": "node ./scripts/db/retag-existing-items.mjs",
 		"collect:qiita": "node ./scripts/collect/collect-qiita.mjs",
 		"collect:zenn": "node ./scripts/collect/collect-zenn.mjs",
 		"collect:note": "node ./scripts/collect/collect-note.mjs",
