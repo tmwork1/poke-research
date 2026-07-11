@@ -8,7 +8,7 @@
 		"node": ">=22.15.0"
 	},
 	"scripts": {
-		"dev": "astro dev",
+		"dev": "astro dev --background",
 		"migrate": "node ./scripts/db/run-migrations.mjs",
 		"db:detect-duplicate-items": "node ./scripts/db/detect-duplicate-items.mjs",
 		"db:detect-duplicate-sources": "node ./scripts/db/detect-duplicate-sources.mjs",

@@ -4,8 +4,13 @@
 			<stop offset="0%" stop-color="#1f9e7a" />
 			<stop offset="100%" stop-color="#157a5e" />
 		</linearGradient>
+		<filter id="r-shadow" x="-20%" y="-20%" width="160%" height="160%">
+			<feDropShadow dx="2.5" dy="3" stdDeviation="1.5" flood-color="#111111" flood-opacity="0.38" />
+		</filter>
 	</defs>
 	<rect width="1200" height="630" fill="url(#bg)" />
-	<text x="80" y="330" font-family="'Segoe UI', 'Hiragino Kaku Gothic ProN', sans-serif" font-size="96" font-weight="700" fill="#ffffff">PokeResearch</text>
-	<text x="80" y="410" font-family="'Segoe UI', 'Hiragino Kaku Gothic ProN', sans-serif" font-size="36" fill="rgba(255,255,255,0.85)">ポケモンプログラミング情報ハブ</text>
+	<text x="80" y="330" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif" font-size="88" font-weight="800" fill="#ffffff">
+		Poke<tspan fill="#ef4444" font-size="96" filter="url(#r-shadow)">R</tspan>esearch
+	</text>
+	<text x="80" y="410" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif" font-size="36" fill="rgba(255,255,255,0.85)">ポケモン×プログラミング情報サイト</text>
 </svg>
