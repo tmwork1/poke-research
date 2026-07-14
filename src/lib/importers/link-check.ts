@@ -30,14 +30,17 @@ const DEFAULT_TIMEOUT_MS = 8_000;
 // batchLimitを明示指定しない場合、対象件数から「recheckIntervalDays日で一巡する」件数を
 // 自動算出する（下記resolveAdaptiveBatchLimit）。件数が増えても手動でLINK_CHECK_BATCH_LIMITを
 // 都度調整せずに済むが、Cloudflareのsubrequest上限（無料/標準プランで50/呼び出し）を
-// probe fetch（1件1fetch）だけで超えないよう、この安全上限で頭打ちにする（超えて増える分は
-// 一巡にかかる日数が伸びるだけで、subrequest超過にはならない）。
-// 以前は日次まとめ通知（DB集計1回＋Webhook送信1回、fetchDailyDigestItems/sendDailyDigest）と
-// 同一Worker呼び出しに統合されており（LINK_CHECK_AND_DIGEST_CRON）、まとめ通知分の余裕を確保
-// するため40から35へ引き下げていたが、両者を日次収集ジョブ群と同じ時間分割スロット
-// （DAILY_SLOT_JOBS、src/worker.ts）に分離し、それぞれ独立したWorker呼び出しになったため、
-// リンク切れ確認が扱えるリクエスト数を最大化する目的で40へ戻した。
-const SAFE_MAX_BATCH_LIMIT = 40;
+// 超えないよう、この安全上限で頭打ちにする（超えて増える分は一巡にかかる日数が伸びるだけで、
+// subrequest超過にはならない）。
+// probeUrl（../link-status.ts）はHEADが405/501や失敗を返した場合にGETへフォールバックするため、
+// 1件あたり最大2 subrequestを消費する（1件1fetch想定ではない）。2026-07-09時点で40に設定して
+// いたが、対象記事数の増加でresolveAdaptiveBatchLimitの算出値が常に40（上限）に張り付くように
+// なり、40件×最大2fetch＋前後のDBクエリ数件でsubrequest上限50を超え、cron実行が
+// （import_runsへの失敗記録すら書き込めないまま）サイレントに落ちる状態が2026-07-10〜07-14の
+// 5日間続いていたことが判明した（本番APIへbatchLimitを変えて直接検証: 25は成功、30以降は
+// 失敗し記録も残らない）。GET フォールバックを含めても安全マージンを確保できるよう20へ
+// 引き下げる（20件×最大2fetch＋DBクエリ数件で50を十分下回る）。
+const SAFE_MAX_BATCH_LIMIT = 20;
 const MIN_BATCH_LIMIT = 10;
 const BATCH_LIMIT_MARGIN = 5;
 
