@@ -30,8 +30,23 @@ async function postToWebhook(env: AlertEnv, message: string): Promise<void> {
 	}
 }
 
+// Supabase(PostgrestError等)や単純なオブジェクトとして投げられたエラーは Error のインスタンスではなく、
+// String(error) が "[object Object]" になり詳細が失われるため、message プロパティを優先的に拾い、
+// なければ JSON.stringify で内容を残す。
+function formatErrorDetail(error: unknown): string {
+	if (error instanceof Error) return error.message;
+	if (error && typeof error === 'object') {
+		try {
+			return JSON.stringify(error);
+		} catch {
+			// 循環参照などJSON化できない場合のみフォールバック。
+		}
+	}
+	return String(error);
+}
+
 export async function sendOperationalAlert(env: AlertEnv, title: string, error: unknown): Promise<void> {
-	const detail = error instanceof Error ? `${error.message}` : String(error);
+	const detail = formatErrorDetail(error);
 	await postToWebhook(env, `⚠️ [${topic.site.slug}] ${title}\n${detail.slice(0, 1500)}`);
 }
 
