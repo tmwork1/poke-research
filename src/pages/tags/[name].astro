@@ -31,7 +31,7 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 	fetchCatalogItemsPage({ tag: tagName, page }),
 	fetchTopTags(20),
 	fetchCatalogSources({ tag: tagName }),
-	user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
+	user ? fetchBookmarkedItemIds(Astro.request, Astro.cookies, user.id) : Promise.resolve(new Set<number>()),
 ]);
 
 // このタグの代表記事（一覧先頭）が持つ「他のタグ」を手がかりに、タグ横断の関連記事を提案する。

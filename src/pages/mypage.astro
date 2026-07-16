@@ -35,8 +35,8 @@ let loadError = false;
 if (user) {
 	try {
 		const [bookmarked, recommended] = await Promise.all([
-			fetchBookmarkedItemsFiltered(user.id, { tag: bookmarkTag || undefined, sort: bookmarkSort, q: bookmarkQ || undefined }),
-			fetchRecommendedItems(user.id),
+			fetchBookmarkedItemsFiltered(Astro.request, Astro.cookies, user.id, { tag: bookmarkTag || undefined, sort: bookmarkSort, q: bookmarkQ || undefined }),
+			fetchRecommendedItems(Astro.request, Astro.cookies, user.id),
 		]);
 		bookmarkedItems = bookmarked.items;
 		bookmarkTagOptions = bookmarked.availableTags;

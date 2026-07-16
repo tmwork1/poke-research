@@ -67,7 +67,7 @@ const [itemsPage, topTags, sources, bookmarkedItemIds] = await Promise.all([
 		since,
 		sourceIds: filters.sourceIds,
 	}),
-	user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
+	user ? fetchBookmarkedItemIds(Astro.request, Astro.cookies, user.id) : Promise.resolve(new Set<number>()),
 ]);
 ---
 

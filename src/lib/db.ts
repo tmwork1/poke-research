@@ -1,6 +1,6 @@
 // Supabase の CRUD 呼び出しを、テーブル単位の薄い共通 API にまとめる。
 // API ルートやスクリプト側は、ここを通して基本操作を揃えて使う。
-import { getSupabaseClient } from './supabase';
+import { getSupabaseAdminClient } from './supabase';
 import type { Annotation, Item, Source } from './db-types';
 import { recordAuditLog } from './audit';
 
@@ -23,14 +23,14 @@ export type AnnotationInsert = Omit<Annotation, 'id' | 'created_at'>;
 export type AnnotationUpdate = Partial<AnnotationInsert>;
 
 async function selectAll<T>(table: string): Promise<T[]> {
-  const supabase = await getSupabaseClient();
+  const supabase = await getSupabaseAdminClient();
   const { data, error } = await supabase.from<T>(table).select('*');
   if (error) throw error;
   return data || [];
 }
 
 async function selectById<T extends EntityWithId>(table: string, id: number): Promise<T | null> {
-  const supabase = await getSupabaseClient();
+  const supabase = await getSupabaseAdminClient();
   const { data, error } = await supabase
     .from<T>(table)
     .select('*')
@@ -44,7 +44,7 @@ async function selectById<T extends EntityWithId>(table: string, id: number): Pr
 }
 
 async function insertOne<T>(table: string, row: object, actor?: string): Promise<T> {
-  const supabase = await getSupabaseClient();
+  const supabase = await getSupabaseAdminClient();
   const { data, error } = await supabase
     .from<T>(table)
     .insert([row])
@@ -68,7 +68,7 @@ async function updateOne<T extends EntityWithId>(
   row: object,
   actor?: string,
 ): Promise<T | null> {
-  const supabase = await getSupabaseClient();
+  const supabase = await getSupabaseAdminClient();
   const before = await selectById<T>(table, id);
   const { data, error } = await supabase
     .from<T>(table)
@@ -87,7 +87,7 @@ async function updateOne<T extends EntityWithId>(
 }
 
 async function deleteOne<T extends EntityWithId>(table: string, id: number, actor?: string): Promise<T | null> {
-  const supabase = await getSupabaseClient();
+  const supabase = await getSupabaseAdminClient();
   const { data, error } = await supabase
     .from<T>(table)
     .delete()

@@ -1,6 +1,6 @@
 // タグ名が専門用語かどうかをAIに判定させ、難しい場合だけ短い解説を生成する。
 // 一度生成した結果は tags テーブルにキャッシュし、以降は再判定しない。
-import { getSupabaseClient } from './supabase';
+import { getSupabaseAdminClient } from './supabase';
 import { getOpenAIConfig, OPENAI_CHAT_COMPLETIONS_URL } from './openai';
 
 export interface TagExplanation {
@@ -66,7 +66,7 @@ export function explainTag(tagId: number, tagName: string): Promise<TagExplanati
 }
 
 async function explainTagUncached(tagId: number, tagName: string): Promise<TagExplanation> {
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 
 	const { data: existing, error: fetchError } = await supabase
 		.from('tags')

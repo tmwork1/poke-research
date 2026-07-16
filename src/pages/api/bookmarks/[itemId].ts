@@ -5,12 +5,12 @@ import { removeBookmark } from '../../../lib/bookmarks';
 
 export const prerender = false;
 
-export async function DELETE({ params, locals }: APIContext) {
+export async function DELETE({ params, locals, request, cookies }: APIContext) {
   const itemId = Number(params.itemId);
   if (!Number.isInteger(itemId) || itemId <= 0) {
     return badRequest('valid itemId is required');
   }
-  await removeBookmark(locals.user!.id, itemId);
+  await removeBookmark(request, cookies, locals.user!.id, itemId);
   return noContent();
 }
 

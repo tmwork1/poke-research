@@ -2,7 +2,7 @@
 // これまで fetched/inserted/skipped は Workers のログにしか残らず、失敗時の再実行判断が
 // できなかった（migrations/014_add_import_runs.sql）。記録の失敗が収集ジョブ本体を
 // 止めないよう、insert 失敗は握りつぶして console.error に留める（src/lib/audit.ts と同じ方針）。
-import { getSupabaseClient } from './supabase';
+import { getSupabaseAdminClient } from './supabase';
 
 export type ImportRunTrigger = 'cron' | 'api';
 export type ImportRunStatus = 'succeeded' | 'failed';
@@ -38,7 +38,7 @@ export interface ImportRun {
 
 export async function recordImportRun(input: ImportRunInput): Promise<void> {
   try {
-    const supabase = await getSupabaseClient();
+    const supabase = await getSupabaseAdminClient();
     const { error } = await supabase.from('import_runs').insert([
       {
         provider: input.provider,
@@ -65,7 +65,7 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
 export async function fetchImportRuns(limit = DEFAULT_LIMIT): Promise<ImportRun[]> {
-  const supabase = await getSupabaseClient();
+  const supabase = await getSupabaseAdminClient();
   const safeLimit = Number.isInteger(limit) && limit > 0 && limit <= MAX_LIMIT ? limit : DEFAULT_LIMIT;
 
   const { data, error } = await supabase

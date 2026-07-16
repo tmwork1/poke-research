@@ -1,7 +1,9 @@
 // 一覧・詳細表示向けに、items / sources / tags / annotations を組み合わせて読む。
 // 結合結果の形を UI 側で扱いやすい形へ正規化する責務もここに置く（正規化の純粋関数自体は
 // node --test から読み込めるよう catalog-normalize.ts に分離している）。
-import { getSupabaseClient } from './supabase';
+import type { AstroCookies } from 'astro';
+import { getSupabaseClient, getSupabaseAdminClient } from './supabase';
+import { createUserSupabaseClient } from './user-session';
 import type { Annotation, Tag } from './db-types';
 import {
 	buildTagMonthlySeries,
@@ -413,8 +415,15 @@ export async function fetchBookmarkCounts(itemIds: number[]): Promise<Map<number
 	return counts;
 }
 
-export async function fetchBookmarkedItemIds(userId: string): Promise<Set<number>> {
-	const supabase = await getSupabaseClient();
+// bookmarks は RLS で auth.uid() = user_id に制限されている（migrations/027）ため、匿名キーの
+// getSupabaseClient ではなくユーザーセッションを積んだクライアントを使う（bookmarks.ts と同じ方針）。
+async function getBookmarksClient(request: Request, cookies: AstroCookies) {
+	if (import.meta.env.DEV) return getSupabaseAdminClient();
+	return createUserSupabaseClient(request, cookies);
+}
+
+export async function fetchBookmarkedItemIds(request: Request, cookies: AstroCookies, userId: string): Promise<Set<number>> {
+	const supabase = await getBookmarksClient(request, cookies);
 	const { data, error } = await supabase.from('bookmarks').select('item_id').eq('user_id', userId);
 	if (error) throw error;
 	return new Set((data ?? []).map((row) => row.item_id));
@@ -424,8 +433,8 @@ interface BookmarkRow {
 	item?: ItemRow | ItemRow[] | null;
 }
 
-export async function fetchBookmarkedItems(userId: string): Promise<CatalogItem[]> {
-	const supabase = await getSupabaseClient();
+export async function fetchBookmarkedItems(request: Request, cookies: AstroCookies, userId: string): Promise<CatalogItem[]> {
+	const supabase = await getBookmarksClient(request, cookies);
 	const { data, error } = await supabase
 		.from('bookmarks')
 		.select(`item:items (${ITEM_SELECT})`)
@@ -449,10 +458,12 @@ export interface BookmarkedItemsResult {
 }
 
 export async function fetchBookmarkedItemsFiltered(
+	request: Request,
+	cookies: AstroCookies,
 	userId: string,
 	options: { tag?: string; sort?: CatalogSort; q?: string } = {},
 ): Promise<BookmarkedItemsResult> {
-	const items = await fetchBookmarkedItems(userId);
+	const items = await fetchBookmarkedItems(request, cookies, userId);
 	const availableTags = tagUsageFromItems(items);
 	const byTag = options.tag ? items.filter((item) => item.tags.some((tag) => tag.name === options.tag)) : items;
 	const filtered = options.q ? filterItemsByKeyword(byTag, options.q) : byTag;
@@ -471,12 +482,12 @@ export async function fetchBookmarkedItemsFiltered(
 	return { items: ordered, availableTags, total: items.length };
 }
 
-export async function fetchRecommendedItems(userId: string, limit = 6): Promise<CatalogItem[]> {
-	const bookmarkedItemIds = await fetchBookmarkedItemIds(userId);
+export async function fetchRecommendedItems(request: Request, cookies: AstroCookies, userId: string, limit = 6): Promise<CatalogItem[]> {
+	const bookmarkedItemIds = await fetchBookmarkedItemIds(request, cookies, userId);
 
 	let preferredTagIds = new Set<number>();
 	if (bookmarkedItemIds.size > 0) {
-		const bookmarkedItems = await fetchBookmarkedItems(userId);
+		const bookmarkedItems = await fetchBookmarkedItems(request, cookies, userId);
 		preferredTagIds = new Set(bookmarkedItems.flatMap((item) => item.tags.map((tag) => tag.id)));
 	}
 

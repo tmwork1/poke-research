@@ -40,7 +40,7 @@ const tagTrend = await fetchTagTrend(topTags);
 try {
 	const [itemsPage, bookmarks] = await Promise.all([
 		fetchCatalogItemsPage({ tag: activeTag || undefined, sort: activeSort, page, pageSize: PAGE_SIZE }),
-		user ? fetchBookmarkedItemIds(user.id) : Promise.resolve(new Set<number>()),
+		user ? fetchBookmarkedItemIds(Astro.request, Astro.cookies, user.id) : Promise.resolve(new Set<number>()),
 	]);
 	recentItems = itemsPage.items;
 	hasMore = itemsPage.page < itemsPage.totalPages;

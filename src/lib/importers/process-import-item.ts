@@ -1,5 +1,5 @@
 // 記事単位のAIレビュー結果を受けて DB 書き込み（upsert）を呼び出す共通ロジック。
-// getSupabaseClient（cloudflare:workers 依存）や OpenAI 呼び出し（article-ai.ts 経由で
+// getSupabaseAdminClient（cloudflare:workers 依存）や OpenAI 呼び出し（article-ai.ts 経由で
 // 同じく cloudflare:workers 依存）を実装から切り離し、コールバック注入型の純粋な関数として
 // node --test から直接テストできるようにする（catalog-normalize.ts と同じ切り出し方針）。
 // review/upsert の実処理（reviewImportArticle・upsertItemByExternalUrl）は common.ts 側に残す。

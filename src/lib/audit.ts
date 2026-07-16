@@ -1,6 +1,6 @@
 // items/sources/annotations の変更履歴を audit_logs に記録・参照する処理。
 // 記録失敗が本体の書き込み処理を止めないよう、insert 失敗は握りつぶして console.error に留める。
-import { getSupabaseClient } from './supabase';
+import { getSupabaseAdminClient } from './supabase';
 import type { AuditLog } from './db-types';
 
 export type AuditAction = 'insert' | 'update' | 'delete';
@@ -16,7 +16,7 @@ interface RecordAuditLogInput {
 
 export async function recordAuditLog(input: RecordAuditLogInput): Promise<void> {
   try {
-    const supabase = await getSupabaseClient();
+    const supabase = await getSupabaseAdminClient();
     const { error } = await supabase.from('audit_logs').insert([
       {
         table_name: input.table,
@@ -44,7 +44,7 @@ const DEFAULT_AUDIT_LIMIT = 50;
 const MAX_AUDIT_LIMIT = 200;
 
 export async function fetchAuditLogs(filters: AuditLogFilters = {}): Promise<AuditLog[]> {
-  const supabase = await getSupabaseClient();
+  const supabase = await getSupabaseAdminClient();
   let query = supabase.from<AuditLog>('audit_logs').select('*').order('created_at', { ascending: false });
 
   if (filters.table?.trim()) {
