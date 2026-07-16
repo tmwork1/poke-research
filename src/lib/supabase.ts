@@ -31,6 +31,12 @@ function getSupabaseConfig() {
   return { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY };
 }
 
+function getSupabaseAdminConfig() {
+  const SUPABASE_URL = env.SUPABASE_URL || runtimeEnv.SUPABASE_URL || '';
+  const SUPABASE_SECRET_KEY = env.SUPABASE_SECRET_KEY || runtimeEnv.SUPABASE_SECRET_KEY || '';
+  return { SUPABASE_URL, SUPABASE_SECRET_KEY };
+}
+
 export async function getSupabaseClient() {
   const { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } = getSupabaseConfig();
   ensureProcessEnv();
@@ -50,6 +56,27 @@ export async function getSupabaseClient() {
     // （src/lib/subrequest-counter.ts）。Viteの依存事前バンドルでSupabaseクライアント内部の
     // fetch参照がglobalThis.fetchの差し替えより先に確定するため、globalな差し替えではなく
     // ここでオプションとして直接渡す必要がある。
+    global: { fetch: countingFetch },
+  });
+}
+
+// RLS（migrations/027）をバイパスするサービスロールクライアント。管理者API・cronジョブ・
+// インポーター等、アプリ層で既に認可を済ませたサーバー内部の書き込み専用に使う。
+// 公開閲覧（一覧・検索等）は引き続き getSupabaseClient（匿名キー、RLSで保護）を使うこと。
+export async function getSupabaseAdminClient() {
+  const { SUPABASE_URL, SUPABASE_SECRET_KEY } = getSupabaseAdminConfig();
+  ensureProcessEnv();
+
+  const { createClient } = await import('@supabase/supabase-js');
+
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+    // eslint-disable-next-line no-console
+    console.warn('Supabase env vars not set: SUPABASE_URL or SUPABASE_SECRET_KEY');
+  }
+
+  return createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
+    detectSessionInUrl: false,
+    auth: { autoRefreshToken: false, persistSession: false },
     global: { fetch: countingFetch },
   });
 }

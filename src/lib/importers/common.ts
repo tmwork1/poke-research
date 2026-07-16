@@ -2,7 +2,7 @@
 // ソース固有のフィールドマッピングは各インポーター側に残し、ここでは汎用部分だけを扱う。
 import { normalizeTagName } from './article-ai';
 import { buildAiRecheckColumns, buildAiReviewColumns, shouldPreserveAcceptedItem } from './process-import-item';
-import { getSupabaseClient } from '../supabase';
+import { getSupabaseAdminClient } from '../supabase';
 import { normalizeSource, type ItemRow } from '../catalog-normalize';
 
 // 本文は検索対象を広げるために保存するが、行が肥大化しないよう妥当な長さで切り詰める。
@@ -96,7 +96,7 @@ async function ensureTags(tagNames: string[], tagLabels: Record<string, string> 
 	const tagIdMap = new Map<string, number>();
 	if (normalizedTagNames.length === 0) return tagIdMap;
 
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const { data: existingTags, error: selectError } = await supabase.from('tags').select('id, name').in('name', normalizedTagNames);
 	if (selectError) throw selectError;
 
@@ -141,7 +141,7 @@ async function ensureTags(tagNames: string[], tagLabels: Record<string, string> 
 export async function syncItemTags(itemId: number, tagNames: string[], tagLabels: Record<string, string> = {}): Promise<void> {
 	// 全削除→再作成だと失敗時にタグが失われたまま残るため、差分だけ insert/delete する。
 	const normalizedTagNames = [...new Set(tagNames.map(normalizeTagName).filter((tag) => tag.length > 0))];
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 
 	const tagIdMap = await ensureTags(normalizedTagNames, tagLabels);
 	const desiredTagIds = new Set(
@@ -211,7 +211,7 @@ export async function syncNewItemTagsBatch(entries: ItemTagSyncEntry[]): Promise
 	}
 	if (rows.length === 0) return;
 
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const { error } = await supabase.from('item_tags').insert(rows);
 	if (error && error.code !== '23505') throw error;
 }
@@ -220,7 +220,7 @@ export async function fetchTopTagNames(limit = 40): Promise<string[]> {
 	// AIレビューがタグを新規発明しがちな問題を減らすため、使用頻度の高い既存タグを
 	// 事前に取得し、判定プロンプトへの再利用ヒントとして渡す。
 	// 集計は DB 側の RPC（migrations/012 の top_tags）で行う。
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const { data, error } = await supabase.rpc('top_tags', { tag_limit: limit });
 	if (error) throw error;
 
@@ -237,7 +237,7 @@ export interface SourceUpsertPayload {
 export async function upsertSourceByOriginUrl(payload: SourceUpsertPayload): Promise<{ id: number }> {
 	// select してから insert/update する形は同時実行時に重複行を作りうるため、
 	// origin_url の UNIQUE 制約(migrations/002)を前提に upsert で原子的に処理する。
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const { data, error } = await supabase
 		.from('sources')
 		.upsert(
@@ -312,7 +312,7 @@ export interface UpsertItemOptions {
 // （Cloudflare Workers の subrequest 予算制約、docs/issue/cron-subrequest-limit.md 参照）。
 const recordedPromptHashes = new Set<string>();
 
-async function recordPromptHashIfNew(supabase: Awaited<ReturnType<typeof getSupabaseClient>>, promptHash: string, kind: string): Promise<void> {
+async function recordPromptHashIfNew(supabase: Awaited<ReturnType<typeof getSupabaseAdminClient>>, promptHash: string, kind: string): Promise<void> {
 	if (recordedPromptHashes.has(promptHash)) return;
 	const { error } = await supabase.from('ai_prompt_hashes').upsert({ prompt_hash: promptHash, kind }, { onConflict: 'prompt_hash', ignoreDuplicates: true });
 	if (error) throw error;
@@ -327,7 +327,7 @@ export async function upsertItemByExternalUrl(
 ): Promise<{ id: number; action: 'inserted' | 'updated' | 'skipped' }> {
 	// action の判定は結果表示用の分類に過ぎず、書き込み自体は external_url の
 	// UNIQUE 制約(migrations/002)を前提にした upsert で原子的に行う。
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	let action: 'inserted' | 'updated' = 'inserted';
 	const recheckedAtIso = new Date().toISOString();
 	await recordPromptHashIfNew(supabase, payload.aiRecheckPromptHash, payload.kind);
@@ -421,7 +421,7 @@ export async function findExistingExternalUrls(externalUrls: string[]): Promise<
 	// Qiita などソート順が保証されない検索APIでは、設定ページ数の最後のページが全て既知記事かどうかの
 	// 判定（新着記事が後続ページに埋もれていないかの目安）にも使う。
 	if (externalUrls.length === 0) return new Set();
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const { data, error } = await supabase.from('items').select('external_url').in('external_url', externalUrls);
 	if (error) throw error;
 	return new Set((data ?? []).map((row) => row.external_url as string));
@@ -441,7 +441,7 @@ export interface DailyDigestItemRow {
 // AIレビューで棄却された記事（ai_accepted=false、偽陰性対策で保存はされる）は通知対象外にする。
 export async function fetchDailyDigestItems(sinceIso: string, collectionRoutes: string[]): Promise<DailyDigestItemRow[]> {
 	if (collectionRoutes.length === 0) return [];
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const { data, error } = await supabase
 		.from('items')
 		.select('title, external_url, collection_route, kind, source:sources(id, name, type, origin_url)')
@@ -470,7 +470,7 @@ export interface FeedSubscriptionUpsertPayload {
 export async function upsertFeedSubscription(payload: FeedSubscriptionUpsertPayload): Promise<void> {
 	// 無効化済み（status='disabled'）のフィードを再発見のたびに誤って再有効化しないよう、
 	// 既存行があれば何もしない（ignoreDuplicates）。未登録の場合のみ active で新規作成する。
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const { error } = await supabase
 		.from('feed_subscriptions')
 		.upsert(
@@ -487,7 +487,7 @@ export interface FeedSubscription {
 }
 
 export async function fetchActiveFeedSubscriptions(): Promise<FeedSubscription[]> {
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const { data, error } = await supabase.from('feed_subscriptions').select('id, feed_url, hostname').eq('status', 'active');
 	if (error) throw error;
 	return (data ?? []).map((row) => ({
@@ -502,7 +502,7 @@ const MAX_CONSECUTIVE_FEED_FAILURES = 5;
 export async function recordFeedFetchOutcome(id: number, success: boolean): Promise<void> {
 	// 連続失敗が既定回数に達したフィードは status='disabled' にして、死んだフィードへの
 	// 無駄なポーリングを止める（再有効化する運用コマンドは今回は用意しない）。
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const nowIso = new Date().toISOString();
 
 	if (success) {
@@ -531,7 +531,7 @@ export async function recordFeedFetchOutcome(id: number, success: boolean): Prom
 	if (updateError) throw updateError;
 }
 
-// processImportItem・shouldPreserveAcceptedItem は getSupabaseClient/OpenAI 呼び出しに依存しない
+// processImportItem・shouldPreserveAcceptedItem は getSupabaseAdminClient/OpenAI 呼び出しに依存しない
 // 純粋な関数のため、node --test から直接テストできるよう process-import-item.ts に切り出して
 // ある（cloudflare:workers 依存が無いファイルに分離することで import 時点で落ちないようにする
 // 目的。catalog-normalize.ts と同じ方針）。ここでは既存の import 元（qiita/zenn/note/blog.ts）を

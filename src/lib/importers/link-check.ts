@@ -5,7 +5,7 @@
 // ここでは対象の選定と DB 更新（I/O）だけを担う。
 import { mapWithConcurrency } from './common';
 import { decideLinkStatus, probeUrl, type LinkCheckOutcome, type LinkCheckTarget } from '../link-status';
-import { getSupabaseClient } from '../supabase';
+import { getSupabaseAdminClient } from '../supabase';
 import { parseOptionalPositiveInteger, parsePositiveInteger } from '../params';
 
 // 収集ジョブ本体（検索語等）と異なり、これらはチェック実行の負荷調整パラメータに過ぎないため
@@ -62,7 +62,7 @@ export function resolveLinkCheckOptions(
 // LINK_CHECK_BATCH_LIMITが未指定の場合に使う既定のbatchLimitを、チェック対象になりうる
 // 件数（ai_accepted=trueかつexternal_urlがある件数）から算出する。
 async function resolveAdaptiveBatchLimit(
-	supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
+	supabase: Awaited<ReturnType<typeof getSupabaseAdminClient>>,
 	recheckIntervalDays: number,
 ): Promise<number> {
 	const { count, error } = await supabase
@@ -97,7 +97,7 @@ export async function checkLinks(options: LinkCheckOptions = {}): Promise<LinkCh
 	const checkedAt = new Date().toISOString();
 	const cutoff = new Date(Date.now() - resolved.recheckIntervalDays * 24 * 60 * 60 * 1000).toISOString();
 
-	const supabase = await getSupabaseClient();
+	const supabase = await getSupabaseAdminClient();
 	const batchLimit = resolved.batchLimit ?? (await resolveAdaptiveBatchLimit(supabase, resolved.recheckIntervalDays));
 
 	// 全件を毎回叩くとチェック対象サイトへの負荷や実行時間が無視できないため、

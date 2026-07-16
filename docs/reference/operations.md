@@ -17,7 +17,7 @@
 
 1. `migrations/` に新しいマイグレーションファイルがあるか確認する。
 2. スキーマを変更した場合のみ、`node --env-file=.env.production scripts/db/test-db.mjs` を実行し、本番の `SUPABASE_URL` / `SUPABASE_SECRET_KEY` で CRUD が成功することを確認する（テストデータは自動で削除される）。
-3. 不足しているシークレットがないか確認する（`.env.example` 参照、`wrangler secret put <NAME>` で設定）。
+3. 不足しているシークレットがないか確認する（`.env.example` 参照、`wrangler secret put <NAME>` で設定）。特に `SUPABASE_SECRET_KEY` は、migrations/027 で RLS を有効化して以降、管理者API・cronジョブ・インポーター等の書き込み経路（`getSupabaseAdminClient`、RLSをバイパスするservice_roleキー）に必須。
 4. `npm run release` を実行し、未適用のマイグレーションを適用する。`.env.production` の `DATABASE_URL`（本番接続文字列）を自動で参照する。`main` への push 前に済ませる。
    ```bash
    npm run release
@@ -26,6 +26,16 @@
 6. デプロイ後、本番 URL（https://poke-research.com/）の閲覧系エンドポイント（`GET /api/items` など）と Basic 認証付きの書き込み系エンドポイントを一度叩いて動作確認する。
 
 `npm run deploy`（`wrangler deploy`）は、Cloudflare 連携が使えない緊急時や `main` を経由しない検証用の手動デプロイ手段として残している。
+
+## 権限モデル（RLS）
+
+`migrations/027_enable_rls.sql` で全 public テーブルに Row-Level Security を有効化している（Supabase の `rls_disabled_in_public` 指摘への対応）。
+
+- **公開閲覧**（items/sources/tags/item_tags/annotations）: 匿名キー（`SUPABASE_PUBLISHABLE_KEY`、`getSupabaseClient`）で全行 SELECT のみ可能。書き込みポリシーは無い。
+- **ブックマーク・ユーザー**（bookmarks/users）: `auth.uid()` ベースで本人の行のみ読み書き可能。`src/lib/bookmarks.ts` / `src/lib/catalog.ts` のブックマーク関連関数は、Cookie ベースのユーザーセッションを積んだクライアント（`createUserSupabaseClient`、`src/lib/user-session.ts`）を使う。
+- **それ以外すべて**（管理者API・cronジョブ・インポーター・audit_logs・import_runs・feed_subscriptions・ai_prompt_hashes）: RLS をバイパスするサービスロールキー（`SUPABASE_SECRET_KEY`、`getSupabaseAdminClient`）を使う。認可はアプリ層（Basic 認証など）で完結させる。
+
+新しいテーブルを追加する場合は、上記いずれかの方針に沿って `ENABLE ROW LEVEL SECURITY` とポリシーを同じマイグレーションに含めること（RLS無効のまま公開しない）。
 
 ## バックアップと復旧
 

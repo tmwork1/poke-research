@@ -7,12 +7,12 @@ import { addBookmark } from '../../../lib/bookmarks';
 
 export const prerender = false;
 
-export async function GET({ locals }: APIContext) {
-  const items = await fetchBookmarkedItems(locals.user!.id);
+export async function GET({ locals, request, cookies }: APIContext) {
+  const items = await fetchBookmarkedItems(request, cookies, locals.user!.id);
   return jsonResponse({ data: items, meta: { count: items.length } });
 }
 
-export async function POST({ request, locals }: APIContext) {
+export async function POST({ request, cookies, locals }: APIContext) {
   const body = await readJsonBody<{ itemId?: number }>(request);
   if (body.response) return body.response;
   const itemId = body.data?.itemId;
@@ -21,7 +21,7 @@ export async function POST({ request, locals }: APIContext) {
   }
 
   try {
-    await addBookmark(locals.user!.id, itemId as number);
+    await addBookmark(request, cookies, locals.user!.id, itemId as number);
   } catch (error) {
     if (error instanceof Error && error.message === 'item not found') {
       return badRequest('item not found');
