@@ -175,6 +175,8 @@ async function queryCatalogItems(
 		includeBody?: boolean;
 		/** ソース件数集計など、フル結合ではなく特定カラムだけ欲しい場合の select 差し替え。 */
 		selectOverride?: string;
+		/** 件数のみ取得（行は取らない）。PGRST103 のフォールバック用。 */
+		countOnly?: boolean;
 	} = {},
 ): Promise<{ data: ItemRow[]; count: number | null }> {
 	const searchTerm = filters.q?.trim();
@@ -182,7 +184,10 @@ async function queryCatalogItems(
 	const supabase = await getSupabaseClient();
 	let query = supabase
 		.from('items')
-		.select(options.selectOverride ?? (options.includeBody ? ITEM_SELECT_WITH_BODY : ITEM_SELECT), options.withCount ? { count: 'exact' } : undefined);
+		.select(
+			options.countOnly ? 'id' : (options.selectOverride ?? (options.includeBody ? ITEM_SELECT_WITH_BODY : ITEM_SELECT)),
+			options.countOnly ? { count: 'exact', head: true } : (options.withCount ? { count: 'exact' } : undefined),
+		);
 
 	// リンク切れ検出（migrations/016）で broken と確定したアイテムは、検索・タグ・新着などの
 	// 一覧（RSS/サイトマップも fetchCatalogItems 経由のため同様）から隠す。詳細ページ（
@@ -242,7 +247,7 @@ async function queryCatalogItems(
 		query = query.in('id', [...(itemIds ?? [])]);
 	}
 
-	if (filters.limit && filters.limit > 0) {
+	if (!options.countOnly && filters.limit && filters.limit > 0) {
 		if (options.offset && options.offset > 0) {
 			query = query.range(options.offset, options.offset + filters.limit - 1);
 		} else {
@@ -251,7 +256,16 @@ async function queryCatalogItems(
 	}
 
 	const { data, error, count } = await query;
-	if (error) throw error;
+	if (error) {
+		// 記事削除等で件数が減った後、古いページ番号（クローラのキャッシュ等）でアクセスされると
+		// offset が総件数を超え、PostgREST が PGRST103 (Range Not Satisfiable) を返す。
+		// 存在しないページとして空リスト＋実件数を返す（例外にしてページごと落とさない）。
+		if (!options.countOnly && error.code === 'PGRST103') {
+			const { count: total } = await queryCatalogItems(filters, { ...options, countOnly: true });
+			return { data: [], count: total };
+		}
+		throw error;
+	}
 	return { data: (data ?? []) as ItemRow[], count: count ?? null };
 }
 
