@@ -360,6 +360,11 @@ const showUpdatedBadge = Boolean(
 		color: #1f8a77;
 	}
 
+	.source-chip[data-source-type='github'] {
+		background: rgba(110, 118, 129, 0.18);
+		color: #57606a;
+	}
+
 	@media (prefers-color-scheme: dark) {
 		.source-chip[data-source-type='qiita'] {
 			color: #8be04e;
@@ -371,6 +376,10 @@ const showUpdatedBadge = Boolean(
 
 		.source-chip[data-source-type='note'] {
 			color: #7fe0cf;
+		}
+
+		.source-chip[data-source-type='github'] {
+			color: #c9d1d9;
 		}
 	}
 

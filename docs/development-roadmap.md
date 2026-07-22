@@ -39,7 +39,7 @@
 - [x] Qiita で確立した取り込み経路をもとに、Zenn / note（対応可能な範囲）へ収集対象を拡張する。
   - [x] Zenn（非公式 API。`topicname` によるトピック検索、`/api/articles/{slug}` で本文・タグを取得）
   - [x] note（非公式 API。`/api/v3/searches` によるキーワード検索、`/api/v3/notes/{key}` で本文・タグを取得。有料/メンバーシップ限定記事は `can_read` で除外）
-  - GitHub（リポジトリ）は対象外とする。閲覧者にとって記事よりリポジトリは読むハードルが高く、この情報ハブの想定読者に合わないため。
+  - [x] GitHub（リポジトリ）は当初「閲覧者にとって記事よりリポジトリは読むハードルが高く、この情報ハブの想定読者に合わないため対象外」としていたが、2026-07-22にユーザー判断で方針を撤回し、記事・論文に続く3つ目のタブ（`/repos`）として新設した。GitHub Search API（`GET /search/repositories`、`GITHUB_TOKEN`必須）でリポジトリを検索し、READMEを取得してAIレビューの入力に使う。詳細は [docs/plan/repo.md](plan/repo.md) を参照。
   - [x] 個人ブログは特定ブログの購読ではなく、Brave Search API（公式・ドキュメント化された検索API）でのキーワード検索により発見する方針とし、実装した（`src/lib/brave.ts`、`src/lib/importers/blog.ts`）。除外ドメインは `src/lib/importers/keywords.ts` の `EXCLUDED_BLOG_DOMAINS`（Qiita/Zenn/note/GitHub/YouTube/X に加え、検索結果を占有しがちな企業攻略サイト yakkun.com/gamewith.jp/appmedia.jp/game8.jp/altema.jp/gamerch.com。検索クエリの `-site:` と結果フィルタの両方で除く）と `FILTERED_BLOG_DOMAINS`（はてなブックマーク・Pinterest・SourceForge・アプリストア等のアグリゲータ。クエリ文字数を抑えるため結果フィルタのみで除く）に分けて管理する。任意サイトの本文抽出は Cloudflare の `HTMLRewriter` で行い（`article`→`main`→`body` の順にフォールバック）、`items.version` に本文ハッシュを保存して差分が無ければ AI レビューを省略する。設計仕様書は実装完了に伴い撤去済み。本番調査でツール提供ページ（ダメージ計算ツール等）や攻略サイトが多数取り込まれた問題への対応は [2026-07-06](progress/2026-07-06.md) を参照。
   - YouTube は対象外とする。YouTube Data API v3 で検索自体は可能だが、記事本文に相当するテキスト（字幕・文字起こし）を任意の動画から確実に取得する手段が無く、概要欄だけでは AI レビューの精度が確保できないため。
   - Brave Search API での自動発見を補う形で、UI から記事単体の URL を投稿できる手動登録機能も将来検討する（ブログのトップページ単位ではなく、記事そのものの URL に限定する。ブログ単位だと更新の有無を追う仕組み＝RSS 自動検出などが別途必要になり、対象ブログによっては検知できないため）。実装はリリース後のアップデートで対応し、M3 の完了条件には含めない。

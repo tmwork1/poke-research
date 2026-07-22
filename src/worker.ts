@@ -9,6 +9,7 @@ import { runAndRecord } from './lib/import-runs';
 import { resolveArxivSyncOptions, syncArxivCollection } from './lib/importers/arxiv';
 import { resolveOpenAlexSyncOptions, syncOpenAlexCollection } from './lib/importers/openalex';
 import { resolveFeedSyncOptions, syncFeedCollection } from './lib/importers/feed';
+import { resolveGithubSyncOptions, syncGithubCollection } from './lib/importers/github';
 import { resolveHatenaSyncOptions, syncHatenaCollection } from './lib/importers/hatena';
 import { checkLinks, resolveLinkCheckOptions } from './lib/importers/link-check';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
@@ -40,7 +41,7 @@ const WEEKLY_REVIEW_CRON = '30 11 * * 1';
 // （リンク切れ検出の後）に置くことで、既にarXivが収集済みのURLをOpenAlex側でも無駄なく
 // スキップできるようにする。リンク切れ検出・日次まとめ通知は収集ジョブの結果に依存する
 // （まとめ通知は当日分の収集結果をDBから集計する）ため、その後段のスロットに置く。
-const DAILY_CRON = '0,5,10,15,20,25,30,59 15 * * *';
+const DAILY_CRON = '0,5,10,15,20,25,30,35,59 15 * * *';
 // note は非公式APIが403 Access deniedを返すようになったため自動実行対象から外している
 // （コード・手動起動用API（/api/import/note）は残したまま、cronからの呼び出しのみ停止）。
 //
@@ -60,10 +61,12 @@ const DAILY_SLOT_JOBS: Array<{ minute: number; label: string; run: (scheduledTim
 	{ minute: 20, label: 'はてな', run: runScheduledHatenaImport },
 	{ minute: 25, label: 'リンク切れ検出', run: runScheduledLinkCheck },
 	{ minute: 30, label: 'OpenAlex', run: runScheduledOpenAlexImport },
+	{ minute: 35, label: 'GitHub', run: runScheduledGithubImport },
 	{ minute: 59, label: '日次まとめ通知', run: runScheduledDailyDigest },
 ];
-// 日次収集ジョブ群のうち、新着記事・論文を生む6ジョブが実際に保存する items.collection_route の値。
-// 日次まとめ通知（runScheduledDailyDigest）がDBから当日分を集計する際の絞り込みに使う。
+// 日次収集ジョブ群のうち、新着記事・論文・リポジトリを生む7ジョブが実際に保存する
+// items.collection_route の値。日次まとめ通知（runScheduledDailyDigest）がDBから
+// 当日分を集計する際の絞り込みに使う。
 const DAILY_COLLECTION_ROUTES = [
 	'feed-importer',
 	'qiita-importer',
@@ -71,6 +74,7 @@ const DAILY_COLLECTION_ROUTES = [
 	'arxiv-importer',
 	'hatena-bookmark-importer',
 	'openalex-importer',
+	'github-importer',
 ];
 
 export default {
@@ -301,6 +305,26 @@ async function runScheduledOpenAlexImport(): Promise<ImportItemOutcome[]> {
 	} catch (error) {
 		console.error('[cron:openalex] sync failed', error);
 		await sendOperationalAlert(env, 'OpenAlex 収集ジョブが失敗しました', error);
+		return [];
+	}
+}
+
+async function runScheduledGithubImport(): Promise<ImportItemOutcome[]> {
+	// 他インポーター同様、リポジトリ単位の失敗は syncGithubCollection 内で skipped として吸収される。
+	// 失敗時は次回 cron 実行を待つか、POST /api/import/github を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
+	try {
+		const result = await runAndRecord('github', 'cron', () => syncGithubCollection(resolveGithubSyncOptions(env)));
+		console.log('[cron:github] sync completed', {
+			query: result.query,
+			fetched: result.fetched,
+			inserted: result.inserted,
+			updated: result.updated,
+			skipped: result.skipped,
+		});
+		return result.items;
+	} catch (error) {
+		console.error('[cron:github] sync failed', error);
+		await sendOperationalAlert(env, 'GitHub 収集ジョブが失敗しました', error);
 		return [];
 	}
 }

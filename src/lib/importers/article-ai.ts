@@ -17,7 +17,7 @@ export interface ImportArticleReviewInput {
 	updatedAt?: string;
 	sourceName?: string;
 	existingTags?: string[];
-	/** items.kind に対応する種別（既定 'article'）。'paper' は arXiv 収集（arxiv.ts）が渡す。 */
+	/** items.kind に対応する種別（既定 'article'）。'paper' は arXiv 収集（arxiv.ts）、'repo' は GitHub リポジトリ収集（github.ts）が渡す。 */
 	kind?: string;
 }
 
