@@ -8,11 +8,8 @@ import { fetchDailyDigestItems, type ImportItemOutcome } from './lib/importers/c
 import { runAndRecord } from './lib/import-runs';
 import { resolveArxivSyncOptions, syncArxivCollection } from './lib/importers/arxiv';
 import { resolveOpenAlexSyncOptions, syncOpenAlexCollection } from './lib/importers/openalex';
-import { resolveBlogSyncOptions, syncBlogCollection } from './lib/importers/blog';
-import { resolveBlogKeywordIndex } from './lib/importers/blog-rotation';
 import { resolveFeedSyncOptions, syncFeedCollection } from './lib/importers/feed';
 import { resolveHatenaSyncOptions, syncHatenaCollection } from './lib/importers/hatena';
-import { BLOG_KEYWORDS } from './lib/importers/keywords';
 import { checkLinks, resolveLinkCheckOptions } from './lib/importers/link-check';
 import { resolveQiitaSyncOptions, syncQiitaCollection } from './lib/importers/qiita';
 import { resolveZennSyncOptions, syncZennCollection } from './lib/importers/zenn';
@@ -75,16 +72,6 @@ const DAILY_COLLECTION_ROUTES = [
 	'hatena-bookmark-importer',
 	'openalex-importer',
 ];
-// ブログ（Brave Search）は発見段階のキーワード検索が新規/既存の判定より前にかかる固定コストで、
-// 差分検知でも削減できない。さらに検索キーワード（BLOG_KEYWORDS）は今後も増減しうるため、
-// 「1日に何回・何キーワードずつ」をcron側にハードコードしたくない。そこで専用エントリを
-// 1日6回（4時間おき）発火させ、resolveBlogKeywordIndex で発火時刻からキーワードを1つだけ選んで
-// 実行する（詳細はsrc/lib/importers/blog-rotation.ts）。キーワード数が変わっても、一巡に要する
-// 日数が伸び縮みするだけでコード変更は不要。
-const BLOG_CRON = '0 1,5,9,13,17,21 * * *';
-// BLOG_CRON の発火間隔（4時間）と一致させる。resolveBlogKeywordIndex の通し番号（tick）が
-// 発火のたびにちょうど1ずつ進むようにするための値。
-const BLOG_ROTATION_SLOT_MS = 4 * 60 * 60 * 1000;
 
 export default {
 	async fetch(request, ctxEnv, ctx) {
@@ -103,10 +90,6 @@ export default {
 				return;
 			}
 			ctx.waitUntil(runDailySlotJob(slot, controller.scheduledTime));
-			return;
-		}
-		if (controller.cron === BLOG_CRON) {
-			ctx.waitUntil(runScheduledBlogImport(controller.scheduledTime));
 			return;
 		}
 		console.error('[cron] unrecognized cron expression', { cron: controller.cron });
@@ -213,31 +196,10 @@ async function runScheduledZennImport(): Promise<ImportItemOutcome[]> {
 // 403 Access denied を返すようになったため 2026-07-09 に削除した。src/lib/importers/note.ts と
 // POST /api/import/note（src/pages/api/import/note.ts）は変更しておらず、手動起動は引き続き可能。
 
-async function runScheduledBlogImport(scheduledTime: number): Promise<ImportItemOutcome[]> {
-	// 他インポーター同様、記事単位の失敗は syncBlogCollection 内で skipped として吸収される。
-	// 失敗時は次回 cron 実行を待つか、POST /api/import/blog を手動で叩けば同じ内容を再実行できる（upsert なので冪等）。
-	// 発火のたびに全キーワードをまとめて検索すると発見段階だけで固定コストが大きいため
-	// （docs/issue/cron-subrequest-limit.md参照）、resolveBlogKeywordIndex で1キーワードだけ選ぶ。
-	const keyword = BLOG_KEYWORDS[resolveBlogKeywordIndex(scheduledTime, BLOG_ROTATION_SLOT_MS, BLOG_KEYWORDS.length)];
-	try {
-		const result = await runAndRecord('blog', 'cron', () => syncBlogCollection(resolveBlogSyncOptions(env, { query: keyword })));
-		console.log('[cron:blog] sync completed', {
-			keyword,
-			queries: result.queries,
-			pages: result.pages,
-			requestsUsed: result.requestsUsed,
-			fetched: result.fetched,
-			inserted: result.inserted,
-			updated: result.updated,
-			skipped: result.skipped,
-		});
-		return result.items;
-	} catch (error) {
-		console.error('[cron:blog] sync failed', error);
-		await sendOperationalAlert(env, 'ブログ（Brave Search）収集ジョブが失敗しました', error);
-		return [];
-	}
-}
+// ブログ（Brave Search）の cron 経由の自動実行ジョブ（runScheduledBlogImport 相当）は、
+// Brave Search API を 2026-07-23 に解約したため削除した。src/lib/importers/blog.ts・
+// blog-rotation.ts・brave.ts と POST /api/import/blog（src/pages/api/import/blog.ts）は
+// 変更しておらず、APIキーを再取得すれば手動起動・cron再登録のいずれも可能。
 
 async function runScheduledFeedImport(): Promise<ImportItemOutcome[]> {
 	// 他インポーター同様、記事単位の失敗は syncFeedCollection 内で skipped として吸収される。
