@@ -45,23 +45,17 @@ jobs:
         # 006番マイグレーションは Supabase が管理する auth.users を、027番は auth.uid() と
         # anon/authenticated/service_role ロールを参照する。CIの素の postgres:16 にはこれらが
         # 無いため、DDL検証に必要な最小限を用意する（実際の認可挙動はCIでは検証しない）。
+        # heredocの終端行はYAMLのブロックスカラー（run: |）が要求する最低インデントを満たせず
+        # 構文エラーになる（2026-07-16のRLS対応コミットでheredoc化した際に混入し、以後
+        # このワークフロー自体がジョブ0件で即失敗する状態になっていた）ため、psql -c の
+        # 複数指定に置き換えている。
         run: |
-          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres <<'SQL'
-            CREATE SCHEMA IF NOT EXISTS auth;
-            CREATE TABLE IF NOT EXISTS auth.users (
-              id uuid PRIMARY KEY,
-              email text,
-              raw_user_meta_data jsonb DEFAULT '{}'::jsonb
-            );
-
-            DO $$ BEGIN
-              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon; END IF;
-              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated; END IF;
-              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role; END IF;
-            END $$;
-
-            CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
-SQL
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE SCHEMA IF NOT EXISTS auth;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb DEFAULT '{}'::jsonb);"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE ROLE anon;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE ROLE authenticated;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE ROLE service_role;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS \$\$ SELECT NULL::uuid \$\$;"
       - name: Apply migrations to a fresh database
         run: npm run migrate
         env:

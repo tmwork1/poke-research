@@ -4,7 +4,6 @@
 
 const KNOWN_LABELS: Record<string, string> = {
 	// タグ全体で一致するもの（英語+日本語の複合語や、単語分割・自動大文字化では復元できない表記）
-	'romハック': 'ROMハック',
 	'aiエージェント': 'AIエージェント',
 	'ローカルllm': 'ローカルLLM',
 	'gorilla-mux': 'gorilla/mux',

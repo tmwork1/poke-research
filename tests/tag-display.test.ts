@@ -8,7 +8,6 @@ describe('formatTagLabel', () => {
 	it('既知語は公式表記へ変換する', () => {
 		assert.equal(formatTagLabel('python'), 'Python');
 		assert.equal(formatTagLabel('pokeapi'), 'PokeAPI');
-		assert.equal(formatTagLabel('romハック'), 'ROMハック');
 	});
 
 	it('未知の英字語は先頭大文字にする', () => {
