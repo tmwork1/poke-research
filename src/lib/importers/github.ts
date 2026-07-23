@@ -10,6 +10,7 @@
 //
 // 収集クエリはキーワードのみで広く収集し、AIレビューを安全網にする方針を取る（arXiv/OpenAlexと同じ）。
 import { reviewImportArticle } from './article-ai';
+import { computePromptHash } from './ai-review-prompt.mjs';
 import {
 	fetchTopTagNames,
 	findExistingExternalUrls,
@@ -44,6 +45,10 @@ export interface GithubSyncOptions {
 	query?: string;
 	maxResults?: number;
 	maxNewItemsPerRun?: number;
+	// GitHub Search APIのページング（1始まり）。日次収集は既定値1のみを見るが、初期投入の
+	// 手動バックフィル（fetchGithubCandidates）では2以降を指定して100件を超える件数を集める
+	// （openalex.tsのpageと同用途）。
+	page?: number;
 }
 
 export interface GithubSyncResult {
@@ -149,12 +154,16 @@ function githubHeaders(token: string, accept: string): HeadersInit {
 	return headers;
 }
 
-async function fetchGithubRepositories(query: string, maxResults: number, token: string): Promise<GithubRepository[]> {
+async function fetchGithubRepositories(query: string, maxResults: number, token: string, page = 1): Promise<GithubRepository[]> {
 	const url = new URL(GITHUB_SEARCH_REPOSITORIES_URL);
 	url.searchParams.set('q', query);
 	url.searchParams.set('sort', 'stars');
 	url.searchParams.set('order', 'desc');
-	url.searchParams.set('per_page', String(maxResults));
+	// GitHub Search API は per_page の上限が100のため、100件を超える件数が必要な場合は
+	// 呼び出し側（fetchGithubCandidates）が page を進めて複数回に分けて呼ぶ（openalex.tsの
+	// 過去分バックフィルと同じ、手動で複数回叩く前提の設計）。
+	url.searchParams.set('per_page', String(Math.min(maxResults, 100)));
+	url.searchParams.set('page', String(page));
 
 	const response = await fetch(url, { headers: githubHeaders(token, 'application/vnd.github+json') });
 	if (!response.ok) {
@@ -303,4 +312,197 @@ export async function syncGithubCollection(options: GithubSyncOptions = {}): Pro
 		fetchedAt,
 		items: itemResults,
 	};
+}
+
+// 2026-07-23、GitHubリポジトリの初期投入バックフィル用（一度きり）。ユーザー指示により、この
+// バックフィル分のみOpenAIのAIレビューを使わず、Claude Codeセッション内のサブエージェントに
+// 直接判定させる（cronの日次収集は今まで通りOpenAI・reviewImportArticleを使う、article-ai.tsは
+// 変更しない）。openalex.tsのOpenAlex過去分バックフィル（fetchOpenAlexCandidates/
+// applyOpenAlexReviews）と同じ2段構成: 判定ロジック自体はDB書き込みの正しさに直結するため
+// 独自実装せず、既存のDB書き込みパス（upsertItemByExternalUrl・syncNewItemTagsBatch等）を
+// そのまま再利用し、判定結果の出所（OpenAI呼び出し vs 手動セッション判定）だけを切り替える。
+
+export interface GithubCandidate {
+	externalUrl: string;
+	title: string;
+	authors: string[];
+	readmeExcerpt: string;
+	repoId: number;
+	stargazersCount: number;
+	forksCount: number;
+	primaryLanguage: string | null;
+	topics: string[];
+	archived: boolean;
+	createdAt: string | null;
+	pushedAt: string | null;
+	version: string;
+}
+
+export interface GithubCandidatesResult {
+	query: string;
+	maxResults: number;
+	page: number;
+	fetched: number;
+	candidates: GithubCandidate[];
+	sourceId: number;
+	fetchedAt: string;
+}
+
+// AIレビュー（reviewImportArticle）を呼ばず、DB未収録の候補をREADME付きで返す
+// （手動セッション判定用。DB書き込みは行わない）。
+export async function fetchGithubCandidates(options: GithubSyncOptions = {}): Promise<GithubCandidatesResult> {
+	const query = normalizeQuery(options.query);
+	const maxResults = parsePositiveInteger(options.maxResults, DEFAULT_MAX_RESULTS);
+	const page = Number.isInteger(options.page) && (options.page as number) >= 1 ? (options.page as number) : 1;
+	const fetchedAt = new Date().toISOString();
+
+	const { token } = getGithubConfig();
+	if (!token) {
+		throw new Error('GITHUB_TOKEN is required to sync GitHub repositories');
+	}
+
+	const [repos, source] = await Promise.all([
+		fetchGithubRepositories(query, maxResults, token, page),
+		upsertSourceByOriginUrl({
+			name: GITHUB_SOURCE_NAME,
+			type: 'github',
+			originUrl: GITHUB_SOURCE_ORIGIN_URL,
+			metadata: createSourceMetadata(query, fetchedAt, maxResults),
+		}),
+	]);
+
+	const existingUrls = await findExistingExternalUrls(repos.map((repo) => selectExternalUrl(repo)));
+	const newRepos = repos.filter((repo) => !existingUrls.has(selectExternalUrl(repo)));
+
+	const candidates = await mapWithConcurrency(newRepos, IMPORT_CONCURRENCY, async (repo) => {
+		const readme = await fetchReadme(repo, token);
+		return {
+			externalUrl: selectExternalUrl(repo),
+			title: resolveTitle(repo),
+			authors: extractOwnerLogin(repo),
+			readmeExcerpt: createAiBodyExcerpt(readme),
+			repoId: repo.id,
+			stargazersCount: repo.stargazers_count,
+			forksCount: repo.forks_count,
+			primaryLanguage: repo.language ?? null,
+			topics: repo.topics ?? [],
+			archived: repo.archived ?? false,
+			createdAt: repo.created_at ?? null,
+			pushedAt: repo.pushed_at ?? null,
+			version: repo.pushed_at ?? String(repo.id),
+		} satisfies GithubCandidate;
+	});
+
+	return { query, maxResults, page, fetched: repos.length, candidates, sourceId: source.id, fetchedAt };
+}
+
+export interface GithubManualReview extends GithubCandidate {
+	accepted: boolean;
+	summary: string;
+	tags: string[];
+	reason: string;
+	confidence?: number;
+	language: string;
+}
+
+// 手動セッション判定であることをDB上で識別できるよう、モデル名に明記する
+// （items.ai_recheck_model、openalex.tsのMANUAL_SESSION_REVIEW_MODELと同じ方針）。
+export const GITHUB_MANUAL_SESSION_REVIEW_MODEL = 'claude (manual session review, no API)';
+
+export interface ApplyGithubReviewsResult {
+	sourceId: number;
+	inserted: number;
+	updated: number;
+	skipped: number;
+	items: ImportItemOutcome[];
+}
+
+// サブエージェントが判定した結果を受け取り、既存の本番DB書き込みパスでそのまま保存する。
+// reviewImportArticle（OpenAI）を経由しない点以外はsyncGithubCollectionの後半と同じ処理。
+export async function applyGithubReviews(query: string, reviews: GithubManualReview[]): Promise<ApplyGithubReviewsResult> {
+	const fetchedAt = new Date().toISOString();
+	const source = await upsertSourceByOriginUrl({
+		name: GITHUB_SOURCE_NAME,
+		type: 'github',
+		originUrl: GITHUB_SOURCE_ORIGIN_URL,
+		metadata: createSourceMetadata(query, fetchedAt, reviews.length),
+	});
+	// システムプロンプト自体はOpenAIレビューと同一のもの（ai-review-prompt.mjsのbuildSystemPrompt）を
+	// サブエージェントへの指示に使うため、prompt_hashも同じ関数で計算し比較可能にする。
+	const promptHash = await computePromptHash(topic, DEFAULT_KIND);
+
+	const pendingTagEntries: ItemTagSyncEntry[] = [];
+	const items: ImportItemOutcome[] = [];
+
+	for (const entry of reviews) {
+		const metadata = {
+			service: 'github',
+			github: {
+				id: entry.repoId,
+				stargazers_count: entry.stargazersCount,
+				forks_count: entry.forksCount,
+				is_fork: false,
+				primary_language: entry.primaryLanguage,
+				topics: entry.topics,
+				archived: entry.archived,
+				pushed_at: entry.pushedAt,
+			},
+			provenance: {
+				source: 'github-importer-manual-backfill',
+				query,
+				fetched_at: fetchedAt,
+				repo_id: entry.repoId,
+			},
+			ai: {
+				model: GITHUB_MANUAL_SESSION_REVIEW_MODEL,
+				prompt_hash: promptHash,
+				accepted: entry.accepted,
+				reason: entry.reason,
+				confidence: entry.confidence ?? null,
+				summary: entry.summary,
+				tags: entry.tags,
+			},
+		};
+
+		const result = await upsertItemByExternalUrl(
+			{
+				sourceId: source.id,
+				externalUrl: entry.externalUrl,
+				kind: DEFAULT_KIND,
+				title: entry.title,
+				authors: entry.authors,
+				summary: entry.summary,
+				publishedAt: entry.createdAt,
+				updatedAt: entry.pushedAt,
+				metadata,
+				version: entry.version,
+				collectionRoute: 'github-importer',
+				body: truncateBodyForStorage(entry.readmeExcerpt),
+				aiAccepted: entry.accepted,
+				language: entry.language,
+				aiRecheckModel: GITHUB_MANUAL_SESSION_REVIEW_MODEL,
+				aiRecheckPromptHash: promptHash,
+				aiRecheckReason: entry.reason,
+				aiRecheckConfidence: entry.confidence ?? null,
+			},
+			entry.tags,
+			undefined,
+			{ syncTags: false, assumeNew: true },
+		);
+		if (entry.accepted) pendingTagEntries.push({ itemId: result.id, tags: entry.tags });
+		items.push({ id: result.id, action: result.action, externalUrl: entry.externalUrl, title: entry.title, reason: entry.accepted ? undefined : entry.reason });
+	}
+
+	await syncNewItemTagsBatch(pendingTagEntries);
+
+	let inserted = 0;
+	let updated = 0;
+	let skipped = 0;
+	for (const result of items) {
+		if (result.action === 'inserted') inserted += 1;
+		else if (result.action === 'updated') updated += 1;
+		else skipped += 1;
+	}
+
+	return { sourceId: source.id, inserted, updated, skipped, items };
 }
