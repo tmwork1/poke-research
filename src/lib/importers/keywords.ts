@@ -52,6 +52,8 @@ export const EXCLUDED_BLOG_DOMAINS = [
 	// 他インポーターが専用で扱う／対象外と決定済みのサービス（トピックに依らず共通）。
 	// note.com は専用API（note.ts）がCloudflare Workersからブロックされているため対象外とせず、
 	// 他の個人ブログ同様Brave Search経由で発見しHTML抽出で収集する（KNOWN_BLOG_PLATFORMSも参照）。
+	// github.com は「対象外」ではなく、専用インポーター（github.ts、GitHub Search APIで
+	// リポジトリ自体を収集）で扱うため、Brave経由のブログ収集からのみ除外する。
 	'qiita.com', 'zenn.dev', 'github.com', 'youtube.com', 'x.com', 'twitter.com',
 	...topic.collection.extraExcludedBlogDomains,
 ] as const;

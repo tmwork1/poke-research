@@ -18,6 +18,7 @@
 		"collect:blog": "node ./scripts/collect/collect-blog.mjs",
 		"collect:hatena": "node ./scripts/collect/collect-hatena.mjs",
 		"collect:arxiv": "node ./scripts/collect/collect-arxiv.mjs",
+		"collect:github": "node ./scripts/collect/collect-github.mjs",
 		"collect:feed": "node ./scripts/collect/collect-feed.mjs",
 		"collect:check-links": "node ./scripts/collect/check-links.mjs",
 		"collect:backfill": "node ./scripts/collect/backfill.mjs",

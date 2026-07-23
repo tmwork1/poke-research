@@ -7,6 +7,9 @@
 // 'paper'（arXiv論文収集、src/lib/importers/arxiv.ts）は体験談・攻略情報等の除外基準や
 // ページ種別チェックがそもそも無関係なため、STEPを絞った専用の文面に差し替え、
 // 要約は論文の内容量に合わせて article より長め（200字程度）にする。
+// 'repo'（GitHubリポジトリ収集、src/lib/importers/github.ts）はREADMEを対象に主題判定を行う。
+// フォークの除外は検索クエリ側（fork:false）で済ませているためSTEPには含めない。要約文字数は
+// article と同水準（120字程度、READMEは記事本文より情報量が少ないケースが多いため）。
 //
 // 2026-07-09: 実データ（採用330件・棄却118件）の分析結果と、小型モデル（gpt-5-nano）
 // 向けのプロンプトエンジニアリングレビュー（docs/optimization/filter-accuracy.md）を踏まえ、
@@ -15,7 +18,7 @@
 
 /**
  * @param {import('../../config/topic.config.mjs').topic} topic
- * @param {'article' | 'paper'} [kind]
+ * @param {'article' | 'paper' | 'repo'} [kind]
  */
 export function buildSystemPrompt(topic, kind = 'article') {
 	const { collection, aiReview } = topic;
@@ -24,6 +27,7 @@ export function buildSystemPrompt(topic, kind = 'article') {
 	// 英数字のみのキーワードを流用する）。
 	const englishSynonym = collection.searchKeywords.find((keyword) => /^[a-z0-9]+$/i.test(keyword));
 	const isPaper = kind === 'paper';
+	const isRepo = kind === 'repo';
 
 	// STEP 3（主題判定）の境界テストを補強するfew-shot例。{label} をこのトピックの主題名に置換する。
 	const boundaryExamplesText = (aiReview.boundaryExamples ?? [])
@@ -65,6 +69,26 @@ export function buildSystemPrompt(topic, kind = 'article') {
 		);
 	}
 
+	if (isRepo) {
+		return (
+			sharedIntro +
+			`language が ja または en の場合のみ STEP 2 に進んでください（判定対象はリポジトリのREADME本文です）。` +
+			`STEP 2（軽微な除外チェック）: README本文がほとんど空、または他プロジェクトへの転送・後継案内のみ（例:「本プロジェクトは非推奨です。後継はこちら」の一文のみ）である場合は、以降のSTEPに関わらず accepted を false にし、reason に「README空・転送のみ」と含めてください。該当しない場合のみ STEP 3 に進んでください。` +
+			`STEP 3（主題判定）: リポジトリの主題が${label}（ゲーム本編、カードゲーム、関連データ・API・ファンコンテンツなど）に直接関係しているかを、READMEの記述に基づいて判定してください。${label}への言及が全く無いリポジトリや、汎用的なツール・ライブラリの中で${label}が一例・比喩として軽く触れられているだけで、リポジトリの主眼が${label}ではない場合は主題外です。` +
+				`この判定は次のテストで行ってください。リポジトリが実装の直接対象にしているデータ・仕組みが、実際のゲーム仕様や実データ（実際の種族値・タイプ相性・ダメージ計算式・特性や乱数の実挙動、公開APIから取得した実データなど）に基づいているなら主題は${label}関連です。一方、説明のために創作した架空の数値や単純化した処理にキャラクター名を載せているだけで、題材を別の作品・キャラクターに置き換えても成立する場合は、比喩・題材利用にすぎず主題外です。上記のテストでも判断しきれない場合は主題外（accepted を false）としてください。` +
+				`主題外と判定した場合は、以降のSTEPに関わらず accepted を false にしてください。主題に該当する場合のみ STEP 4 に進んでください。` +
+			`STEP 4（除外基準）: 主題が${label}関連であっても、次のいずれかに該当するリポジトリは accepted を false にしてください。` +
+				`・リンク集／awesome-list的なリポジトリ（READMEの大部分が外部プロジェクトへのリンク列挙で構成され、自身の実装をほとんど持たない）。` +
+				`・チュートリアル課題の写経・個人の学習用スクラッチ実装（READMEに使い方・設計・仕組みの説明がほとんど無く、再利用可能性が低いもの）。` +
+				`・他者のプロジェクト・ツールの存在を紹介するだけのリポジトリ（README自身が実装手順・設計・仕組みを説明しておらず、概要や感想の共有にとどまるもの）。` +
+				`判断基準は、READMEが具体的な実装の使い方・仕組み・設計判断を読者に説明しているかどうかです。上記に該当しない場合のみ STEP 5 に進んでください。` +
+			`STEP 5（出力）: 出力はJSONオブジェクトのみで、accepted/summary/tags/reason/confidence/language を含めてください。confidence は accepted 判定の確信度を表す 0〜1 の数値です。` +
+			summaryLengthInstruction +
+			`reason は判定理由（上記のどのSTEPで判断したかが分かるように）を簡潔に書いてください。` +
+			tagsBlock
+		);
+	}
+
 	return (
 		sharedIntro +
 		`language が ja または en の場合のみ STEP 2 に進んでください。` +
@@ -99,7 +123,7 @@ const promptHashCache = new Map();
 
 /**
  * @param {import('../../config/topic.config.mjs').topic} topic
- * @param {'article' | 'paper'} [kind]
+ * @param {'article' | 'paper' | 'repo'} [kind]
  * @returns {Promise<string>}
  */
 export async function computePromptHash(topic, kind = 'article') {

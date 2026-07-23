@@ -6,6 +6,24 @@ import { buildSystemPrompt, computePromptHash } from './ai-review-prompt.mjs';
 
 const MAX_AI_TAGS = 5;
 
+// reasoning_effort の序列（値が後ろにあるほど推論コストが高い）。
+const REASONING_EFFORT_ORDER = ['minimal', 'low', 'medium', 'high'];
+// kind='repo'（GitHubリポジトリのREADMEレビュー）は、reasoning_effort=minimal（既定値）だと
+// 言語判定・主題判定を安定してこなせず、5件中0件採用・JSON不備エラーが多発することを実験で確認した
+// （docs/optimization/github-repo-filter-accuracy.md 実験1〜4）。プロンプト文言の問題ではなく
+// 推論コスト不足が原因だったため、article/paperの既定値・課金には影響させず repo のみ底上げする。
+const MIN_REASONING_EFFORT_BY_KIND: Record<string, string> = { repo: 'low' };
+
+function resolveReasoningEffort(kind: string | undefined, configured: string): string {
+	const minimum = kind ? MIN_REASONING_EFFORT_BY_KIND[kind] : undefined;
+	if (!minimum) return configured;
+	const configuredRank = REASONING_EFFORT_ORDER.indexOf(configured);
+	const minimumRank = REASONING_EFFORT_ORDER.indexOf(minimum);
+	// 未知の値（将来の新しいreasoning_effort値など）はそのまま尊重し、底上げしない。
+	if (configuredRank === -1 || minimumRank === -1) return configured;
+	return configuredRank >= minimumRank ? configured : minimum;
+}
+
 export interface ImportArticleReviewInput {
 	title: string;
 	url: string;
@@ -17,7 +35,7 @@ export interface ImportArticleReviewInput {
 	updatedAt?: string;
 	sourceName?: string;
 	existingTags?: string[];
-	/** items.kind に対応する種別（既定 'article'）。'paper' は arXiv 収集（arxiv.ts）が渡す。 */
+	/** items.kind に対応する種別（既定 'article'）。'paper' は arXiv 収集（arxiv.ts）、'repo' は GitHub リポジトリ収集（github.ts）が渡す。 */
 	kind?: string;
 }
 
@@ -153,12 +171,13 @@ function parseAiResponse(content: string): Omit<ImportArticleReview, 'model' | '
 }
 
 export async function reviewImportArticle(input: ImportArticleReviewInput): Promise<ImportArticleReview> {
-	const { apiKey, model, reasoningEffort } = getOpenAIConfig();
+	const { apiKey, model, reasoningEffort: configuredReasoningEffort } = getOpenAIConfig();
 	if (!apiKey) {
 		// API キーがない場合は、誤った無通信のまま進めず明示的に失敗させる。
 		throw new Error('OPENAI_API_KEY is required to review imported articles');
 	}
 
+	const reasoningEffort = resolveReasoningEffort(input.kind, configuredReasoningEffort);
 	const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
 		method: 'POST',
 		headers: {
