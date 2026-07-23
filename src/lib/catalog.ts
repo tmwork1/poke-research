@@ -27,6 +27,8 @@ export type SortOrder = 'asc' | 'desc';
 export interface ItemFilters {
 	q?: string;
 	kind?: string;
+	/** 特定kindを一覧から除外する（ホームタブでGitHubリポジトリを除く用途）。kindとは独立に適用する。 */
+	excludeKind?: string;
 	tag?: string;
 	/** 複数タグの AND 絞り込み。tag と併用された場合は両方を条件に含める。 */
 	tags?: string[];
@@ -218,6 +220,10 @@ async function queryCatalogItems(
 		query = query.eq('kind', filters.kind.trim());
 	}
 
+	if (filters.excludeKind?.trim()) {
+		query = query.neq('kind', filters.excludeKind.trim());
+	}
+
 	if (filters.since) {
 		query = query.gte('published_at', filters.since);
 	}
@@ -353,11 +359,13 @@ export async function fetchCatalogItemsPage(
 	};
 }
 
-export async function fetchTopTags(limit = 20, kind?: string): Promise<TagUsage[]> {
-	// 集計は DB 側の RPC（migrations/012 の top_tags、migrations/023 で kind_filter 引数を追加）で
-	// 行い、行の全取得を避ける。kind を省略した場合は従来どおり記事・論文を横断した全件集計になる。
+export async function fetchTopTags(limit = 20, kind?: string, excludeKind?: string): Promise<TagUsage[]> {
+	// 集計は DB 側の RPC（migrations/012 の top_tags、migrations/023 で kind_filter 引数、
+	// migrations/028 で exclude_kind 引数を追加）で行い、行の全取得を避ける。kind を省略した場合は
+	// 従来どおり横断集計になり、excludeKind を指定するとその kind だけをタグクラウードから除く
+	// （ホームタブで GitHub リポジトリ専用タグを混在させない用途）。
 	const supabase = await getSupabaseClient();
-	const { data, error } = await supabase.rpc('top_tags', { tag_limit: limit, kind_filter: kind ?? null });
+	const { data, error } = await supabase.rpc('top_tags', { tag_limit: limit, kind_filter: kind ?? null, exclude_kind: excludeKind ?? null });
 	if (error) throw error;
 
 	return ((data ?? []) as Array<{ id: number; name: string; count: number | string }>).map((row) => ({

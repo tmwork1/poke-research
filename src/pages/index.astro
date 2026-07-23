@@ -35,11 +35,13 @@ let recentItems: CatalogItem[];
 let bookmarkedItemIds = new Set<number>();
 let loadError = false;
 let hasMore = false;
-const topTags = await fetchTopTags(5);
+// ホームタブはGitHubリポジトリ(kind='repo')を対象外とする（/repos タブ専用の扱いにするため）。
+const HOME_EXCLUDE_KIND = 'repo';
+const topTags = await fetchTopTags(5, undefined, HOME_EXCLUDE_KIND);
 const tagTrend = await fetchTagTrend(topTags);
 try {
 	const [itemsPage, bookmarks] = await Promise.all([
-		fetchCatalogItemsPage({ tag: activeTag || undefined, sort: activeSort, page, pageSize: PAGE_SIZE }),
+		fetchCatalogItemsPage({ tag: activeTag || undefined, sort: activeSort, page, pageSize: PAGE_SIZE, excludeKind: HOME_EXCLUDE_KIND }),
 		user ? fetchBookmarkedItemIds(Astro.request, Astro.cookies, user.id) : Promise.resolve(new Set<number>()),
 	]);
 	recentItems = itemsPage.items;
