@@ -2,6 +2,12 @@
 // 必要に応じて process.env を補って、開発時の実行差を吸収する。
 import { env } from 'cloudflare:workers';
 import { countingFetch } from './subrequest-counter';
+import { withTransientRetry } from './resilient-fetch';
+
+// Supabase Cloudflareエッジの一過性エラー（523/1016等）を吸収するリトライを、
+// subrequestカウンタ（開発時計測用）の外側に重ねる。カウンタには実際に発行した
+// fetch回数（リトライ分を含む）がそのまま反映される。
+const resilientCountingFetch = withTransientRetry(countingFetch);
 
 const runtimeEnv = globalThis.process?.env ?? {};
 type ProcessLike = {
@@ -56,7 +62,7 @@ export async function getSupabaseClient() {
     // （src/lib/subrequest-counter.ts）。Viteの依存事前バンドルでSupabaseクライアント内部の
     // fetch参照がglobalThis.fetchの差し替えより先に確定するため、globalな差し替えではなく
     // ここでオプションとして直接渡す必要がある。
-    global: { fetch: countingFetch },
+    global: { fetch: resilientCountingFetch },
   });
 }
 
@@ -77,6 +83,6 @@ export async function getSupabaseAdminClient() {
   return createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
     detectSessionInUrl: false,
     auth: { autoRefreshToken: false, persistSession: false },
-    global: { fetch: countingFetch },
+    global: { fetch: resilientCountingFetch },
   });
 }
