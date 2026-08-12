@@ -2,5 +2,8 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /mypage
+Disallow: /items?
+Disallow: /repos?
+Disallow: /papers?
 
 Sitemap: https://poke-research.com/sitemap.xml
