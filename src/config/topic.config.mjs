@@ -15,7 +15,7 @@ export const topic = {
 		logoAccent: { before: 'Poke', accent: 'R', after: 'esearch' },
 		description: 'ポケモンに関するプログラミング・開発の技術記事を自動収集する情報ハブ',
 		shareText: 'ポケモン×プログラミングの記事をまとめた情報ハブです',
-		url: 'https://poke-research.com',
+		url: 'https://poke-research.tmwork1.com',
 		storageKeyPrefix: 'pokeresearch',
 		contactHandle: '@ml7ddw0',
 		contactUrl: 'https://x.com/ml7ddw0',

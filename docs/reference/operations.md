@@ -23,7 +23,7 @@
    npm run release
    ```
 5. PR の CI（`.github/workflows/ci.yml`）が通っていることを確認し、`main` へマージする（ドキュメントのみの変更は直接 push でよい）。ビルド状況は Cloudflare ダッシュボードの **Workers & Pages → poke-research → Deployments** で確認できる。
-6. デプロイ後、本番 URL（https://poke-research.com/）の閲覧系エンドポイント（`GET /api/items` など）と Basic 認証付きの書き込み系エンドポイントを一度叩いて動作確認する。
+6. デプロイ後、本番 URL（https://poke-research.tmwork1.com/）の閲覧系エンドポイント（`GET /api/items` など）と Basic 認証付きの書き込み系エンドポイントを一度叩いて動作確認する。
 
 `npm run deploy`（`wrangler deploy`）は、Cloudflare 連携が使えない緊急時や `main` を経由しない検証用の手動デプロイ手段として残している。
 
