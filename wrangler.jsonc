@@ -12,62 +12,10 @@
 		"enabled": true
 	},
 	"triggers": {
-		// Cloudflare Workers は現行プランでアカウント全体の Cron Trigger 登録数が5件までのため、
-		// 日次収集ジョブ（フィードポーリング/Qiita/Zenn/はてなブックマーク/arXiv/OpenAlex/リンク切れ検出/
-		// 日次まとめ通知の8ジョブ、noteは後述の理由で除外）を1つの Cron Trigger 文字列
-		// "0,5,10,15,20,25,30,59 15 * * *" にまとめている。収集6ジョブとリンク切れ検出は
-		// 15:00〜15:30 UTC（JST 00:00〜00:30）を5分刻みで発火し、日次まとめ通知だけは
-		// 前段ジョブの遅延・タイムアウトに対する余裕を限界まで確保するため、同じ時（15時）内で
-		// 分の値として指定できる最大値である59分（15:59 UTC = JST 00:59）に発火時刻を離して
-		// 置いている。controller.cron はどのスロットでも同一文字列になるため、
-		// src/worker.ts の scheduled ハンドラ内で controller.scheduledTime の分（UTC）から
-		// 実行するジョブを1つだけ判定する（DAILY_SLOT_JOBS）。ジョブごとに別々のWorker呼び出しに
-		// なるため、1回あたりのsubrequestはそのジョブ単体分で済む。
-		// 2026-07-09判明: 上記ジョブ群を1回のWorker呼び出しに集約する設計（旧 "0 0 * * *"）は、
-		// Cloudflareの「1回のWorker呼び出しあたりのsubrequest数上限」（無料/標準プランで
-		// 50/呼び出し）と衝突しうることが判明した（詳細はdocs/issue/cron-subrequest-limit.md）。
-		// Qiita/Zenn/arXivへの差分検知移植・タグ同期バッチ化・新着処理件数の上限化
-		// （maxNewItemsPerRun）等の対策を実施したうえで、根本対応として上記の時間分割へ移行した。
-		// スロットの順序（フィード→Qiita→Zenn→arXiv→はてな→リンク切れ検出→OpenAlex→日次まとめ通知）は
-		// 「記事の無駄な重複ができるだけ少なくなる」ことを狙って決めている。Qiita/Zenn/arXivは
-		// 固有ドメインのため重複がほぼ起きない。フィードは購読中の個別ブログを直接ポーリングするため
-		// 早い段階でURLを確定でき、はてなブックマークはWeb横断検索で同一URLを再発見しやすいため
-		// 収集5ジョブの最後に置き、既存URL判定（findExistingExternalUrls）でその時点までの
-		// 収集済みURLを無駄なくスキップさせる。OpenAlexはarXiv由来と判定できたworkをarXivと同じ
-		// 正規化URLで保存するため（openalex-parse.tsのselectExternalUrl）、arXivより後段に置く
-		// ことでarXiv収集済みURLを無駄なくスキップできるようにする。
-		// リンク切れ検出（分25）・日次まとめ通知（分59）は、以前は "40 15 * * *" の1つのCron
-		// Triggerに統合し、Worker呼び出し内で順にawaitするだけの実装にしていた（アカウント全体の
-		// Cron Trigger登録数上限（5件）を1件節約する目的）。だが両者が同一Worker呼び出しの
-		// subrequest予算（50/呼び出し）を分け合う必要があり、その分だけリンク切れ検出の
-		// 1回あたりチェック件数（SAFE_MAX_BATCH_LIMIT）を頭打ちにせざるを得なかった。
-		// リンク切れ確認が扱えるリクエスト数を最大化するため、日次収集ジョブ群と同じ時間分割
-		// 方式（DAILY_SLOT_JOBSへのスロット追加）に変更し、それぞれ独立したWorker呼び出しに
-		// 分離した。これにより両ジョブとも単体でsubrequest上限50を使い切れるようになり、
-		// アカウント全体のCron Trigger登録数も1件（旧LINK_CHECK_AND_DIGEST_CRON分）節約できた。
-		// リンク切れ検出は「新着」の概念がなく、probe fetch自体（1件1fetch）が差分検知で
-		// 削減できないため（docs/issue/cron-subrequest-limit.md参照）、1回あたりのチェック件数は
-		// 対象総数から自動算出し、この呼び出し単体でsubrequest上限を超えないようにしてある
-		// （src/lib/importers/link-check.ts の resolveAdaptiveBatchLimit、独立呼び出しに戻した
-		// ことで安全上限 SAFE_MAX_BATCH_LIMIT を35→40へ戻し済み）。
-		// 日次まとめ通知は、日次収集ジョブ群がスロットごとに別々のWorker呼び出しに分かれ結果を
-		// メモリで受け渡せないため、当日 0:00 UTC 以降に作成された items.collection_route を
-		// DBから直接集計してDiscordへ1件のDigestとして送る。
-		// note（非公式API）は 2026-07-09 頃から 403 Access denied を返すようになり、cronの
-		// 自動実行対象から外した（コード・手動起動用API（/api/import/note）は残したまま）。
-		// ブログ（Brave Search）は 2026-07-22 に Brave Search API を解約したため、専用の
-		// Cron Trigger（旧 "0 1,5,9,13,17,21 * * *"、BLOG_CRON）を削除しcronからの自動実行を
-		// 停止した（note（非公式API、403 Access denied）を cron 対象から外したのと同じ扱い）。
-		// src/lib/importers/blog.ts・blog-rotation.ts・brave.ts の実装とPOST /api/import/blog
-		// は変更しておらず、APIキーを再取得すれば手動起動・cron再登録のいずれも可能。
-		// 毎週月曜 11:30 UTC (JST 20:30) には日次収集ジョブ群より前に、DB重複候補（items/sources）を
-		// 検出するだけの読み取り専用レビュージョブを実行する（DBは書き換えない、ALERT_WEBHOOK_URLへ通知）。こちらは
-		// controller.cron が "30 11 * * 1" と完全一致するかで振り分ける（時刻が重ならないため単独判定で十分）。
-		// 上記2エントリでアカウント上限5件のうち2件を使用（3件の空きあり）。今後さらにエントリが
-		// 必要な場合は、まず空き枠を使い、それも尽きたら既存のいずれかのエントリに追加のカンマ
-		// 区切り分（分・時）を足して同一エントリ内のスロットを増やす形で対応する。
-		// GitHubリポジトリ収集（github-importer）は新規Cron Trigger登録を使わず、日次収集ジョブ群の
-		// 空きスロット（分35、OpenAlexの後・日次まとめ通知の前）に追加した（src/worker.tsのDAILY_SLOT_JOBS）。
-		"crons": ["30 11 * * 1", "0,5,10,15,20,25,30,35,59 15 * * *"]
+		// 2026-08-30 に定期実行の起点を GitHub Actions（.github/workflows/cron-*.yml）へ移設した。
+		// Cloudflare Cron Trigger は無効化している。src/worker.ts の scheduled ハンドラは、移行直後のロールバック用として残す。
+		// 問題時はこの配列に以前の値を戻して復帰できる。安定後に worker 側の cron 関連コードを削除する予定。
+		// 設計判断の詳細は docs/scheduled-jobs.md を参照。
+		"crons": []
 	}
 }

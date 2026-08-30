@@ -1,5 +1,20 @@
 # 定期ジョブ（Cron）一覧
 
+> 2026-08-30、Cloudflare Cron Trigger の登録数上限（5件）と Worker 呼び出しごとの subrequest 上限（50件）を回避するため、定期実行の起点を GitHub Actions（`.github/workflows/cron-*.yml`）へ移設した。以下は移行前の Cloudflare Cron Trigger 時代の設計記録として残す。
+
+## 現行の GitHub Actions 定期実行
+
+デプロイ済み Worker の認証済み HTTP API を各 workflow から呼び出すため、各収集処理は独立した Worker 呼び出しとなる。
+
+| Workflow | スケジュール（UTC） | 役割 |
+|---|---|---|
+| `.github/workflows/cron-daily.yml` | `0 15 * * *` | feed、Qiita、Zenn、arXiv、はてな、リンク切れ検出、OpenAlex、GitHub を旧 `DAILY_SLOT_JOBS` と同じ順で実行し、日次まとめを送る。 |
+| `.github/workflows/cron-weekly-review.yml` | `30 11 * * 1` | 週次 DB レビューを実行し、メンテナンスレポートを送る。直近7日間 `import_runs` が無ければ「定期実行が止まっていないか確認」の警告を追記する。 |
+
+ブログ（Brave Search）収集は 2026-07-22 に Brave Search API を解約済みのため、GitHub Actions 移設の対象外（cronからは呼ばれない。`POST /api/import/blog` の手動起動は引き続き可能）。
+
+すべての workflow は `workflow_dispatch` に対応する。GitHub Secrets の `ADMIN_USERNAME`、`ADMIN_PASSWORD`、`PROD_BASE_URL` が必要である。Cloudflare Cron Trigger は `wrangler.jsonc` で意図的に無効化しており、`scheduled` ハンドラは一時的なロールバック経路としてのみ残している。
+
 Cloudflare Workers の Cron Trigger はアカウント全体で登録数が5件までという上限があるため（現行プラン）、`wrangler.jsonc` の `triggers.crons` には5つのエントリしか置けない。個々のジョブはこの5エントリの中に収まるよう、複数ジョブを1つのエントリに時間分割で束ねたり、1つのジョブが発火のたびに処理対象の一部だけを選んで実行したりしている。振り分けロジックは `src/worker.ts` の `scheduled()` ハンドラに集約されている。
 
 ## 登録済み Cron Trigger（2件、上限5件のうち3件は空き）

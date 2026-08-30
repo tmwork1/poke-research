@@ -439,6 +439,16 @@ export interface DailyDigestItemRow {
 // メモリ上の結果を受け渡せない。代わりにこの関数で、指定時刻以降に作成された対象ジョブの
 // itemsをDBから直接集計する（src/worker.ts の日次まとめ通知専用cronが呼ぶ）。
 // AIレビューで棄却された記事（ai_accepted=false、偽陰性対策で保存はされる）は通知対象外にする。
+export const DAILY_COLLECTION_ROUTES = [
+	'feed-importer',
+	'qiita-importer',
+	'zenn-importer',
+	'arxiv-importer',
+	'hatena-bookmark-importer',
+	'openalex-importer',
+	'github-importer',
+] as const;
+
 export async function fetchDailyDigestItems(sinceIso: string, collectionRoutes: string[]): Promise<DailyDigestItemRow[]> {
 	if (collectionRoutes.length === 0) return [];
 	const supabase = await getSupabaseAdminClient();

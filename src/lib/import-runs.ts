@@ -77,6 +77,17 @@ export async function fetchImportRuns(limit = DEFAULT_LIMIT): Promise<ImportRun[
   return (data ?? []) as ImportRun[];
 }
 
+export async function hasRecentImportRun(sinceIso: string): Promise<boolean> {
+  const supabase = await getSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from('import_runs')
+    .select('id')
+    .gte('finished_at', sinceIso)
+    .limit(1);
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
 interface ImportOutcomeLike {
   fetched: number;
   inserted: number;

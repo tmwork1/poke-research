@@ -1,5 +1,7 @@
 # poke-research
 
+> **定期実行（2026-08-30更新）:** 本番の定期実行起点は Cloudflare Cron Triggers ではなく GitHub Actions である。`.github/workflows/cron-daily.yml` は日次収集（feed/Qiita/Zenn/arXiv/はてな/リンク切れ検出/OpenAlex/GitHub）とまとめ通知、`.github/workflows/cron-weekly-review.yml` は週次 DB レビューを実行する。各 workflow は Basic 認証付きでデプロイ済み Worker の `POST /api/*` を呼び出す（Brave Search解約済みのブログ収集はcron対象外。詳細は[docs/scheduled-jobs.md](docs/scheduled-jobs.md)）。以下の収集ジョブ節に残る Cloudflare Cron の説明はロールバック用に残した旧実装の記録であり、現在の `wrangler.jsonc` は全 Trigger を無効化している。
+
 ポケモンプログラミング情報を収集・整理・検索する Astro + Supabase + Cloudflare ベースの情報ハブ。
 
 公開URL: https://poke-research.tmwork1.com/

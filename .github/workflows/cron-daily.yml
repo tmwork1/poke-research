@@ -1,0 +1,48 @@
+# The order intentionally follows the former DAILY_SLOT_JOBS sequence to reduce duplicate articles.
+# GitHub import's env var (GITHUB_IMPORT_URL) is set inline on its step rather than at job level,
+# because GitHub Actions reserves the GITHUB_ prefix for its own env vars in the job/step `env:` block.
+name: Daily collection cron
+
+on:
+  schedule:
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    env:
+      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      PROD_BASE_URL: ${{ secrets.PROD_BASE_URL }}
+      FEED_IMPORT_URL: ${{ secrets.PROD_BASE_URL }}/api/import/feed
+      QIITA_IMPORT_URL: ${{ secrets.PROD_BASE_URL }}/api/import/qiita
+      ZENN_IMPORT_URL: ${{ secrets.PROD_BASE_URL }}/api/import/zenn
+      ARXIV_IMPORT_URL: ${{ secrets.PROD_BASE_URL }}/api/import/arxiv
+      HATENA_IMPORT_URL: ${{ secrets.PROD_BASE_URL }}/api/import/hatena
+      CHECK_LINKS_IMPORT_URL: ${{ secrets.PROD_BASE_URL }}/api/import/check-links
+      OPENALEX_IMPORT_URL: ${{ secrets.PROD_BASE_URL }}/api/import/openalex
+      DAILY_DIGEST_URL: ${{ secrets.PROD_BASE_URL }}/api/notify/daily-digest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - name: Record run start time
+        id: start
+        run: echo "since=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - run: npm run collect:feed
+      - run: npm run collect:qiita
+      - run: npm run collect:zenn
+      - run: npm run collect:arxiv
+      - run: npm run collect:hatena
+      - run: npm run collect:check-links
+      - run: npm run collect:openalex
+      - name: Import GitHub repos
+        run: GITHUB_IMPORT_URL="${PROD_BASE_URL}/api/import/github" npm run collect:github
+      - name: Send daily digest
+        run: npm run notify:daily-digest
+        env:
+          DIGEST_SINCE: ${{ steps.start.outputs.since }}
