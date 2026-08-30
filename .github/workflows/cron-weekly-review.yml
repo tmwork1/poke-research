@@ -1,0 +1,22 @@
+name: Weekly DB review cron
+
+on:
+  schedule:
+    - cron: '30 11 * * 1'
+  workflow_dispatch:
+
+jobs:
+  weekly-review:
+    runs-on: ubuntu-latest
+    env:
+      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      WEEKLY_REVIEW_URL: ${{ secrets.PROD_BASE_URL }}/api/maintenance/weekly-review
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run maintenance:weekly-review

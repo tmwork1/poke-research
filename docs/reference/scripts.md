@@ -1,6 +1,6 @@
 # scripts/ 一覧
 
-`scripts/` 配下の各スクリプトを、開発・運用のどのフェーズで使うかで整理する。収集ジョブの詳しい仕様やAPIの認証は [README](../../README.md) を、デプロイ・バックアップ手順は [operations.md](operations.md) を参照する。
+`scripts/` 配下の各スクリプトを、開発・運用のどのフェーズで使うかで整理する。GitHub Actions（`.github/workflows/cron-*.yml`）が定期実行する`/api/import/*`・`/api/maintenance/*`・`/api/notify/*`向けのラッパーは、`scripts/collect/_client.mjs`が提供する共通POSTヘルパー（`ADMIN_USERNAME`/`ADMIN_PASSWORD`の両方が設定されていればBasic認証ヘッダーを付与し、未設定ならヘッダー無しで送る）を使う。詳細は[docs/scheduled-jobs.md](../scheduled-jobs.md)を参照。収集ジョブの詳しい仕様やAPIの認証は [README](../../README.md) を、デプロイ・バックアップ手順は [operations.md](operations.md) を参照する。
 
 共通の前提:
 - ほとんどのスクリプトは `DATABASE_URL`（直接 `pg` 接続）または `SUPABASE_URL`/`SUPABASE_SECRET_KEY`（`@supabase/supabase-js` 経由）のどちらかを要求する。ローカルは `scripts/db/setup-env.ps1` で作った `.env` を `node --env-file=.env scripts/xxx.mjs` で読み込むか、`npm run` 経由（エイリアスがあるもの）で実行する。
@@ -32,8 +32,18 @@
 | `scripts/collect/collect-feed.mjs` | `npm run collect:feed` | 登録済みRSS/Atomフィード（`feed_subscriptions`、migrations/022）を直接ポーリングする収集。`FEED_MAX_ENTRIES`。フィードはblog.ts/hatena.tsがAIレビュー採用済み記事のページから自動登録するため事前の手動登録は不要。既定の`BACKFILL_TARGETS`には含まれない。 | OpenAI |
 | `scripts/collect/collect-arxiv.mjs` | `npm run collect:arxiv` | arXiv API経由の論文収集（`items.kind='paper'`）。`ARXIV_QUERY`/`ARXIV_MAX_RESULTS`。cronには未組み込みで手動起動のみ（[docs/plan/paper.md](../plan/paper.md)）。既定の`BACKFILL_TARGETS`には含まれない。 | OpenAI |
 | `scripts/collect/collect-github.mjs` | `npm run collect:github` | GitHub Search API経由のリポジトリ収集（`items.kind='repo'`）。`GITHUB_QUERY`/`GITHUB_MAX_RESULTS`。`GITHUB_TOKEN`必須（[docs/plan/repo.md](../plan/repo.md)）。日次cronにも統合済み（`src/worker.ts`のDAILY_SLOT_JOBS）。既定の`BACKFILL_TARGETS`には含まれない。 | OpenAI |
+| `scripts/collect/collect-openalex.mjs` | `npm run collect:openalex` | OpenAlex API経由の論文収集（`items.kind='paper'`、arXiv由来の重複判定はopenalex-parse.tsが担う）。`OPENALEX_FILTER`/`OPENALEX_MAX_RESULTS`/`OPENALEX_PAGE`。日次cronにも統合済み。 | OpenAI |
 | `scripts/collect/backfill.mjs` | `npm run collect:backfill` | qiita/zenn/note/blogをまとめて広めの範囲で一括収集する。対象は`BACKFILL_TARGETS`（既定`qiita,zenn,note,blog`、`hatena`は明示指定時のみ対象）で絞れる。本番実行はレートリミット・OpenAI課金に注意しユーザー確認の上で行う。 | OpenAI + Brave（一括収集のため件数大） |
 | `scripts/collect/check-links.mjs` | `npm run collect:check-links` | リンク切れ検出ジョブを手動起動。`LINK_CHECK_BATCH_LIMIT`/`LINK_CHECK_CONCURRENCY`/`LINK_CHECK_RECHECK_DAYS`。 | なし |
+
+### メンテナンス・通知（GitHub Actions専用）
+
+週次DBレビューと日次まとめ通知は、GitHub Actionsからのみ定期起動する（ローカルからの動作確認用途にも使える）。
+
+| スクリプト | コマンド | 用途 | 課金 |
+|---|---|---|---|
+| `scripts/maintenance/weekly-review.mjs` | `npm run maintenance:weekly-review` | `POST /api/maintenance/weekly-review`を呼ぶ。items/sourcesの重複候補検出＋直近7日`import_runs`が無ければ定期実行停止を疑う警告を付けてメンテナンスレポートを送る。 | Alert webhook |
+| `scripts/notify/daily-digest.mjs` | `npm run notify:daily-digest` | `POST /api/notify/daily-digest`を呼ぶ。`DIGEST_SINCE`（ISO日時）で集計開始時刻を指定でき、省略時は直近24時間。 | Alert webhook |
 
 ## 3. 評価ループ（試行→評価→修正）
 

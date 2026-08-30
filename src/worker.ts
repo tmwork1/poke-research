@@ -4,7 +4,7 @@ import { handle } from '@astrojs/cloudflare/handler';
 import { env } from 'cloudflare:workers';
 
 import { sendDailyDigest, sendMaintenanceReport, sendOperationalAlert } from './lib/notify';
-import { fetchDailyDigestItems, type ImportItemOutcome } from './lib/importers/common';
+import { DAILY_COLLECTION_ROUTES, fetchDailyDigestItems, type ImportItemOutcome } from './lib/importers/common';
 import { runAndRecord } from './lib/import-runs';
 import { resolveArxivSyncOptions, syncArxivCollection } from './lib/importers/arxiv';
 import { resolveOpenAlexSyncOptions, syncOpenAlexCollection } from './lib/importers/openalex';
@@ -66,16 +66,7 @@ const DAILY_SLOT_JOBS: Array<{ minute: number; label: string; run: (scheduledTim
 ];
 // 日次収集ジョブ群のうち、新着記事・論文・リポジトリを生む7ジョブが実際に保存する
 // items.collection_route の値。日次まとめ通知（runScheduledDailyDigest）がDBから
-// 当日分を集計する際の絞り込みに使う。
-const DAILY_COLLECTION_ROUTES = [
-	'feed-importer',
-	'qiita-importer',
-	'zenn-importer',
-	'arxiv-importer',
-	'hatena-bookmark-importer',
-	'openalex-importer',
-	'github-importer',
-];
+// 当日分を集計する際の絞り込みに使う（共有定義は src/lib/importers/common.ts）。
 
 export default {
 	async fetch(request, ctxEnv, ctx) {
@@ -120,7 +111,7 @@ async function runScheduledDailyDigest(scheduledTime: number): Promise<void> {
 	try {
 		const sinceDate = new Date(scheduledTime);
 		sinceDate.setUTCMinutes(0, 0, 0);
-		const rows = await fetchDailyDigestItems(sinceDate.toISOString(), DAILY_COLLECTION_ROUTES);
+		const rows = await fetchDailyDigestItems(sinceDate.toISOString(), [...DAILY_COLLECTION_ROUTES]);
 		await sendDailyDigest(
 			env,
 			rows.map((row) => ({
