@@ -46,17 +46,28 @@ function isSimilarTitle(a: string, b: string): boolean {
 	const digitsA = (a.match(/\d+/g) ?? []).join(',');
 	const digitsB = (b.match(/\d+/g) ?? []).join(',');
 	if (digitsA !== digitsB) return false;
-	const maxLen = Math.max([...a].length, [...b].length);
+	const lenA = [...a].length;
+	const lenB = [...b].length;
+	const maxLen = Math.max(lenA, lenB);
 	if (maxLen < 10) return false;
-	return levenshtein(a, b) <= Math.floor(maxLen * 0.1);
+	const threshold = Math.floor(maxLen * 0.1);
+	// レーベンシュタイン距離は少なくとも文字数の差分以上になるため、その時点で
+	// 閾値を超えると分かる組は本体のDP計算（O(lenA*lenB)）自体を省略する。
+	// 全件O(件数^2)で比較する週次レビューのCPU時間を抑えるための最適化（判定結果は変わらない）。
+	if (Math.abs(lenA - lenB) > threshold) return false;
+	return levenshtein(a, b) <= threshold;
 }
 
 function isSimilarName(a: string, b: string): boolean {
 	if (!a || !b) return false;
 	if (a === b) return true;
-	const maxLen = Math.max([...a].length, [...b].length);
+	const lenA = [...a].length;
+	const lenB = [...b].length;
+	const maxLen = Math.max(lenA, lenB);
 	if (maxLen < 4) return false;
-	return levenshtein(a, b) <= Math.floor(maxLen * 0.1);
+	const threshold = Math.floor(maxLen * 0.1);
+	if (Math.abs(lenA - lenB) > threshold) return false;
+	return levenshtein(a, b) <= threshold;
 }
 
 export interface DuplicateItemCandidate {
@@ -94,8 +105,8 @@ export async function detectDuplicateItemCandidates(): Promise<DuplicateItemCand
 			const a = list[i];
 			const b = list[j];
 			const urlHit = Boolean(a.normUrl && b.normUrl && a.normUrl === b.normUrl);
-			const titleHit = isSimilarTitle(a.normTitle, b.normTitle);
-			if (urlHit || titleHit) {
+			// urlHit が既に真ならタイトルの重い類似度計算（Levenshtein）は省略する。
+			if (urlHit || isSimilarTitle(a.normTitle, b.normTitle)) {
 				candidates.push({
 					reason: urlHit ? 'url' : 'title',
 					fromId: a.id,
@@ -126,8 +137,8 @@ export async function detectDuplicateSourceCandidates(): Promise<DuplicateSource
 			const a = list[i];
 			const b = list[j];
 			const urlHit = Boolean(a.normUrl && b.normUrl && a.normUrl === b.normUrl);
-			const nameHit = isSimilarName(a.normName, b.normName);
-			if (urlHit || nameHit) {
+			// urlHit が既に真なら名称の重い類似度計算（Levenshtein）は省略する。
+			if (urlHit || isSimilarName(a.normName, b.normName)) {
 				candidates.push({
 					reason: urlHit ? 'url' : 'name',
 					fromId: a.id,
