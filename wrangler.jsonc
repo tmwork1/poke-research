@@ -11,6 +11,15 @@
 	"observability": {
 		"enabled": true
 	},
+	// 週次DBレビュー（POST /api/maintenance/weekly-review）の重複検出はO(件数^2)のLevenshtein距離
+	// 比較を伴い、fetchハンドラの既定CPU制限（プランによっては数十ms）を超えて
+	// "Worker exceeded resource limits"（error 1102）になることが2026-08-30に判明した
+	// （旧cronのscheduledハンドラはCPU上限30秒のため問題化していなかった）。
+	// GitHub Actions移設でこの処理がHTTP経由（fetchハンドラ）になったため、CPU時間上限を
+	// scheduledハンドラと同じ30秒まで明示的に引き上げる。
+	"limits": {
+		"cpu_ms": 30000
+	},
 	"triggers": {
 		// 2026-08-30 に定期実行の起点を GitHub Actions（.github/workflows/cron-*.yml）へ移設した。
 		// Cloudflare Cron Trigger は無効化している。src/worker.ts の scheduled ハンドラは、移行直後のロールバック用として残す。
