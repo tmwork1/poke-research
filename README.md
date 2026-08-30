@@ -2,7 +2,7 @@
 
 ポケモンプログラミング情報を収集・整理・検索する Astro + Supabase + Cloudflare ベースの情報ハブ。
 
-公開URL: https://poke-research.com/
+公開URL: https://poke-research.tmwork1.com/
 
 ## 他のトピックへ再配布する
 
