@@ -2,7 +2,7 @@
 // src/lib/importers/ai-review-prompt.mjs の buildSystemPrompt() の基準（STEP1〜5）に沿って
 // 判定した結果を書き込む（retag-existing-items.mjs の後半・書き込み部分の代替、OpenAI不使用）。
 //
-// 挙動は元の retag-existing-items.mjs と同じ:
+// --publish 未指定時の挙動は元の retag-existing-items.mjs と同じ:
 //   - language / ai_recheck_*（migrations/025）は accepted に関わらず常に更新する。
 //   - accepted=true の場合のみ summary / ai_review_*（migrations/025）/ タグ（item_tags）を更新する。
 //   - accepted=false の場合は summary もタグも更新しない（公開済みアイテムを自動で
@@ -17,6 +17,15 @@
 //     --summary="..." --tags="タグA,タグB" [--model=claude-code] [--dry-run]
 //   node --env-file=.env.production scripts/db/apply-item-review.mjs \
 //     --id=123 --accepted=false --language=en --reason="STEP4: 体験談" [--dry-run]
+// 棄却済み記事の再採用は --publish で ai_accepted=true にしないと一覧に公開されない。
+// 非公開化は人手確認を要するため --accepted=false --publish はエラーにする。
+// --from の一括処理では採用行だけを公開し、棄却行の公開状態は変えない。
+//   node scripts/db/apply-item-review.mjs --id=123 --accepted=true --language=ja \
+//     --reason="STEP3: 主題該当" --summary="..." --tags="a,b" --publish --dry-run
+//   node scripts/db/apply-item-review.mjs --from=reviews.jsonl --publish --dry-run
+// JSONL例（棄却行は summary="", tags=[]）:
+//   {"id":123,"accepted":true,"language":"ja","confidence":0.8,"reason":"...","summary":"...","tags":["a","b"]}
+import { readFile } from 'node:fs/promises';
 import { createClient } from '@supabase/supabase-js';
 import { topic } from '../../src/config/topic.config.mjs';
 import { computePromptHash } from '../../src/lib/importers/ai-review-prompt.mjs';
@@ -39,46 +48,86 @@ function parseArgs(argv) {
 
 const flags = parseArgs(process.argv.slice(2));
 const dryRun = Boolean(flags['dry-run']);
-const id = Number(flags.id);
-if (!Number.isInteger(id)) {
-  console.error('--id には整数を指定してください。');
-  process.exit(1);
-}
-if (flags.accepted !== 'true' && flags.accepted !== 'false') {
-  console.error('--accepted には true か false を指定してください。');
-  process.exit(1);
-}
-const accepted = flags.accepted === 'true';
-const language = typeof flags.language === 'string' ? flags.language.trim().toLowerCase() : '';
-const reason = typeof flags.reason === 'string' ? flags.reason.trim() : '';
-if (!language) {
-  console.error('--language は必須です。');
-  process.exit(1);
-}
-if (!reason) {
-  console.error('--reason は必須です。');
-  process.exit(1);
-}
-const confidence = flags.confidence !== undefined ? Number(flags.confidence) : null;
-if (flags.confidence !== undefined && (Number.isNaN(confidence) || confidence < 0 || confidence > 1)) {
-  console.error('--confidence には 0〜1 の数値を指定してください。');
-  process.exit(1);
-}
+const publish = Boolean(flags.publish);
+const fromFile = flags.from !== undefined;
 const model = typeof flags.model === 'string' ? flags.model : 'claude-code';
-const summary = typeof flags.summary === 'string' ? flags.summary.trim() : '';
-const tagsRaw = typeof flags.tags === 'string' ? flags.tags : '';
-if (accepted && !summary) {
-  console.error('--accepted=true の場合は --summary が必須です。');
+
+function validateReview(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('判定結果はオブジェクトで指定してください。');
+  const { id, accepted } = input;
+  if (!Number.isInteger(id)) {
+    throw new Error('--id には整数を指定してください。');
+  }
+  if (typeof accepted !== 'boolean') {
+    throw new Error('--accepted には true か false を指定してください。');
+  }
+  const language = typeof input.language === 'string' ? input.language.trim().toLowerCase() : '';
+  const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+  if (!language) {
+    throw new Error('--language は必須です。');
+  }
+  if (!reason) {
+    throw new Error('--reason は必須です。');
+  }
+  const confidence = input.confidence === undefined ? null : input.confidence;
+  if (input.confidence !== undefined && (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1)) {
+    throw new Error('--confidence には 0〜1 の数値を指定してください。');
+  }
+  const summary = typeof input.summary === 'string' ? input.summary.trim() : '';
+  if (accepted && !summary) {
+    throw new Error('--accepted=true の場合は --summary が必須です。');
+  }
+  const tags = input.tags === undefined ? [] : input.tags;
+  if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== 'string')) throw new Error('tags には文字列の配列を指定してください。');
+  return { id, accepted, language, reason, confidence, summary, tags };
+}
+
+let reviews;
+try {
+  if (fromFile && flags.id !== undefined) throw new Error('--from と --id は同時に指定できません。');
+  if (publish && flags.accepted === 'false') throw new Error('--publish と --accepted=false は併用できません（非公開化は要人手確認）。');
+  if (fromFile) {
+    if (typeof flags.from !== 'string' || !flags.from.trim()) throw new Error('--from にはJSONLファイルのパスを指定してください。');
+    const lines = (await readFile(flags.from, 'utf8')).split(/\r?\n/);
+    reviews = [];
+    const errors = [];
+    // 末尾の改行は許容する。全行を検証し終えるまではDBに接続しない。
+    if (lines.at(-1) === '') lines.pop();
+    for (const [index, line] of lines.entries()) {
+      try {
+        reviews.push({ ...validateReview(JSON.parse(line)), line: index + 1 });
+      } catch (error) {
+        errors.push(`第${index + 1}行: ${error.message}`);
+      }
+    }
+    if (errors.length) throw new Error(errors.join('\n'));
+  } else {
+    reviews = [validateReview({
+      id: Number(flags.id),
+      accepted: flags.accepted === 'true' ? true : flags.accepted === 'false' ? false : undefined,
+      language: flags.language,
+      reason: flags.reason,
+      confidence: flags.confidence === undefined ? undefined : Number(flags.confidence),
+      summary: flags.summary,
+      tags: typeof flags.tags === 'string' ? flags.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+    })];
+  }
+} catch (error) {
+  console.error(error.message);
   process.exit(1);
 }
 
-const url = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_SECRET_KEY;
-if (!url || !key) {
-  console.error('SUPABASE_URL / SUPABASE_SECRET_KEY are required.');
-  process.exit(1);
+// dry-run は接続情報なしで実行でき、DBクライアントも作成しない。
+let supabase;
+if (!dryRun) {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !key) {
+    console.error('SUPABASE_URL / SUPABASE_SECRET_KEY are required.');
+    process.exit(1);
+  }
+  supabase = createClient(url, key, { detectSessionInUrl: false });
 }
-const supabase = createClient(url, key, { detectSessionInUrl: false });
 
 const PROMPT_HASH = await computePromptHash(topic);
 
@@ -219,14 +268,15 @@ async function syncItemTags(itemId, tagNames, tagLabels = {}) {
 
 // ---------------------------------------------------------------------------
 
-async function main() {
-  const { tags, tagLabels } = accepted && tagsRaw
-    ? normalizeAiTags(tagsRaw.split(',').map((t) => t.trim()).filter(Boolean))
+async function applyReview({ id, accepted, language, reason, confidence, summary, tags: rawTags }) {
+  const { tags, tagLabels } = accepted && rawTags.length
+    ? normalizeAiTags(rawTags)
     : { tags: [], tagLabels: {} };
 
   if (dryRun) {
     console.log(
       `[dry-run] #${id}: language=${language}, ai_recheck_accepted=${accepted}, model=${model}, reason=${reason}, confidence=${confidence}` +
+        (publish && accepted ? '\n  ai_accepted=true（公開）' : '') +
         (accepted ? `\n  summary=${JSON.stringify(summary)}\n  tags=[${tags.join(', ')}]` : '\n  （不採用のため summary/タグは更新しません）'),
     );
     return;
@@ -255,6 +305,7 @@ async function main() {
     .from('items')
     .update({
       summary,
+      ...(publish ? { ai_accepted: true } : {}),
       ai_review_model: model,
       ai_review_prompt_hash: PROMPT_HASH,
       ai_review_reason: reason,
@@ -267,6 +318,28 @@ async function main() {
   await syncItemTags(id, tags, tagLabels);
 
   console.log(`#${id}: summary/タグを更新しました -> tags=[${tags.join(', ')}] (language: ${language}, confidence: ${confidence}, reason: ${reason})`);
+}
+
+async function main() {
+  if (!fromFile) return applyReview(reviews[0]);
+  if (dryRun) {
+    const acceptedCount = reviews.filter((review) => review.accepted).length;
+    console.log(`[dry-run] 採用${acceptedCount}件・棄却${reviews.length - acceptedCount}件、うち publish 対象${publish ? acceptedCount : 0}件`);
+  }
+  let succeeded = 0;
+  let failed = 0;
+  for (const review of reviews) {
+    try {
+      await applyReview(review);
+      succeeded += 1;
+      console.log(`第${review.line}行 #${review.id}: 成功${dryRun ? '（dry-run）' : ''}`);
+    } catch (error) {
+      failed += 1;
+      console.log(`第${review.line}行 #${review.id}: 失敗（${error.message ?? String(error)}）`);
+    }
+  }
+  console.log(`成功${succeeded}件 / 失敗${failed}件`);
+  if (failed) process.exitCode = 9;
 }
 
 main().catch((e) => { console.error(e); process.exit(9); });
