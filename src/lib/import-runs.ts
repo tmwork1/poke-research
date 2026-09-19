@@ -88,6 +88,18 @@ export async function hasRecentImportRun(sinceIso: string): Promise<boolean> {
   return (data ?? []).length > 0;
 }
 
+// 指定日時以降に作成された採用記事を数える。行本体は取得せず、件数だけを参照する。
+export async function countRecentAcceptedItems(sinceIso: string): Promise<number> {
+  const supabase = await getSupabaseAdminClient();
+  const { count, error } = await supabase
+    .from('items')
+    .select('*', { count: 'exact', head: true })
+    .eq('ai_accepted', true)
+    .gte('created_at', sinceIso);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 interface ImportOutcomeLike {
   fetched: number;
   inserted: number;
