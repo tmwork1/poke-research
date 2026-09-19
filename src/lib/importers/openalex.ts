@@ -33,6 +33,7 @@ import { POKEMON_KEYWORDS } from './keywords';
 import {
 	buildOpenAlexFilter,
 	extractAuthors,
+	isKaggleDoi,
 	reconstructAbstract,
 	resolveTitle,
 	selectExternalUrl,
@@ -198,7 +199,7 @@ async function findDuplicateTitleUrls(
 	works: OpenAlexWork[],
 	existingUrls: Set<string>,
 ): Promise<Set<string>> {
-	const pending = works.filter((work) => !existingUrls.has(selectExternalUrl(work)));
+	const pending = works.filter((work) => !isKaggleDoi(work.doi) && !existingUrls.has(selectExternalUrl(work)));
 	const existingTitles = await findExistingNormalizedTitles(
 		pending.map((work) => normalizeTitleForDedup(resolveTitle(work))),
 	);
@@ -249,7 +250,7 @@ export async function syncOpenAlexCollection(options: OpenAlexSyncOptions = {}):
 	// 新着論文が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数を
 	// maxNewItemsPerRun件までに絞る（arxiv.ts と同方針）。
 	const newWorks = works.filter(
-		(work) => !existingUrls.has(selectExternalUrl(work)) && !duplicateTitleUrls.has(selectExternalUrl(work)),
+		(work) => !isKaggleDoi(work.doi) && !existingUrls.has(selectExternalUrl(work)) && !duplicateTitleUrls.has(selectExternalUrl(work)),
 	);
 	const worksToProcess = new Set(newWorks.slice(0, maxNewItemsPerRun).map((work) => selectExternalUrl(work)));
 
@@ -259,6 +260,16 @@ export async function syncOpenAlexCollection(options: OpenAlexSyncOptions = {}):
 	const itemResults = await mapWithConcurrency(works, IMPORT_CONCURRENCY, (work) => {
 		const externalUrl = selectExternalUrl(work);
 		const title = resolveTitle(work);
+
+		if (isKaggleDoi(work.doi)) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl,
+				title,
+				reason: 'Kaggle DOI: リンク先が404で本文・abstractを取得できないため',
+			});
+		}
 
 		if (existingUrls.has(externalUrl)) {
 			return Promise.resolve<ImportItemOutcome>({

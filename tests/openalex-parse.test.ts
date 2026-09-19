@@ -7,12 +7,26 @@ import assert from 'node:assert/strict';
 import {
 	buildOpenAlexFilter,
 	extractAuthors,
+	isKaggleDoi,
 	findArxivAbsUrl,
 	reconstructAbstract,
 	resolveTitle,
 	selectExternalUrl,
 	type OpenAlexWork,
 } from '../src/lib/importers/openalex-parse.ts';
+
+describe('isKaggleDoi', () => {
+	it('URL付き・無しのWriteup / Dataset DOIを除外する', () => {
+		for (const doi of ['10.34740/kaggle/w/113265', 'https://doi.org/10.34740/kaggle/ds/123', ' HTTP://DOI.ORG/10.34740/KAGGLE/w/123 ']) {
+			assert.equal(isKaggleDoi(doi), true);
+		}
+	});
+	it('他のDOI・似たプレフィックス・DOI無しは除外しない', () => {
+		for (const doi of [null, undefined, '', 'https://doi.org/10.7717/peerj.4375', '10.34740/kaggle-other/123', '10.34740/other/kaggle/123']) {
+			assert.equal(isKaggleDoi(doi), false);
+		}
+	});
+});
 
 describe('reconstructAbstract', () => {
 	it('null/undefinedなら空文字を返す', () => {
