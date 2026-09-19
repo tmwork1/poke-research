@@ -3,6 +3,11 @@
 // cloudflare:workers に依存しないため tests/openalex-parse.test.ts で直接ユニットテストできる。
 import { canonicalizeArxivAbsUrl } from './arxiv-feed.ts';
 
+// Kaggle DOIはリンク先が404で、OpenAlexからも本文・abstractを取得できないため収集しない。
+export function isKaggleDoi(doi: string | null | undefined): boolean {
+	return (doi ?? '').trim().toLowerCase().replace(/^https?:\/\/doi\.org\//, '').startsWith('10.34740/kaggle/');
+}
+
 export interface OpenAlexLocation {
 	landing_page_url?: string | null;
 	pdf_url?: string | null;
