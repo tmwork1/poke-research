@@ -137,6 +137,7 @@ async function runScheduledWeeklyReview(): Promise<void> {
 		console.log('[cron:weekly-review] review completed', {
 			itemCandidates: result.itemCandidates.length,
 			sourceCandidates: result.sourceCandidates.length,
+			dismissed: result.dismissedCount,
 		});
 		await sendMaintenanceReport(env, '週次DBレビュー', message);
 	} catch (error) {
