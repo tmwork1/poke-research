@@ -5,7 +5,7 @@
 //   1) 正規化 origin_url（プロトコル・www・クエリ・末尾スラッシュを除去）が一致
 //   2) 正規化 name（空白・記号除去・小文字化）が一致、または編集距離が長さの1割以下
 //
-// 使い方: node --env-file=.env.production scripts/db/detect-duplicate-sources.mjs
+// 使い方: node --env-file=.env.production scripts/db/detect-duplicate-sources.mjs [--include-dismissed]
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.SUPABASE_URL;
@@ -15,6 +15,8 @@ if (!url || !key) {
   process.exit(1);
 }
 const supabase = createClient(url, key, { detectSessionInUrl: false });
+
+const includeDismissed = process.argv.slice(2).includes('--include-dismissed');
 
 function normalizeUrl(value) {
   if (!value) return null;
@@ -59,6 +61,22 @@ function isSimilarName(a, b) {
   return levenshtein(a, b) <= Math.floor(maxLen * 0.1);
 }
 
+// 「重複ではない」と人手で判断済みの組（duplicate_review_dismissals、migrations/030）を読み、
+// 出力から除外する。除外しないと毎回同じ組を目視し直すことになる
+// （登録は scripts/db/dismiss-duplicate.mjs、--include-dismissed で除外せず全件表示できる）。
+async function fetchDismissedKeys(targetKind) {
+  const { data, error } = await supabase
+    .from('duplicate_review_dismissals')
+    .select('from_id, to_id')
+    .eq('target_kind', targetKind);
+  if (error) throw error;
+  return new Set((data ?? []).map((row) => `${row.from_id}:${row.to_id}`));
+}
+
+function dismissalKey(idA, idB) {
+  return idA < idB ? `${idA}:${idB}` : `${idB}:${idA}`;
+}
+
 async function main() {
   // PostgREST の既定上限1000件で途切れないよう、ページングして全行を取得する。
   const pageSize = 1000;
@@ -90,17 +108,22 @@ async function main() {
     }
   }
 
-  if (pairs.length === 0) {
-    console.log('重複候補はありません。');
+  const dismissed = includeDismissed ? new Set() : await fetchDismissedKeys('source');
+  const visiblePairs = pairs.filter((pair) => !dismissed.has(dismissalKey(pair.from.id, pair.to.id)));
+  const dismissedCount = pairs.length - visiblePairs.length;
+  const dismissedNote = dismissedCount > 0 ? `（除外済み ${dismissedCount} 組を除く）` : '';
+
+  if (visiblePairs.length === 0) {
+    console.log(`重複候補はありません。${dismissedNote}`);
     return;
   }
 
-  for (const pair of pairs) {
+  for (const pair of visiblePairs) {
     console.log(
       `[${pair.reason}] #${pair.from.id} "${pair.from.name}" (${pair.from.origin_url ?? '-'}) <-> #${pair.to.id} "${pair.to.name}" (${pair.to.origin_url ?? '-'})`,
     );
   }
-  console.log(`\n${pairs.length} 組の候補。統合する場合は scripts/db/merge-source.mjs <from-id> <to-id> を使う。`);
+  console.log(`\n${visiblePairs.length} 組の候補。統合する場合は scripts/db/merge-source.mjs <from-id> <to-id> を使う。${dismissedNote}`);
 }
 
 main().catch((e) => { console.error(e); process.exit(9); });
