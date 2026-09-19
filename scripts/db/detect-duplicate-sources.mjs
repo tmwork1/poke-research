@@ -60,8 +60,16 @@ function isSimilarName(a, b) {
 }
 
 async function main() {
-  const { data: sources, error } = await supabase.from('sources').select('id, name, origin_url').order('id');
-  if (error) throw error;
+  // PostgREST の既定上限1000件で途切れないよう、ページングして全行を取得する。
+  const pageSize = 1000;
+  const sources = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase.from('sources').select('id, name, origin_url').order('id').range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = data ?? [];
+    sources.push(...page);
+    if (page.length < pageSize) break;
+  }
 
   const pairs = [];
   const list = (sources ?? []).map((source) => ({

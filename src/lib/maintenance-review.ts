@@ -122,6 +122,21 @@ export interface DuplicateSourceCandidate {
 	toUrl: string | null;
 }
 
+async function fetchAllRows<T>(
+	fetchPage: (offset: number, pageSize: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+	// PostgREST の既定上限1000件で途切れないよう、ページングして全行を取得する。
+	const pageSize = 1000;
+	const rows: T[] = [];
+	for (let offset = 0; ; offset += pageSize) {
+		const { data, error } = await fetchPage(offset, pageSize);
+		if (error) throw error;
+		const page = data ?? [];
+		rows.push(...page);
+		if (page.length < pageSize) return rows;
+	}
+}
+
 // items は1000件超（2026-08時点）あり、全組をO(件数^2)で総当たりすると
 // GitHub Actions移設後のfetchハンドラのCPU時間制限（error 1102、旧scheduledハンドラは
 // CPU上限30秒だったため問題化していなかった）を超えてしまうことが本番で判明した。
@@ -131,8 +146,9 @@ export interface DuplicateSourceCandidate {
 // 比較件数を絞る（結果はO(件数^2)の総当たりと完全に一致する。単なる高速化）。
 export async function detectDuplicateItemCandidates(): Promise<DuplicateItemCandidate[]> {
 	const supabase = await getSupabaseClient();
-	const { data: items, error } = await supabase.from('items').select('id, title, external_url').order('id');
-	if (error) throw error;
+	const items = await fetchAllRows((offset, pageSize) =>
+		supabase.from('items').select('id, title, external_url').order('id').range(offset, offset + pageSize - 1),
+	);
 
 	const list = (items ?? []).map((item) => {
 		const normTitle = stripSymbols(item.title);
@@ -190,8 +206,9 @@ export async function detectDuplicateItemCandidates(): Promise<DuplicateItemCand
 
 export async function detectDuplicateSourceCandidates(): Promise<DuplicateSourceCandidate[]> {
 	const supabase = await getSupabaseClient();
-	const { data: sources, error } = await supabase.from('sources').select('id, name, origin_url').order('id');
-	if (error) throw error;
+	const sources = await fetchAllRows((offset, pageSize) =>
+		supabase.from('sources').select('id, name, origin_url').order('id').range(offset, offset + pageSize - 1),
+	);
 
 	const list = (sources ?? []).map((source) => {
 		const normName = stripSymbols(source.name);
