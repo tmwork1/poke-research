@@ -11,11 +11,14 @@ const REASONING_EFFORT_ORDER = ['minimal', 'low', 'medium', 'high'];
 // kind='repo'（GitHubリポジトリのREADMEレビュー）は、reasoning_effort=minimal（既定値）だと
 // 言語判定・主題判定を安定してこなせず、5件中0件採用・JSON不備エラーが多発することを実験で確認した
 // （docs/optimization/github-repo-filter-accuracy.md 実験1〜4）。プロンプト文言の問題ではなく
-// 推論コスト不足が原因だったため、article/paperの既定値・課金には影響させず repo のみ底上げする。
-const MIN_REASONING_EFFORT_BY_KIND: Record<string, string> = { repo: 'low' };
+// 推論コスト不足が原因だったため、low へ底上げする。article/paper も minimal では多段判定が完了せず
+// 適合記事を棄却するため、同じ下限を適用する（docs/optimization/filter-accuracy.md の 2026-09-19 の実験）。
+// 未知の kind には影響させず、今後も種別ごとに下限を調整できるよう kind 別マップを維持する。
+const MIN_REASONING_EFFORT_BY_KIND: Record<string, string> = { article: 'low', paper: 'low', repo: 'low' };
 
 function resolveReasoningEffort(kind: string | undefined, configured: string): string {
-	const minimum = kind ? MIN_REASONING_EFFORT_BY_KIND[kind] : undefined;
+	// kind 未指定は buildSystemPrompt と同じく article として扱う。
+	const minimum = MIN_REASONING_EFFORT_BY_KIND[kind ?? 'article'];
 	if (!minimum) return configured;
 	const configuredRank = REASONING_EFFORT_ORDER.indexOf(configured);
 	const minimumRank = REASONING_EFFORT_ORDER.indexOf(minimum);

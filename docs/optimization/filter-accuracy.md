@@ -236,3 +236,71 @@ id=61は、要約が「構造化ノートを用いた意思決定の一貫性検
 - [docs/progress/2026-07-09.md](../progress/2026-07-09.md) — 作業当日の時系列記録
 - [docs/optimization/tag-quality.md](tag-quality.md) — 同種の最適化ドキュメントの前例（タグ生成精度）
 - `src/config/ai-review-prompt.mjs`, `src/config/topic.config.mjs`, `scripts/eval/eval-filter.mjs`, `scripts/db/retag-existing-items.mjs`
+
+## 実験（2026-09-19、article/paper の全件棄却が reasoning_effort=minimal で再現するかの検証）
+
+### 背景
+
+本番の収集状況を点検したところ、2026-07-26 以降に新規登録された記事・論文約470件のうち採用は1件のみ（hatena経由、2026-08-18）で、qiita / zenn / arxiv / openalex / feed は 60日間で採用0件だった。棄却理由の多くが「STEP1の言語判定が未完了」「本文が提供されていないため判断できない」「STEP2未実施のため」といった判定の中断であり、内容に基づく棄却になっていない。これは [github-repo-filter-accuracy.md](github-repo-filter-accuracy.md) の実験1〜4で `kind='repo'` について確認済みの「`reasoning_effort=minimal` では多段判定を安定してこなせない」現象と同じ形をしている。当時は repo のみ下限を `low` に引き上げたが、article / paper は minimal のまま据え置いていた。
+
+### 方法
+
+本番DBから棄却済みの6件（article 4件、paper 2件）を読み取り、本番と同じ `buildSystemPrompt(topic, kind)` ・`gpt-5-nano` で `reasoning_effort` を `minimal` と `low` の2通りで再判定する使い捨てスクリプト（読み取り専用、DB書き込みなし）を実行した。本番コード・プロンプトは無変更。
+
+### 結果
+
+| id | kind | タイトル | minimal | low |
+|---|---|---|---|---|
+| 1547 | article | OpenCVでポケモンの選出画面から6体を画像認識してみる | false (conf 0.25, language 空、summary 空、「STEP1 言語判定未完了」) | **true** (conf 0.75, ja, tags: opencv/python/image-recognition ほか) |
+| 1488 | article | なぜ、最近のLLMはポケモンを攻略するのが得意なのか？ | false (conf 0.65, ja、reason は「STEP1: language は ja であり STEP2 へ進む」だけで判定なし) | **true** (conf 0.75, ja) |
+| 1412 | article | AIエージェント初心者がポケカの知識を使ってルールベースAIを改善してみた | false (conf 0.35, language 空、summary 空、「STEP1 未実施」) | **true** (conf 0.72, ja, tags: ptcg-ai/python/kaggle ほか) |
+| 1444 | article | 【Unity】ミアレシティのホログラムをUnityちゃんで再現してみた | false (conf 0.4, ja、STEP3 主題外) | false (conf 0.6, ja、STEP3 主題外。理由が一貫しており妥当な棄却) |
+| 1467 | paper | PokaiTrainer: Scaling Belief-State Search to Competitive Pokémon VGC | false (conf 0.52, en、「STEP2 の判定は実施していない」と自認しつつ false) | **true** (conf 0.78, en) |
+| 1545 | paper | Mastering Imperfect Information in Pokémon TCG | false (conf 0.0, en、summary「本文が提供されていないため」＝本文は 4000 字渡している) | **true** (conf 0.72, en, tags: neuro-symbolic ほか) |
+
+6件中5件が minimal では判定を中断して棄却され、low では一貫した STEP 参照とともに採用された。唯一 minimal / low で判定が一致した 1444 は、両方とも「ポケモンを題材にしているがポケモンの実データ・仕様を扱っていない」という同じ理由で棄却しており、これは仕様通りの棄却と判断できる。minimal 側の応答には language が空・summary が空という欠損も出ており、これは本番で `parseAiResponse` が例外を投げて記事が丸ごと失われる経路（JSON不備）と同じ状態にあたる。
+
+### 結論
+
+article / paper の全件棄却は、収集クエリや母集団の問題ではなく、repo で既に確認済みの原因（`OPENAI_REASONING_EFFORT` の既定値 `minimal` が多段判定に対して力不足）が article / paper にも当てはまることによる。プロンプトが STEP1〜5（article は5段、paper は3段）に精緻化された 2026-07 中旬以降、この影響が顕在化したとみられる（prompt_hash `5ca584695b3751e3`=article・`cbc5f34c0ceb05b6`=paper の期間は採用ほぼ0、それ以前の旧プロンプト期間は採用率6割前後）。
+
+対応候補は `MIN_REASONING_EFFORT_BY_KIND` に article / paper を追加して下限を `low` に引き上げること。適用時は課金増（reasoning トークン分）と、誤採用が増えないかの確認が必要。既存の棄却済み記事（2026-07-26 以降の約470件）の再判定も別途検討する。
+
+## 実験（2026-09-19、モデルグレード × reasoning_effort の総当たり比較）
+
+### 目的
+
+上の実験で `reasoning_effort=low` への引き上げが有効と分かったが、「そもそも `gpt-5-nano` というグレードが必要十分か（`gpt-5-mini` へ上げるべきか、`low` で足りるか `medium` が要るか）」を、人手ラベル付きの検証セットで測る。
+
+### 方法
+
+本番DBの実データ28件を使い、読み取り専用の使い捨てスクリプトで5構成を総当たり実行（DB書き込みなし、本番プロンプト `buildSystemPrompt(topic, kind)` は無変更、`body_excerpt` は本番と同じ4000字）。
+
+検証セットの内訳（本セッションでタイトル・本文を確認して人手ラベル付け）:
+- **適合12件**（採用が正解）: Symfony4パーティ自動生成(356)、Kotlin図鑑(363)、プリン分類(364)、ポケモン機械学習(64)、Kaggleポケカコンペ紹介(7)、NSGA-II+DQN(696)、多目的整数計画(679)、OpenCV選出画面認識(1547)、ポケカ ルールベースAI(1412)、PokaiTrainer(1467)、Neuro-symbolic TCG(1545)、スイッチ自動化で乱数消費(361)
+- **不適合12件**（棄却が正解）: テトリス(1501)、通販広告(1550)、長崎日記(1392)、ポケモンGO攻略(1491)、バンダイのトレカ本人確認(1293)、cpprefjp(1515)、PokémonGO犯罪リスク分析(1445)、Unityホログラム(1444)、上司は何ポケモン(1450)、ポケふた旅行記(1362)、OpenAlexのゴミ行(1320)、Suicaペンギン(1511)
+- **境界4件**（集計外・参考）: ポケモンで学ぶ統計学(3)、統計学フローチャート(63)、最小二乗/FFT(1454)、ポケモン×Java ERROR編(1451)
+
+### 結果
+
+| 構成 | 正解 | 見逃し（偽陰性） | 誤採用（偽陽性） | JSON不備 | 出力トークン計（28件） |
+|---|---|---|---|---|---|
+| gpt-5-nano / minimal（**現行本番**） | 12/24 | **12/12 全滅** | 0 | 3 | 6,562 |
+| gpt-5-nano / low | 23/24 | 1（361） | 0 | 0 | 20,304 |
+| gpt-5-nano / medium | 23/24 | 1（361） | 0 | 0 | 77,771 |
+| gpt-5-mini / minimal | 22/24 | 1（1545） | 1（1444） | 0 | 6,416 |
+| gpt-5-mini / low | 23/24 | 0 | 1（1444） | 0 | 13,947 |
+
+入力トークンは全構成同一（102,316／28件、1件あたり約3.7k）。
+
+### 読み取り
+
+- **現行構成（nano/minimal）は適合記事を1件も通さない。** しかも reason の文面では「主題内と判断」「実データを扱う実装記事と判断」と書きながら `accepted=false` を返す自己矛盾が複数あり（1467・1547・679）、判定が成立していない。加えて3件で `summary` が空になっており、これは本番 `parseAiResponse` が `OpenAI response missing summary` で例外を投げる条件＝**記事がDBに残らず消える**経路に該当する（棄却としてすら記録されない）。
+- **nano を low に上げるだけで 12/12 の見逃しが 1 件まで減る。** 残る1件（361「スイッチを自動化してポケモンの乱数消費させたい」）は low・medium とも「STEP4: チートツールの作成・配布を解説」として棄却しており、[bf84ece](../../) で明示的にBANしたROM改造・チートツール基準の適用としてはむしろ正しい。実質的には不一致ゼロで、ラベル側（人手）の判断が基準と食い違っていた事例。
+- **medium は low に対して精度の上積みがない**（判定・境界事例とも完全一致）のに出力トークンが約3.8倍。採用理由がない。
+- **mini へのグレード上げは、このセットでは nano/low を上回らない。** mini/low は見逃し0だが、Unityホログラム記事(1444)を conf 0.86 で採用しており、「ポケモンを題材にしているが実データ・仕様を扱わない記事」を通す方向にブレる（nano は low/medium ともこれを正しく棄却）。mini/minimal も 22/24 で、reasoning_effort を上げずにモデルだけ上げる選択は nano/low より弱い。過去の実験2・6（`gpt-5.4-nano`）と同じく、**モデルのグレードではなく推論コストが効く**という結論が再現した。
+- コスト面では、入力トークンが支配的（1件あたり入力3.7k対出力0.7k）で、収集実績は月200件程度。nano/low でも mini/low でも月額は誤差の範囲だが、単価は mini が nano の数倍であり、精度が上回らない以上グレードを上げる根拠はない。
+
+### 結論
+
+**`gpt-5-nano` は必要十分。不足していたのはモデルのグレードではなく `reasoning_effort`。** 対応は `MIN_REASONING_EFFORT_BY_KIND` に `article` / `paper` を追加して下限を `low` に引き上げる（repo は 2026-07-23 に適用済み、[github-repo-filter-accuracy.md](github-repo-filter-accuracy.md)）。`medium` への引き上げとモデル変更（`gpt-5-mini`）はいずれも不採用。
