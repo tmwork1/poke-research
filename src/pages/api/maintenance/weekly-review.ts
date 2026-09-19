@@ -26,6 +26,7 @@ export async function POST() {
 			data: {
 				itemCandidates: result.itemCandidates.length,
 				sourceCandidates: result.sourceCandidates.length,
+				dismissed: result.dismissedCount,
 				hasRecentImportRun: hasRecent,
 			},
 		},

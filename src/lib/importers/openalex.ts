@@ -19,6 +19,7 @@ import { computePromptHash } from './ai-review-prompt.mjs';
 import {
 	fetchTopTagNames,
 	findExistingExternalUrls,
+	findExistingNormalizedTitles,
 	mapWithConcurrency,
 	processImportItem,
 	syncNewItemTagsBatch,
@@ -37,6 +38,7 @@ import {
 	selectExternalUrl,
 	type OpenAlexWork,
 } from './openalex-parse';
+import { normalizeTitleForDedup } from './title-dedup';
 import { parsePositiveInteger } from '../params';
 import { getOpenAlexConfig, OPENALEX_API_URL } from '../openalex';
 import { topic } from '../../config/topic.config.mjs';
@@ -185,6 +187,36 @@ async function fetchOpenAlexWorks(filter: string, maxResults: number, apiKey: st
 	return payload.results ?? [];
 }
 
+// OpenAlexは同じ成果物を別のWork objectとして返すことがある（Zenodoのconcept DOI /
+// version DOI、OSFのpreprintとOpenAlex ID行など。migrations/031 のコメント参照）。
+// external_url が異なるため findExistingExternalUrls では弾けず、放置すると同一タイトルの
+// 論文が毎週2行ずつ増え、週次DBレビューで毎回それを統合する手間が発生する。
+// 収集時点で、既にDBにある正規化タイトル・同一バッチ内で既に採用したタイトルを弾く。
+// 同名の別論文まで取りこぼす可能性はあるが、重複が増え続ける方の実害が大きいと判断した
+// （取りこぼしは週次DBレビューではなくログの skipped 理由で追える）。
+async function findDuplicateTitleUrls(
+	works: OpenAlexWork[],
+	existingUrls: Set<string>,
+): Promise<Set<string>> {
+	const pending = works.filter((work) => !existingUrls.has(selectExternalUrl(work)));
+	const existingTitles = await findExistingNormalizedTitles(
+		pending.map((work) => normalizeTitleForDedup(resolveTitle(work))),
+	);
+
+	const duplicateUrls = new Set<string>();
+	const seenTitles = new Set<string>();
+	for (const work of pending) {
+		const normalizedTitle = normalizeTitleForDedup(resolveTitle(work));
+		if (normalizedTitle.length === 0) continue;
+		if (existingTitles.has(normalizedTitle) || seenTitles.has(normalizedTitle)) {
+			duplicateUrls.add(selectExternalUrl(work));
+			continue;
+		}
+		seenTitles.add(normalizedTitle);
+	}
+	return duplicateUrls;
+}
+
 export async function syncOpenAlexCollection(options: OpenAlexSyncOptions = {}): Promise<OpenAlexSyncResult> {
 	const filter = normalizeFilter(options.filter);
 	const maxResults = parsePositiveInteger(options.maxResults, DEFAULT_MAX_RESULTS);
@@ -212,10 +244,13 @@ export async function syncOpenAlexCollection(options: OpenAlexSyncOptions = {}):
 	// 既に収集済みの候補は、AIレビュー・DB書き込みを行わずスキップする（arXiv由来で既にDBにある
 	// 行も selectExternalUrl が同じ正規化URLを返すためここで自然にスキップされる）。
 	const existingUrls = await findExistingExternalUrls(works.map((work) => selectExternalUrl(work)));
+	const duplicateTitleUrls = await findDuplicateTitleUrls(works, existingUrls);
 
 	// 新着論文が急増した日でも1回の実行でsubrequest上限を超えないよう、実際に処理する新規件数を
 	// maxNewItemsPerRun件までに絞る（arxiv.ts と同方針）。
-	const newWorks = works.filter((work) => !existingUrls.has(selectExternalUrl(work)));
+	const newWorks = works.filter(
+		(work) => !existingUrls.has(selectExternalUrl(work)) && !duplicateTitleUrls.has(selectExternalUrl(work)),
+	);
 	const worksToProcess = new Set(newWorks.slice(0, maxNewItemsPerRun).map((work) => selectExternalUrl(work)));
 
 	// タグ同期はここでは行わず、新規記事の分だけためて最後にまとめて1回のバッチで行う。
@@ -232,6 +267,16 @@ export async function syncOpenAlexCollection(options: OpenAlexSyncOptions = {}):
 				externalUrl,
 				title,
 				reason: 'already collected',
+			});
+		}
+
+		if (duplicateTitleUrls.has(externalUrl)) {
+			return Promise.resolve<ImportItemOutcome>({
+				id: null,
+				action: 'skipped',
+				externalUrl,
+				title,
+				reason: 'duplicate title (same work under another URL)',
 			});
 		}
 
@@ -382,7 +427,10 @@ export async function fetchOpenAlexCandidates(options: OpenAlexSyncOptions = {})
 	]);
 
 	const existingUrls = await findExistingExternalUrls(works.map((work) => selectExternalUrl(work)));
-	const newWorks = works.filter((work) => !existingUrls.has(selectExternalUrl(work)));
+	const duplicateTitleUrls = await findDuplicateTitleUrls(works, existingUrls);
+	const newWorks = works.filter(
+		(work) => !existingUrls.has(selectExternalUrl(work)) && !duplicateTitleUrls.has(selectExternalUrl(work)),
+	);
 
 	const candidates: OpenAlexCandidate[] = newWorks.map((work) => ({
 		externalUrl: selectExternalUrl(work),

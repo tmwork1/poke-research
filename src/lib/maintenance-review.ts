@@ -1,7 +1,7 @@
 // DBの重複候補を検出する読み取り専用の週次レビュージョブ（scripts/db/detect-duplicate-items.mjs・
 // detect-duplicate-sources.mjs のロジックを Worker の scheduled ハンドラから呼べるよう移植したもの）。
 // DBは一切書き換えない。統合が必要な場合は merge-item.mjs / merge-source.mjs を人手で実行する。
-import { getSupabaseClient } from './supabase';
+import { getSupabaseAdminClient, getSupabaseClient } from './supabase';
 
 function normalizeUrl(value: string | null | undefined): string | null {
 	if (!value) return null;
@@ -122,6 +122,46 @@ export interface DuplicateSourceCandidate {
 	toUrl: string | null;
 }
 
+async function fetchAllRows<T>(
+	fetchPage: (offset: number, pageSize: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+	// PostgREST の既定上限1000件で途切れないよう、ページングして全行を取得する。
+	const pageSize = 1000;
+	const rows: T[] = [];
+	for (let offset = 0; ; offset += pageSize) {
+		const { data, error } = await fetchPage(offset, pageSize);
+		if (error) throw error;
+		const page = data ?? [];
+		rows.push(...page);
+		if (page.length < pageSize) return rows;
+	}
+}
+
+// 人手で「重複ではない」と判断した組（duplicate_review_dismissals、migrations/030）を読み、
+// レビュー結果から除外するための集合を作る。除外しないと、統合されない組が毎週同じ内容で
+// Discordへ再掲され、同じ判断をやり直す羽目になる（登録は scripts/db/dismiss-duplicate.mjs）。
+// 内部運用テーブルでRLSのポリシーを持たないため、匿名キーではなく service_role で読む。
+export type DuplicateTargetKind = 'item' | 'source';
+
+function dismissalKey(targetKind: DuplicateTargetKind, idA: number, idB: number): string {
+	const [low, high] = idA < idB ? [idA, idB] : [idB, idA];
+	return `${targetKind}:${low}:${high}`;
+}
+
+export async function fetchDuplicateDismissals(): Promise<Set<string>> {
+	const supabase = await getSupabaseAdminClient();
+	const rows = await fetchAllRows<{ target_kind: string; from_id: number; to_id: number }>((offset, pageSize) =>
+		supabase
+			.from('duplicate_review_dismissals')
+			.select('target_kind, from_id, to_id')
+			.order('target_kind')
+			.order('from_id')
+			.order('to_id')
+			.range(offset, offset + pageSize - 1),
+	);
+	return new Set(rows.map((row) => dismissalKey(row.target_kind as DuplicateTargetKind, row.from_id, row.to_id)));
+}
+
 // items は1000件超（2026-08時点）あり、全組をO(件数^2)で総当たりすると
 // GitHub Actions移設後のfetchハンドラのCPU時間制限（error 1102、旧scheduledハンドラは
 // CPU上限30秒だったため問題化していなかった）を超えてしまうことが本番で判明した。
@@ -131,8 +171,9 @@ export interface DuplicateSourceCandidate {
 // 比較件数を絞る（結果はO(件数^2)の総当たりと完全に一致する。単なる高速化）。
 export async function detectDuplicateItemCandidates(): Promise<DuplicateItemCandidate[]> {
 	const supabase = await getSupabaseClient();
-	const { data: items, error } = await supabase.from('items').select('id, title, external_url').order('id');
-	if (error) throw error;
+	const items = await fetchAllRows((offset, pageSize) =>
+		supabase.from('items').select('id, title, external_url').order('id').range(offset, offset + pageSize - 1),
+	);
 
 	const list = (items ?? []).map((item) => {
 		const normTitle = stripSymbols(item.title);
@@ -190,8 +231,9 @@ export async function detectDuplicateItemCandidates(): Promise<DuplicateItemCand
 
 export async function detectDuplicateSourceCandidates(): Promise<DuplicateSourceCandidate[]> {
 	const supabase = await getSupabaseClient();
-	const { data: sources, error } = await supabase.from('sources').select('id, name, origin_url').order('id');
-	if (error) throw error;
+	const sources = await fetchAllRows((offset, pageSize) =>
+		supabase.from('sources').select('id, name, origin_url').order('id').range(offset, offset + pageSize - 1),
+	);
 
 	const list = (sources ?? []).map((source) => {
 		const normName = stripSymbols(source.name);
@@ -228,22 +270,33 @@ export async function detectDuplicateSourceCandidates(): Promise<DuplicateSource
 export interface WeeklyReviewResult {
 	itemCandidates: DuplicateItemCandidate[];
 	sourceCandidates: DuplicateSourceCandidate[];
+	/** duplicate_review_dismissals により今回の通知から除外した組数（items + sources）。 */
+	dismissedCount: number;
 }
 
 export async function runWeeklyReview(): Promise<WeeklyReviewResult> {
-	const [itemCandidates, sourceCandidates] = await Promise.all([
+	const [allItemCandidates, allSourceCandidates, dismissals] = await Promise.all([
 		detectDuplicateItemCandidates(),
 		detectDuplicateSourceCandidates(),
+		fetchDuplicateDismissals(),
 	]);
-	return { itemCandidates, sourceCandidates };
+	const itemCandidates = allItemCandidates.filter((c) => !dismissals.has(dismissalKey('item', c.fromId, c.toId)));
+	const sourceCandidates = allSourceCandidates.filter((c) => !dismissals.has(dismissalKey('source', c.fromId, c.toId)));
+	const dismissedCount =
+		allItemCandidates.length - itemCandidates.length + (allSourceCandidates.length - sourceCandidates.length);
+	return { itemCandidates, sourceCandidates, dismissedCount };
 }
 
 const MAX_EXAMPLES_PER_SECTION = 5;
 
 export function formatWeeklyReviewMessage(result: WeeklyReviewResult): string {
-	const { itemCandidates, sourceCandidates } = result;
+	const { itemCandidates, sourceCandidates, dismissedCount } = result;
+	// 除外済みの件数を必ず添える。0組になったのが「本当に候補が無い」のか「除外で消えている」のか
+	// を通知だけで区別できるようにするため。
+	const dismissedNote = dismissedCount > 0 ? `
+（除外済み ${dismissedCount} 組を除く）` : '';
 	if (itemCandidates.length === 0 && sourceCandidates.length === 0) {
-		return '重複候補はありませんでした。';
+		return `重複候補はありませんでした。${dismissedNote}`;
 	}
 
 	const lines: string[] = [];

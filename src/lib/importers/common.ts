@@ -427,6 +427,19 @@ export async function findExistingExternalUrls(externalUrls: string[]): Promise<
 	return new Set((data ?? []).map((row) => row.external_url as string));
 }
 
+// 同一成果物が別URLの複数Workとして登録されるケース（Zenodoのconcept DOI / version DOI、
+// OSFのpreprintとOpenAlex ID行など。migrations/031 のコメント参照）は external_url の
+// UNIQUE 制約では防げないため、正規化タイトル（items.normalized_title、生成列）で既存有無を
+// まとめて1クエリ問い合わせる。findExistingExternalUrls と同じく「既存かどうか」だけを見る。
+export async function findExistingNormalizedTitles(normalizedTitles: string[]): Promise<Set<string>> {
+	const targets = [...new Set(normalizedTitles.filter((title) => title.length > 0))];
+	if (targets.length === 0) return new Set();
+	const supabase = await getSupabaseAdminClient();
+	const { data, error } = await supabase.from('items').select('normalized_title').in('normalized_title', targets);
+	if (error) throw error;
+	return new Set((data ?? []).map((row) => row.normalized_title as string));
+}
+
 export interface DailyDigestItemRow {
 	title: string;
 	externalUrl: string;
