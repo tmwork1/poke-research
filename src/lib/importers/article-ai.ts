@@ -12,9 +12,12 @@ const REASONING_EFFORT_ORDER = ['minimal', 'low', 'medium', 'high'];
 // 言語判定・主題判定を安定してこなせず、5件中0件採用・JSON不備エラーが多発することを実験で確認した
 // （docs/optimization/github-repo-filter-accuracy.md 実験1〜4）。プロンプト文言の問題ではなく
 // 推論コスト不足が原因だったため、low へ底上げする。article/paper も minimal では多段判定が完了せず
-// 適合記事を棄却するため、同じ下限を適用する（docs/optimization/filter-accuracy.md の 2026-09-19 の実験）。
+// 適合記事を棄却するため、low へ底上げする（docs/optimization/filter-accuracy.md の 2026-09-19 の実験）。
+// kind='article' は low でも STEP4 の除外条件に該当する読み物・体験談を確率的に誤採用することを実験で確認した
+// （docs/optimization/filter-accuracy.md の 2026-09-20 の実験2）。このため、article は medium へ底上げする。
+// paper はプロンプトが STEP1〜3 と短く、low で問題が出ていないため、repo とともに low の下限を維持する。
 // 未知の kind には影響させず、今後も種別ごとに下限を調整できるよう kind 別マップを維持する。
-const MIN_REASONING_EFFORT_BY_KIND: Record<string, string> = { article: 'low', paper: 'low', repo: 'low' };
+const MIN_REASONING_EFFORT_BY_KIND: Record<string, string> = { article: 'medium', paper: 'low', repo: 'low' };
 
 function resolveReasoningEffort(kind: string | undefined, configured: string): string {
 	// kind 未指定は buildSystemPrompt と同じく article として扱う。

@@ -23,9 +23,10 @@ hooks.deregister();
 
 describe('reviewImportArticle reasoning_effort', () => {
 	for (const kind of [undefined, 'article', 'paper', 'repo']) {
+		const minimum = kind === undefined || kind === 'article' ? 'medium' : 'low';
 		for (const [configured, expected] of [
-			['minimal', 'low'],
-			['low', 'low'],
+			['minimal', minimum],
+			['low', minimum],
 			['medium', 'medium'],
 			['high', 'high'],
 			['unknown', 'unknown'],
